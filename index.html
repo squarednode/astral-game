@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10131a" />
+    <title>Astral Swap ARPG Demo</title>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <div id="hud">
+      <div class="panel top-left">
+        <h1>Astral Swap</h1>
+        <div id="objective">Defeat enemies and test the party rotation.</div>
+        <div class="controls">WASD move · Mouse aim · LMB attack · Q/E skills · Space dodge · 1–4 swap · I inventory</div>
+      </div>
+      <div id="party" class="party"></div>
+      <div id="lootFeed" class="loot-feed"></div>
+      <div class="bottom-center">
+        <div id="bossBar" class="boss-wrap hidden"><span id="bossName">Elite</span><div class="bar"><div id="bossFill"></div></div></div>
+        <div id="abilities" class="abilities"></div>
+      </div>
+      <div class="stats panel">
+        <div><span>Wave</span><b id="wave">1</b></div>
+        <div><span>Kills</span><b id="kills">0</b></div>
+        <div><span>Power</span><b id="power">100</b></div>
+      </div>
+    </div>
+    <div id="inventory" class="modal hidden">
+      <div class="inventory-card">
+        <div class="inventory-head"><h2>Party Stash</h2><button id="closeInventory">Close [I]</button></div>
+        <p>Click an item to equip it to the active character. Legendary powers alter team rotations.</p>
+        <div id="equipped"></div>
+        <div id="itemGrid" class="item-grid"></div>
+      </div>
+    </div>
+    <div id="gameOver" class="modal hidden"><div class="gameover-card"><h2>Party Defeated</h2><p id="finalScore"></p><button id="restart">Restart Run</button></div></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
