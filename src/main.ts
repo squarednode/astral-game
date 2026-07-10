@@ -269,7 +269,9 @@ function basicAttack(): void {
 
 function castSkill(key: SkillKey): void {
   if (active.cooldowns[key] > 0 || inventoryOpen || gameOver) return;
-  const dir = pointerWorld.subtract(playerRoot.position).setY(0).normalize();
+  const dir = pointerWorld.subtract(playerRoot.position);
+  dir.y = 0;
+  dir.normalize();
   if (active.id === 'vanguard' && key === 'Q') {
     active.cooldowns.Q = 5;
     vfxRing(playerRoot.position, active.color, 7, 0.45);
@@ -298,7 +300,9 @@ function castSkill(key: SkillKey): void {
     active.cooldowns.E = 6;
     const target = [...enemies].sort((a,b) => Vector3.Distance(a.mesh.position, pointerWorld) - Vector3.Distance(b.mesh.position, pointerWorld))[0];
     if (target && Vector3.Distance(target.mesh.position, playerRoot.position) < 10) {
-      playerRoot.position.copyFrom(target.mesh.position.add(dir.scale(-1.1)).setY(0));
+      const destination = target.mesh.position.add(dir.scale(-1.1));
+      destination.y = 0;
+      playerRoot.position.copyFrom(destination);
       damageEnemy(target, 48, 'lightning');
       vfxRing(target.mesh.position, active.color, 2.8, 0.25);
     }
@@ -340,7 +344,8 @@ function swapTo(index: number): void {
 function dodge(): void {
   if (active.cooldowns.dodge > 0 || inventoryOpen || gameOver) return;
   let dir = new Vector3((keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), 0, (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0));
-  if (dir.lengthSquared() < 0.01) dir = pointerWorld.subtract(playerRoot.position).setY(0);
+  if (dir.lengthSquared() < 0.01) dir = pointerWorld.subtract(playerRoot.position);
+  dir.y = 0;
   dir.normalize(); playerRoot.position.addInPlace(dir.scale(2.8));
   active.cooldowns.dodge = 2.1;
   vfxRing(playerRoot.position, active.color, 2.2, 0.2);
@@ -444,7 +449,9 @@ scene.onBeforeRenderObservable.add(() => {
       enemies.filter(e => Vector3.Distance(e.mesh.position, fx.mesh.position) < fx.radius).forEach(e => {
         damageEnemy(e, fx.damage, fx.type);
         if (fx.type === 'arcane') {
-          const pull = fx.mesh.position.subtract(e.mesh.position).setY(0).normalize(); e.mesh.position.addInPlace(pull.scale(.32));
+          const pull = fx.mesh.position.subtract(e.mesh.position);
+          pull.y =0;
+          pull.normalize(); e.mesh.position.addInPlace(pull.scale(.32));
         }
       });
     }
