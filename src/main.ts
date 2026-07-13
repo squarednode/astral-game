@@ -17,10 +17,12 @@ import {
   TransformNode,
   Vector3,
 } from '@babylonjs/core';
+import { InputManager } from './engine/input/InputManager';
 
 type Element = 'physical' | 'fire' | 'frost' | 'lightning' | 'arcane';
 type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
 type SkillKey = 'Q' | 'E';
+type AbilitySlot = 1 | 2 | 3 | 4;
 
 interface CharacterDef {
   id: string;
@@ -116,7 +118,6 @@ const defs: CharacterDef[] = [
   { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
   { id: 'warden', name: 'Warden', role: 'Frost support', element: 'frost', color: new Color3(0.28, 0.72, 1), maxHp: 130, speed: 6.5, attackDamage: 16, attackRange: 7.0, attackCooldown: 0.72, qName: 'Frost Field', eName: 'Ice Barrier' },
   { id: 'tempest', name: 'Tempest', role: 'Lightning assassin', element: 'lightning', color: new Color3(0.72, 0.42, 1), maxHp: 115, speed: 8.2, attackDamage: 19, attackRange: 3.0, attackCooldown: 0.36, qName: 'Chain Arc', eName: 'Blink Strike' },
-  { id: 'arcanist', name: 'Arcanist', role: 'Arcane controller', element: 'arcane', color: new Color3(1, 0.47, 0.77), maxHp: 120, speed: 6.8, attackDamage: 18, attackRange: 8.5, attackCooldown: 0.64, qName: 'Gravity Well', eName: 'Astral Orb' },
 ];
 const party: CharacterState[] = defs.map(d => ({ ...d, hp: d.maxHp, cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 } }));
 let activeIndex = 0;
@@ -133,9 +134,12 @@ facingMarker.parent = playerRoot;
 facingMarker.position.set(0, 0.45, 0.75);
 facingMarker.material = mat('facing', Color3.White(), 0.35);
 
-const keys = new Set<string>();
+const input = new InputManager(window);
 let pointerWorld = new Vector3(0, 0, 4);
-let leftMouse = false;
+let clickMoveTarget: Vector3 | null = null;
+let jumpVelocity = 0;
+let isGrounded = true;
+let swapInputCooldown = 0;
 let inventoryOpen = false;
 let gameOver = false;
 let wave = 1;
@@ -159,13 +163,16 @@ function hpMax(c: CharacterState): number { return c.maxHp + (c.equipped?.maxHpB
 
 function refreshHud(): void {
   partyEl.innerHTML = party.map((c, i) => `<div class="party-card ${i === activeIndex ? 'active' : ''}">
-    <div class="party-line"><div><div class="party-name">${i + 1} · ${c.name}</div><div class="party-role">${c.role}</div></div><b>${Math.ceil(c.hp)}</b></div>
+    <div class="party-line"><div><div class="party-name">${i === activeIndex ? 'CONTROL · ' : ''}${c.name}</div><div class="party-role">${c.role}</div></div><b>${Math.ceil(c.hp)}</b></div>
     <div class="hpbar"><div class="hpfill" style="width:${Math.max(0, c.hp / hpMax(c) * 100)}%"></div></div></div>`).join('');
   abilitiesEl.innerHTML = [
-    ['LMB', 'Basic', active.cooldowns.attack],
-    ['Q', active.qName, active.cooldowns.Q],
-    ['E', active.eName, active.cooldowns.E],
-    ['Space', 'Dodge', active.cooldowns.dodge],
+    ['RMB', 'Basic', active.cooldowns.attack],
+    ['1', active.qName, active.cooldowns.Q],
+    ['2', active.eName, active.cooldowns.E],
+    ['3', 'Unassigned', 0],
+    ['4', 'Unassigned', 0],
+    ['R', 'Dodge', active.cooldowns.dodge],
+    ['Space', 'Jump', 0],
   ].map(([key, name, cd]) => `<div class="ability"><kbd>${key}</kbd>${name}${Number(cd) > 0 ? `<div class="cooldown">${Number(cd).toFixed(1)}</div>` : ''}</div>`).join('');
   document.querySelector('#wave')!.textContent = String(wave);
   document.querySelector('#kills')!.textContent = String(kills);
@@ -271,7 +278,7 @@ function castSkill(key: SkillKey): void {
   if (active.cooldowns[key] > 0 || inventoryOpen || gameOver) return;
   const dir = pointerWorld.subtract(playerRoot.position);
   dir.y = 0;
-  dir.normalize();
+  if (dir.lengthSquared() > 0.0001) dir.normalize();
   if (active.id === 'vanguard' && key === 'Q') {
     active.cooldowns.Q = 5;
     vfxRing(playerRoot.position, active.color, 7, 0.45);
@@ -306,24 +313,12 @@ function castSkill(key: SkillKey): void {
       damageEnemy(target, 48, 'lightning');
       vfxRing(target.mesh.position, active.color, 2.8, 0.25);
     }
-  } else if (active.id === 'arcanist' && key === 'Q') {
-    active.cooldowns.Q = 8;
-    const well = MeshBuilder.CreateCylinder('gravityWell', { diameter: 7, height: 0.08, tessellation: 48 }, scene);
-    well.position = pointerWorld.clone(); well.position.y = 0.06;
-    well.material = mat('gravityWell', active.color, 0.4); well.visibility = 0.52;
-    effects.push({ mesh: well, ttl: 5.2, tick: 0, type: 'arcane', radius: 3.5, damage: 7 });
-  } else if (active.id === 'arcanist') {
-    active.cooldowns.E = 5;
-    const orb = MeshBuilder.CreateSphere('astralOrb', { diameter: 0.85 }, scene);
-    orb.position = playerRoot.position.add(new Vector3(0, 0.8, 0)).add(dir.scale(1));
-    orb.material = mat('astralOrb', active.color, 0.85);
-    projectiles.push({ mesh: orb, vel: dir.scale(10), ttl: 2.2, damage: 42, element: 'arcane', pierce: 4 });
   }
   refreshHud();
 }
 
 function swapTo(index: number): void {
-  if (index === activeIndex || index < 0 || index > 3 || inventoryOpen || gameOver) return;
+  if (index === activeIndex || index < 0 || index >= party.length || inventoryOpen || gameOver) return;
   if (party[index].hp <= 0 || active.cooldowns.swap > 0) return;
   const prior = active;
   activeIndex = index; active = party[index];
@@ -341,14 +336,37 @@ function swapTo(index: number): void {
   refreshHud();
 }
 
+function castAbilitySlot(slot: AbilitySlot): void {
+  if (slot === 1) castSkill('Q');
+  else if (slot === 2) castSkill('E');
+  else feed(`Ability slot ${slot} is not assigned yet.`);
+}
+
+function cycleControl(direction: 1 | -1): void {
+  if (party.length <= 1 || swapInputCooldown > 0 || inventoryOpen || gameOver) return;
+  for (let step = 1; step <= party.length; step++) {
+    const candidate = (activeIndex + direction * step + party.length) % party.length;
+    if (party[candidate].hp > 0) { swapTo(candidate); swapInputCooldown = 0.15; return; }
+  }
+}
+
+function jump(): void {
+  if (!isGrounded || inventoryOpen || gameOver) return;
+  isGrounded = false;
+  jumpVelocity = 7.4;
+}
+
 function dodge(): void {
   if (active.cooldowns.dodge > 0 || inventoryOpen || gameOver) return;
-  let dir = new Vector3((keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), 0, (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0));
-  if (dir.lengthSquared() < 0.01) dir = pointerWorld.subtract(playerRoot.position);
-  dir.y = 0;
-  dir.normalize(); playerRoot.position.addInPlace(dir.scale(2.8));
-  active.cooldowns.dodge = 2.1;
-  vfxRing(playerRoot.position, active.color, 2.2, 0.2);
+  const axes = input.getMoveAxes();
+  let dir = new Vector3(axes.x, 0, axes.z);
+  if (dir.lengthSquared() < 0.01 && clickMoveTarget) { dir = clickMoveTarget.subtract(playerRoot.position); dir.y = 0; }
+  if (dir.lengthSquared() < 0.01) { dir = pointerWorld.subtract(playerRoot.position); dir.y = 0; }
+  if (dir.lengthSquared() < 0.01) dir = new Vector3(Math.sin(playerRoot.rotation.y), 0, Math.cos(playerRoot.rotation.y));
+  dir.normalize();
+  playerRoot.position.addInPlace(dir.scale(4.2));
+  active.cooldowns.dodge = 1.45;
+  vfxRing(playerRoot.position, active.color, 2.6, 0.22);
 }
 
 function generateLoot(elite: boolean): void {
@@ -399,22 +417,26 @@ function endGame(): void {
   document.querySelector('#finalScore')!.textContent = `You reached wave ${wave} with ${kills} kills and found ${loot.length} items.`;
 }
 
-window.addEventListener('keydown', e => {
-  keys.add(e.code);
-  if (e.code === 'KeyQ') castSkill('Q');
-  if (e.code === 'KeyE') castSkill('E');
-  if (e.code === 'Space') { e.preventDefault(); dodge(); }
-  if (/Digit[1-4]/.test(e.code)) swapTo(Number(e.code.slice(-1)) - 1);
-  if (e.code === 'KeyI') { inventoryOpen = !inventoryOpen; inventoryEl.classList.toggle('hidden', !inventoryOpen); refreshHud(); }
-});
-window.addEventListener('keyup', e => keys.delete(e.code));
-window.addEventListener('blur', () => { keys.clear(); leftMouse = false; });
 scene.onPointerObservable.add((pi: any) => {
-  if (pi.type === PointerEventTypes.POINTERDOWN && pi.event.button === 0) leftMouse = true;
-  if (pi.type === PointerEventTypes.POINTERUP && pi.event.button === 0) leftMouse = false;
-  const pick = scene.pick(scene.pointerX, scene.pointerY, (m: any) => m === ground);
-  if (pick?.hit && pick.pickedPoint) pointerWorld.copyFrom(pick.pickedPoint);
+  if (pi.type === PointerEventTypes.POINTERDOWN) {
+    input.notifyPointerDown(pi.event.button);
+    if (pi.event.button === 0) {
+      const pick = scene.pick(scene.pointerX, scene.pointerY, (m: any) => m === ground);
+      if (pick?.hit && pick.pickedPoint) {
+        pointerWorld.copyFrom(pick.pickedPoint);
+        if (input.getMovementMode() !== 'wasd') { clickMoveTarget = pick.pickedPoint.clone(); clickMoveTarget.y = 0; }
+      }
+    }
+    if (pi.event.button === 2) pi.event.preventDefault();
+  }
+  if (pi.type === PointerEventTypes.POINTERUP) input.notifyPointerUp(pi.event.button);
+  if (pi.type === PointerEventTypes.POINTERMOVE) {
+    const pick = scene.pick(scene.pointerX, scene.pointerY, (m: any) => m === ground);
+    if (pick?.hit && pick.pickedPoint) pointerWorld.copyFrom(pick.pickedPoint);
+  }
+  if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
 });
+canvas.addEventListener('contextmenu', event => event.preventDefault());
 document.querySelector('#closeInventory')!.addEventListener('click', () => { inventoryOpen = false; inventoryEl.classList.add('hidden'); });
 document.querySelector('#restart')!.addEventListener('click', () => location.reload());
 
@@ -422,16 +444,46 @@ let last = performance.now();
 scene.onBeforeRenderObservable.add(() => {
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05); last = now;
-  if (inventoryOpen || gameOver) return;
+  if (inventoryOpen || gameOver) { input.endFrame(); return; }
 
-  let move = new Vector3((keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), 0, (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0));
-  if (move.lengthSquared() > 0) { move.normalize().scaleInPlace(active.speed * dt); playerRoot.position.addInPlace(move); }
+  if (input.consumePressed('toggleInventory')) { inventoryOpen = !inventoryOpen; inventoryEl.classList.toggle('hidden', !inventoryOpen); refreshHud(); }
+  if (input.consumePressed('dodge')) dodge();
+  if (input.consumePressed('jump')) jump();
+  if (input.consumePressed('ability1')) castAbilitySlot(1);
+  if (input.consumePressed('ability2')) castAbilitySlot(2);
+  if (input.consumePressed('ability3')) castAbilitySlot(3);
+  if (input.consumePressed('ability4')) castAbilitySlot(4);
+  if (input.consumePressed('partyNext')) cycleControl(1);
+  if (input.consumePressed('partyPrevious')) cycleControl(-1);
+  const wheelDirection = input.consumeWheelDirection();
+  if (wheelDirection !== 0) cycleControl(wheelDirection);
+  if (input.consumeRightPressed() || input.isRightHeld()) basicAttack();
+
+  const axes = input.getMoveAxes();
+  let move = new Vector3(axes.x, 0, axes.z);
+  if (move.lengthSquared() > 0 && input.getMovementMode() !== 'click') {
+    clickMoveTarget = null;
+    move.normalize().scaleInPlace(active.speed * dt);
+    playerRoot.position.addInPlace(move);
+  } else if (clickMoveTarget && input.getMovementMode() !== 'wasd') {
+    const toTarget = clickMoveTarget.subtract(playerRoot.position); toTarget.y = 0;
+    const distance = toTarget.length();
+    if (distance <= 0.18) clickMoveTarget = null;
+    else playerRoot.position.addInPlace(toTarget.normalize().scale(Math.min(active.speed * dt, distance)));
+  }
+
+  if (!isGrounded || jumpVelocity !== 0) {
+    jumpVelocity -= 18.5 * dt;
+    playerRoot.position.y += jumpVelocity * dt;
+    if (playerRoot.position.y <= 0) { playerRoot.position.y = 0; jumpVelocity = 0; isGrounded = true; }
+  }
+
   playerRoot.position.x = Math.max(-14.7, Math.min(14.7, playerRoot.position.x));
   playerRoot.position.z = Math.max(-11.3, Math.min(11.3, playerRoot.position.z));
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
   camera.target = Vector3.Lerp(camera.target, playerRoot.position, 0.08);
-  if (leftMouse) basicAttack();
+  swapInputCooldown = Math.max(0, swapInputCooldown - dt);
 
   party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
 
@@ -449,9 +501,7 @@ scene.onBeforeRenderObservable.add(() => {
       enemies.filter(e => Vector3.Distance(e.mesh.position, fx.mesh.position) < fx.radius).forEach(e => {
         damageEnemy(e, fx.damage, fx.type);
         if (fx.type === 'arcane') {
-          const pull = fx.mesh.position.subtract(e.mesh.position);
-          pull.y =0;
-          pull.normalize(); e.mesh.position.addInPlace(pull.scale(.32));
+          const pull = fx.mesh.position.subtract(e.mesh.position); pull.y = 0; if (pull.lengthSquared() > 0.0001) pull.normalize(); e.mesh.position.addInPlace(pull.scale(.32));
         }
       });
     }
@@ -475,6 +525,7 @@ scene.onBeforeRenderObservable.add(() => {
   if (elite) (document.querySelector('#bossFill') as HTMLElement).style.width = `${Math.max(0, elite.hp / elite.maxHp * 100)}%`;
 
   if (Math.floor(now / 100) !== Math.floor((now - dt * 1000) / 100)) refreshHud();
+  input.endFrame();
 });
 
 refreshHud();
