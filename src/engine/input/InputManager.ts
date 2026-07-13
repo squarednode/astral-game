@@ -1,11 +1,26 @@
 import { DEFAULT_INPUT_SETTINGS, KEY_BINDINGS } from './InputBindings';
-import type { InputAction, InputSettings, MovementMode } from './InputTypes';
+import type {
+  InputAction,
+  InputSettings,
+  MovementMode,
+  PointerButton,
+} from './InputTypes';
+
+const POINTER_BUTTONS: Readonly<Record<number, PointerButton>> = {
+  0: 'left',
+  1: 'middle',
+  2: 'right',
+};
 
 export class InputManager {
-  private readonly held = new Set<InputAction>();
-  private readonly pressed = new Set<InputAction>();
-  private rightHeld = false;
-  private rightPressed = false;
+  private readonly heldActions = new Set<InputAction>();
+  private readonly pressedActions = new Set<InputAction>();
+  private readonly releasedActions = new Set<InputAction>();
+
+  private readonly heldPointerButtons = new Set<PointerButton>();
+  private readonly pressedPointerButtons = new Set<PointerButton>();
+  private readonly releasedPointerButtons = new Set<PointerButton>();
+
   private wheelDelta = 0;
   private settings: InputSettings = { ...DEFAULT_INPUT_SETTINGS };
 
@@ -15,52 +30,155 @@ export class InputManager {
     this.target.addEventListener('blur', this.onBlur);
   }
 
-  getMovementMode(): MovementMode { return this.settings.movementMode; }
-  setMovementMode(mode: MovementMode): void { this.settings.movementMode = mode; }
-  isClickToAttackEnabled(): boolean { return this.settings.clickToAttack; }
-  setClickToAttack(enabled: boolean): void { this.settings.clickToAttack = enabled; }
-  isHeld(action: InputAction): boolean { return this.held.has(action); }
+  dispose(): void {
+    this.target.removeEventListener('keydown', this.onKeyDown);
+    this.target.removeEventListener('keyup', this.onKeyUp);
+    this.target.removeEventListener('blur', this.onBlur);
+    this.reset();
+  }
+
+  getMovementMode(): MovementMode {
+    return this.settings.movementMode;
+  }
+
+  setMovementMode(mode: MovementMode): void {
+    this.settings.movementMode = mode;
+  }
+
+  isClickToAttackEnabled(): boolean {
+    return this.settings.clickToAttack;
+  }
+
+  setClickToAttack(enabled: boolean): void {
+    this.settings.clickToAttack = enabled;
+  }
+
+  isHeld(action: InputAction): boolean {
+    return this.heldActions.has(action);
+  }
 
   consumePressed(action: InputAction): boolean {
-    if (!this.pressed.has(action)) return false;
-    this.pressed.delete(action);
-    return true;
+    return this.consumeFromSet(this.pressedActions, action);
+  }
+
+  consumeReleased(action: InputAction): boolean {
+    return this.consumeFromSet(this.releasedActions, action);
   }
 
   getMoveAxes(): { x: number; z: number } {
     return {
-      x: (this.isHeld('moveRight') ? 1 : 0) - (this.isHeld('moveLeft') ? 1 : 0),
-      z: (this.isHeld('moveUp') ? 1 : 0) - (this.isHeld('moveDown') ? 1 : 0),
+      x:
+        (this.isHeld('moveRight') ? 1 : 0) -
+        (this.isHeld('moveLeft') ? 1 : 0),
+      z:
+        (this.isHeld('moveUp') ? 1 : 0) -
+        (this.isHeld('moveDown') ? 1 : 0),
     };
   }
 
-  notifyPointerDown(button: number): void {
-    if (button === 2) { this.rightHeld = true; this.rightPressed = true; }
+  notifyPointerDown(buttonNumber: number): void {
+    const button = POINTER_BUTTONS[buttonNumber];
+    if (!button) return;
+
+    if (!this.heldPointerButtons.has(button)) {
+      this.pressedPointerButtons.add(button);
+    }
+
+    this.heldPointerButtons.add(button);
   }
-  notifyPointerUp(button: number): void { if (button === 2) this.rightHeld = false; }
-  notifyWheel(deltaY: number): void { this.wheelDelta += deltaY; }
-  consumeRightPressed(): boolean { const v=this.rightPressed; this.rightPressed=false; return v; }
-  isRightHeld(): boolean { return this.rightHeld; }
-  consumeWheelDirection(): -1|0|1 { if (!this.wheelDelta) return 0; const v=this.wheelDelta>0?1:-1; this.wheelDelta=0; return v; }
-  endFrame(): void { this.pressed.clear(); this.rightPressed=false; this.wheelDelta=0; }
+
+  notifyPointerUp(buttonNumber: number): void {
+    const button = POINTER_BUTTONS[buttonNumber];
+    if (!button) return;
+
+    this.heldPointerButtons.delete(button);
+    this.releasedPointerButtons.add(button);
+  }
+
+  isPointerHeld(button: PointerButton): boolean {
+    return this.heldPointerButtons.has(button);
+  }
+
+  consumePointerPressed(button: PointerButton): boolean {
+    return this.consumeFromSet(this.pressedPointerButtons, button);
+  }
+
+  consumePointerReleased(button: PointerButton): boolean {
+    return this.consumeFromSet(this.releasedPointerButtons, button);
+  }
+
+  notifyWheel(deltaY: number): void {
+    this.wheelDelta += deltaY;
+  }
+
+  consumeWheelDirection(): -1 | 0 | 1 {
+    if (this.wheelDelta === 0) return 0;
+
+    const direction = this.wheelDelta > 0 ? 1 : -1;
+    this.wheelDelta = 0;
+    return direction;
+  }
+
+  endFrame(): void {
+    this.pressedActions.clear();
+    this.releasedActions.clear();
+    this.pressedPointerButtons.clear();
+    this.releasedPointerButtons.clear();
+    this.wheelDelta = 0;
+  }
+
+  private reset(): void {
+    this.heldActions.clear();
+    this.pressedActions.clear();
+    this.releasedActions.clear();
+    this.heldPointerButtons.clear();
+    this.pressedPointerButtons.clear();
+    this.releasedPointerButtons.clear();
+    this.wheelDelta = 0;
+  }
+
+  private consumeFromSet<T>(set: Set<T>, value: T): boolean {
+    if (!set.has(value)) return false;
+    set.delete(value);
+    return true;
+  }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === 'Tab') {
       event.preventDefault();
-      this.pressed.add(event.shiftKey ? 'partyPrevious' : 'partyNext');
+
+      if (!event.repeat) {
+        this.pressedActions.add(
+          event.shiftKey ? 'partyPrevious' : 'partyNext',
+        );
+      }
+
       return;
     }
+
     const action = KEY_BINDINGS[event.code];
     if (!action) return;
-    if (event.code === 'Space' || event.code.startsWith('Digit')) event.preventDefault();
-    if (!event.repeat) this.pressed.add(action);
-    this.held.add(action);
+
+    if (event.code === 'Space' || event.code.startsWith('Digit')) {
+      event.preventDefault();
+    }
+
+    if (!event.repeat) {
+      this.pressedActions.add(action);
+    }
+
+    this.heldActions.add(action);
   };
+
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     const action = KEY_BINDINGS[event.code];
-    if (action) this.held.delete(action);
+    if (!action) return;
+
+    this.heldActions.delete(action);
+    this.releasedActions.add(action);
   };
+
   private readonly onBlur = (): void => {
-    this.held.clear(); this.pressed.clear(); this.rightHeld=false; this.rightPressed=false; this.wheelDelta=0;
+    this.reset();
   };
 }
