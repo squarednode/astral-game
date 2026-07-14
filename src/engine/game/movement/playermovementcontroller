@@ -1,0 +1,183 @@
+import { TransformNode, Vector3 } from '@babylonjs/core';
+import type { InputManager } from '../../engine/input/InputManager';
+import {
+  DEFAULT_MOVEMENT_CONFIG,
+  type MovementConfig,
+} from './MovementConfig';
+
+export interface PlayerMovementCallbacks {
+  canMove: () => boolean;
+  getMoveSpeed: () => number;
+  canDodge: () => boolean;
+  onDodge: (cooldown: number) => void;
+}
+
+export class PlayerMovementController {
+  private readonly velocity = Vector3.Zero();
+  private pointerWorld = new Vector3(0, 0, 4);
+  private clickTarget: Vector3 | null = null;
+  private pointerDownAt = 0;
+  private pointerSteering = false;
+  private jumpVelocity = 0;
+  private grounded = true;
+
+  constructor(
+    private readonly input: InputManager,
+    private readonly actor: TransformNode,
+    private readonly callbacks: PlayerMovementCallbacks,
+    private readonly config: Readonly<MovementConfig> = DEFAULT_MOVEMENT_CONFIG,
+  ) {}
+
+  getPointerWorld(): Vector3 {
+    return this.pointerWorld;
+  }
+
+  setPointerWorld(worldPosition: Vector3): void {
+    this.pointerWorld.copyFrom(worldPosition);
+    this.pointerWorld.y = 0;
+
+    if (this.pointerSteering && this.input.getMovementMode() !== 'wasd') {
+      this.clickTarget = this.pointerWorld.clone();
+    }
+  }
+
+  beginPointerMovement(worldPosition: Vector3): void {
+    if (this.input.getMovementMode() === 'wasd') return;
+
+    this.pointerDownAt = performance.now();
+    this.pointerSteering = true;
+    this.setPointerWorld(worldPosition);
+    this.clickTarget = this.pointerWorld.clone();
+  }
+
+  endPointerMovement(): void {
+    if (!this.pointerSteering) return;
+
+    const heldDuration = performance.now() - this.pointerDownAt;
+    this.pointerSteering = false;
+
+    // A quick click retains its destination. A held steering command stops on release.
+    if (heldDuration >= this.config.holdReleaseThresholdMs) {
+      this.clickTarget = null;
+    }
+  }
+
+  requestJump(): void {
+    if (!this.callbacks.canMove() || !this.grounded) return;
+    this.grounded = false;
+    this.jumpVelocity = this.config.jumpVelocity;
+  }
+
+  requestDodge(): void {
+    if (!this.callbacks.canDodge()) return;
+
+    const direction = this.getPreferredDirection();
+    if (direction.lengthSquared() < 0.0001) return;
+
+    this.actor.position.addInPlace(direction.normalize().scale(this.config.dodgeDistance));
+    this.applyBounds();
+    this.callbacks.onDodge(this.config.dodgeCooldown);
+  }
+
+  update(dt: number): void {
+    if (!this.callbacks.canMove()) {
+      this.velocity.setAll(0);
+      return;
+    }
+
+    const desiredDirection = this.getDesiredMovementDirection();
+    const desiredVelocity = desiredDirection.scale(this.callbacks.getMoveSpeed());
+    const rate = desiredDirection.lengthSquared() > 0
+      ? this.config.acceleration
+      : this.config.deceleration;
+
+    this.moveVelocityToward(desiredVelocity, rate * dt);
+    this.actor.position.addInPlace(this.velocity.scale(dt));
+
+    this.updateJump(dt);
+    this.applyBounds();
+  }
+
+  private getDesiredMovementDirection(): Vector3 {
+    const axes = this.input.getMoveAxes();
+    const direct = new Vector3(axes.x, 0, axes.z);
+
+    if (direct.lengthSquared() > 0 && this.input.getMovementMode() !== 'click') {
+      this.clickTarget = null;
+      return direct.normalize();
+    }
+
+    if (this.clickTarget && this.input.getMovementMode() !== 'wasd') {
+      const toTarget = this.clickTarget.subtract(this.actor.position);
+      toTarget.y = 0;
+      const distance = toTarget.length();
+
+      if (distance <= this.config.arrivalRadius) {
+        this.clickTarget = null;
+        return Vector3.Zero();
+      }
+
+      return toTarget.normalize();
+    }
+
+    return Vector3.Zero();
+  }
+
+  private getPreferredDirection(): Vector3 {
+    const axes = this.input.getMoveAxes();
+    const direct = new Vector3(axes.x, 0, axes.z);
+    if (direct.lengthSquared() > 0) return direct;
+
+    if (this.clickTarget) {
+      const clickDirection = this.clickTarget.subtract(this.actor.position);
+      clickDirection.y = 0;
+      if (clickDirection.lengthSquared() > 0) return clickDirection;
+    }
+
+    const cursorDirection = this.pointerWorld.subtract(this.actor.position);
+    cursorDirection.y = 0;
+    if (cursorDirection.lengthSquared() > 0) return cursorDirection;
+
+    return new Vector3(
+      Math.sin(this.actor.rotation.y),
+      0,
+      Math.cos(this.actor.rotation.y),
+    );
+  }
+
+  private moveVelocityToward(target: Vector3, maxDelta: number): void {
+    const delta = target.subtract(this.velocity);
+    const distance = delta.length();
+
+    if (distance <= maxDelta || distance === 0) {
+      this.velocity.copyFrom(target);
+      return;
+    }
+
+    this.velocity.addInPlace(delta.scale(maxDelta / distance));
+  }
+
+  private updateJump(dt: number): void {
+    if (this.grounded && this.jumpVelocity === 0) return;
+
+    this.jumpVelocity -= this.config.gravity * dt;
+    this.actor.position.y += this.jumpVelocity * dt;
+
+    if (this.actor.position.y <= 0) {
+      this.actor.position.y = 0;
+      this.jumpVelocity = 0;
+      this.grounded = true;
+    }
+  }
+
+  private applyBounds(): void {
+    this.actor.position.x = Math.max(
+      this.config.minX,
+      Math.min(this.config.maxX, this.actor.position.x),
+    );
+    this.actor.position.z = Math.max(
+      this.config.minZ,
+      Math.min(this.config.maxZ, this.actor.position.z),
+    );
+  }
+}

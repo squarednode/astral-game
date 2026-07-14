@@ -1,0 +1,29 @@
+export interface MovementConfig {
+  acceleration: number;
+  deceleration: number;
+  arrivalRadius: number;
+  holdReleaseThresholdMs: number;
+  dodgeDistance: number;
+  dodgeCooldown: number;
+  jumpVelocity: number;
+  gravity: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+export const DEFAULT_MOVEMENT_CONFIG: Readonly<MovementConfig> = {
+  acceleration: 52,
+  deceleration: 68,
+  arrivalRadius: 0.2,
+  holdReleaseThresholdMs: 180,
+  dodgeDistance: 4.8,
+  dodgeCooldown: 1.35,
+  jumpVelocity: 7.6,
+  gravity: 18.5,
+  minX: -14.7,
+  maxX: 14.7,
+  minZ: -11.3,
+  maxZ: 11.3,
+};
