@@ -18,6 +18,7 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import { InputManager } from './engine/input/InputManager';
+import { PlayerMovementController } from './game/movement/PlayerMovementController';
 
 type Element = 'physical' | 'fire' | 'frost' | 'lightning' | 'arcane';
 type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
@@ -136,9 +137,6 @@ facingMarker.material = mat('facing', Color3.White(), 0.35);
 
 const input = new InputManager(window);
 let pointerWorld = new Vector3(0, 0, 4);
-let clickMoveTarget: Vector3 | null = null;
-let jumpVelocity = 0;
-let isGrounded = true;
 let swapInputCooldown = 0;
 let inventoryOpen = false;
 let gameOver = false;
@@ -156,6 +154,16 @@ const lootFeed = document.querySelector<HTMLDivElement>('#lootFeed')!;
 const inventoryEl = document.querySelector<HTMLDivElement>('#inventory')!;
 const itemGrid = document.querySelector<HTMLDivElement>('#itemGrid')!;
 const equippedEl = document.querySelector<HTMLDivElement>('#equipped')!;
+
+const movement = new PlayerMovementController(input, playerRoot, {
+  canMove: () => !inventoryOpen && !gameOver,
+  getMoveSpeed: () => active.speed,
+  canDodge: () => active.cooldowns.dodge <= 0 && !inventoryOpen && !gameOver,
+  onDodge: cooldown => {
+    active.cooldowns.dodge = cooldown;
+    vfxRing(playerRoot.position, active.color, 2.6, 0.22);
+  },
+});
 
 function powerFor(c = active): number { return 100 + (c.equipped?.power ?? 0); }
 function attackFor(c = active): number { return c.attackDamage + (c.equipped?.attackBonus ?? 0); }
@@ -350,25 +358,6 @@ function cycleControl(direction: 1 | -1): void {
   }
 }
 
-function jump(): void {
-  if (!isGrounded || inventoryOpen || gameOver) return;
-  isGrounded = false;
-  jumpVelocity = 7.4;
-}
-
-function dodge(): void {
-  if (active.cooldowns.dodge > 0 || inventoryOpen || gameOver) return;
-  const axes = input.getMoveAxes();
-  let dir = new Vector3(axes.x, 0, axes.z);
-  if (dir.lengthSquared() < 0.01 && clickMoveTarget) { dir = clickMoveTarget.subtract(playerRoot.position); dir.y = 0; }
-  if (dir.lengthSquared() < 0.01) { dir = pointerWorld.subtract(playerRoot.position); dir.y = 0; }
-  if (dir.lengthSquared() < 0.01) dir = new Vector3(Math.sin(playerRoot.rotation.y), 0, Math.cos(playerRoot.rotation.y));
-  dir.normalize();
-  playerRoot.position.addInPlace(dir.scale(4.2));
-  active.cooldowns.dodge = 1.45;
-  vfxRing(playerRoot.position, active.color, 2.6, 0.22);
-}
-
 function generateLoot(elite: boolean): void {
   if (!elite && Math.random() > 0.42) return;
   const roll = Math.random();
@@ -417,23 +406,48 @@ function endGame(): void {
   document.querySelector('#finalScore')!.textContent = `You reached wave ${wave} with ${kills} kills and found ${loot.length} items.`;
 }
 
+function updatePointerWorldFromCursor(): boolean {
+  const pick = scene.pick(
+    scene.pointerX,
+    scene.pointerY,
+    (mesh: any) => mesh === ground,
+  );
+
+  if (!pick?.hit || !pick.pickedPoint) return false;
+
+  pointerWorld.copyFrom(pick.pickedPoint);
+  movement.setPointerWorld(pick.pickedPoint);
+  return true;
+}
+
 scene.onPointerObservable.add((pi: any) => {
   if (pi.type === PointerEventTypes.POINTERDOWN) {
     input.notifyPointerDown(pi.event.button);
+
     if (pi.event.button === 0) {
-      const pick = scene.pick(scene.pointerX, scene.pointerY, (m: any) => m === ground);
-      if (pick?.hit && pick.pickedPoint) {
-        pointerWorld.copyFrom(pick.pickedPoint);
-        if (input.getMovementMode() !== 'wasd') { clickMoveTarget = pick.pickedPoint.clone(); clickMoveTarget.y = 0; }
+      canvas.setPointerCapture?.(pi.event.pointerId);
+      if (updatePointerWorldFromCursor()) {
+        movement.beginPointerMovement(pointerWorld);
       }
     }
+
     if (pi.event.button === 2) pi.event.preventDefault();
   }
-  if (pi.type === PointerEventTypes.POINTERUP) input.notifyPointerUp(pi.event.button);
-  if (pi.type === PointerEventTypes.POINTERMOVE) {
-    const pick = scene.pick(scene.pointerX, scene.pointerY, (m: any) => m === ground);
-    if (pick?.hit && pick.pickedPoint) pointerWorld.copyFrom(pick.pickedPoint);
+
+  if (pi.type === PointerEventTypes.POINTERUP) {
+    input.notifyPointerUp(pi.event.button);
+    if (pi.event.button === 0) {
+      movement.endPointerMovement();
+      if (canvas.hasPointerCapture?.(pi.event.pointerId)) {
+        canvas.releasePointerCapture(pi.event.pointerId);
+      }
+    }
   }
+
+  if (pi.type === PointerEventTypes.POINTERMOVE) {
+    updatePointerWorldFromCursor();
+  }
+
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
@@ -447,8 +461,8 @@ scene.onBeforeRenderObservable.add(() => {
   if (inventoryOpen || gameOver) { input.endFrame(); return; }
 
   if (input.consumePressed('toggleInventory')) { inventoryOpen = !inventoryOpen; inventoryEl.classList.toggle('hidden', !inventoryOpen); refreshHud(); }
-  if (input.consumePressed('dodge')) dodge();
-  if (input.consumePressed('jump')) jump();
+  if (input.consumePressed('dodge')) movement.requestDodge();
+  if (input.consumePressed('jump')) movement.requestJump();
   if (input.consumePressed('ability1')) castAbilitySlot(1);
   if (input.consumePressed('ability2')) castAbilitySlot(2);
   if (input.consumePressed('ability3')) castAbilitySlot(3);
@@ -457,29 +471,13 @@ scene.onBeforeRenderObservable.add(() => {
   if (input.consumePressed('partyPrevious')) cycleControl(-1);
   const wheelDirection = input.consumeWheelDirection();
   if (wheelDirection !== 0) cycleControl(wheelDirection);
-  if (input.consumeRightPressed() || input.isRightHeld()) basicAttack();
+  if (input.consumePointerPressed('right') || input.isPointerHeld('right')) basicAttack();
 
-  const axes = input.getMoveAxes();
-  let move = new Vector3(axes.x, 0, axes.z);
-  if (move.lengthSquared() > 0 && input.getMovementMode() !== 'click') {
-    clickMoveTarget = null;
-    move.normalize().scaleInPlace(active.speed * dt);
-    playerRoot.position.addInPlace(move);
-  } else if (clickMoveTarget && input.getMovementMode() !== 'wasd') {
-    const toTarget = clickMoveTarget.subtract(playerRoot.position); toTarget.y = 0;
-    const distance = toTarget.length();
-    if (distance <= 0.18) clickMoveTarget = null;
-    else playerRoot.position.addInPlace(toTarget.normalize().scale(Math.min(active.speed * dt, distance)));
-  }
+  // Repick every frame while held. This keeps steering responsive even when
+  // the browser coalesces pointer-move events or the cursor moves across VFX.
+  if (input.isPointerHeld('left')) updatePointerWorldFromCursor();
 
-  if (!isGrounded || jumpVelocity !== 0) {
-    jumpVelocity -= 18.5 * dt;
-    playerRoot.position.y += jumpVelocity * dt;
-    if (playerRoot.position.y <= 0) { playerRoot.position.y = 0; jumpVelocity = 0; isGrounded = true; }
-  }
-
-  playerRoot.position.x = Math.max(-14.7, Math.min(14.7, playerRoot.position.x));
-  playerRoot.position.z = Math.max(-11.3, Math.min(11.3, playerRoot.position.z));
+  movement.update(dt);
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
   camera.target = Vector3.Lerp(camera.target, playerRoot.position, 0.08);
@@ -531,3 +529,4 @@ scene.onBeforeRenderObservable.add(() => {
 refreshHud();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener('resize', () => engine.resize());
+window.addEventListener('beforeunload', () => input.dispose());
