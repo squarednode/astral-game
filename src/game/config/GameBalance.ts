@@ -1,0 +1,33 @@
+export const GameBalance = {
+  movement: {
+    acceleration: 48,
+    deceleration: 72,
+    turnResponsiveness: 16,
+    arrivalRadius: 0.22,
+    holdReleaseThresholdMs: 170,
+    dodgeDistance: 5.1,
+    dodgeDuration: 0.22,
+    dodgeCooldown: 1.25,
+    dodgeInvulnerabilityDuration: 0.20,
+    jumpVelocity: 7.9,
+    gravity: 19.5,
+    landingVelocityThreshold: -4.5,
+    minX: -14.7,
+    maxX: 14.7,
+    minZ: -11.3,
+    maxZ: 11.3,
+  },
+  camera: {
+    followSharpness: 8.5,
+    lookAheadDistance: 1.35,
+    lookAheadSharpness: 5.5,
+    idleRadius: 23,
+    movingRadius: 24.4,
+    zoomSharpness: 3.8,
+    movementSpeedForFullZoom: 7.5,
+  },
+  debug: {
+    enabled: true,
+    updateIntervalSeconds: 0.1,
+  },
+} as const;

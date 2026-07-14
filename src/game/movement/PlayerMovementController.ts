@@ -9,17 +9,33 @@ export interface PlayerMovementCallbacks {
   canMove: () => boolean;
   getMoveSpeed: () => number;
   canDodge: () => boolean;
-  onDodge: (cooldown: number) => void;
+  onDodgeStarted: (cooldown: number) => void;
+  onDodgeEnded?: () => void;
+  onLanded?: (impactSpeed: number) => void;
+}
+
+export interface MovementDebugState {
+  speed: number;
+  grounded: boolean;
+  dodging: boolean;
+  invulnerable: boolean;
+  movementSource: 'wasd' | 'click' | 'none';
+  velocity: Vector3;
 }
 
 export class PlayerMovementController {
   private readonly velocity = Vector3.Zero();
+  private readonly desiredDirection = Vector3.Zero();
+  private readonly dodgeDirection = Vector3.Zero();
   private pointerWorld = new Vector3(0, 0, 4);
   private clickTarget: Vector3 | null = null;
   private pointerDownAt = 0;
   private pointerSteering = false;
   private jumpVelocity = 0;
   private grounded = true;
+  private dodgeTimeRemaining = 0;
+  private invulnerabilityTimeRemaining = 0;
+  private movementSource: MovementDebugState['movementSource'] = 'none';
 
   constructor(
     private readonly input: InputManager,
@@ -30,6 +46,37 @@ export class PlayerMovementController {
 
   getPointerWorld(): Vector3 {
     return this.pointerWorld;
+  }
+
+  getVelocity(): Vector3 {
+    return this.velocity.clone();
+  }
+
+  getSpeed(): number {
+    return this.velocity.length();
+  }
+
+  isGrounded(): boolean {
+    return this.grounded;
+  }
+
+  isDodging(): boolean {
+    return this.dodgeTimeRemaining > 0;
+  }
+
+  isInvulnerable(): boolean {
+    return this.invulnerabilityTimeRemaining > 0;
+  }
+
+  getDebugState(): MovementDebugState {
+    return {
+      speed: this.getSpeed(),
+      grounded: this.grounded,
+      dodging: this.isDodging(),
+      invulnerable: this.isInvulnerable(),
+      movementSource: this.movementSource,
+      velocity: this.velocity.clone(),
+    };
   }
 
   setPointerWorld(worldPosition: Vector3): void {
@@ -56,38 +103,56 @@ export class PlayerMovementController {
     const heldDuration = performance.now() - this.pointerDownAt;
     this.pointerSteering = false;
 
-    // A quick click retains its destination. A held steering command stops on release.
     if (heldDuration >= this.config.holdReleaseThresholdMs) {
       this.clickTarget = null;
     }
   }
 
   requestJump(): void {
-    if (!this.callbacks.canMove() || !this.grounded) return;
+    if (!this.callbacks.canMove() || !this.grounded || this.isDodging()) return;
     this.grounded = false;
     this.jumpVelocity = this.config.jumpVelocity;
   }
 
   requestDodge(): void {
-    if (!this.callbacks.canDodge()) return;
+    if (!this.callbacks.canDodge() || this.isDodging()) return;
 
     const direction = this.getPreferredDirection();
     if (direction.lengthSquared() < 0.0001) return;
 
-    this.actor.position.addInPlace(direction.normalize().scale(this.config.dodgeDistance));
-    this.applyBounds();
-    this.callbacks.onDodge(this.config.dodgeCooldown);
+    this.dodgeDirection.copyFrom(direction.normalize());
+    this.dodgeTimeRemaining = this.config.dodgeDuration;
+    this.invulnerabilityTimeRemaining = this.config.dodgeInvulnerabilityDuration;
+    this.velocity.setAll(0);
+    this.clickTarget = null;
+    this.callbacks.onDodgeStarted(this.config.dodgeCooldown);
   }
 
   update(dt: number): void {
+    this.invulnerabilityTimeRemaining = Math.max(
+      0,
+      this.invulnerabilityTimeRemaining - dt,
+    );
+
     if (!this.callbacks.canMove()) {
       this.velocity.setAll(0);
       return;
     }
 
-    const desiredDirection = this.getDesiredMovementDirection();
-    const desiredVelocity = desiredDirection.scale(this.callbacks.getMoveSpeed());
-    const rate = desiredDirection.lengthSquared() > 0
+    if (this.isDodging()) {
+      this.updateDodge(dt);
+      this.updateJump(dt);
+      this.applyBounds();
+      return;
+    }
+
+    const desired = this.getDesiredMovementDirection();
+    this.turnTowardDesiredDirection(desired, dt);
+
+    const desiredVelocity = this.desiredDirection.scale(
+      this.callbacks.getMoveSpeed(),
+    );
+    const rate = desired.lengthSquared() > 0
       ? this.config.acceleration
       : this.config.deceleration;
 
@@ -98,12 +163,27 @@ export class PlayerMovementController {
     this.applyBounds();
   }
 
+  private updateDodge(dt: number): void {
+    const prior = this.dodgeTimeRemaining;
+    const activeDt = Math.min(dt, prior);
+    const speed = this.config.dodgeDistance / this.config.dodgeDuration;
+    this.actor.position.addInPlace(
+      this.dodgeDirection.scale(speed * activeDt),
+    );
+    this.dodgeTimeRemaining = Math.max(0, prior - dt);
+
+    if (prior > 0 && this.dodgeTimeRemaining === 0) {
+      this.callbacks.onDodgeEnded?.();
+    }
+  }
+
   private getDesiredMovementDirection(): Vector3 {
     const axes = this.input.getMoveAxes();
     const direct = new Vector3(axes.x, 0, axes.z);
 
     if (direct.lengthSquared() > 0 && this.input.getMovementMode() !== 'click') {
       this.clickTarget = null;
+      this.movementSource = 'wasd';
       return direct.normalize();
     }
 
@@ -114,13 +194,34 @@ export class PlayerMovementController {
 
       if (distance <= this.config.arrivalRadius) {
         this.clickTarget = null;
+        this.movementSource = 'none';
         return Vector3.Zero();
       }
 
+      this.movementSource = 'click';
       return toTarget.normalize();
     }
 
+    this.movementSource = 'none';
     return Vector3.Zero();
+  }
+
+  private turnTowardDesiredDirection(target: Vector3, dt: number): void {
+    if (target.lengthSquared() <= 0.0001) {
+      this.desiredDirection.setAll(0);
+      return;
+    }
+
+    if (this.desiredDirection.lengthSquared() <= 0.0001) {
+      this.desiredDirection.copyFrom(target);
+      return;
+    }
+
+    const blend = 1 - Math.exp(-this.config.turnResponsiveness * dt);
+    Vector3.LerpToRef(this.desiredDirection, target, blend, this.desiredDirection);
+    if (this.desiredDirection.lengthSquared() > 0.0001) {
+      this.desiredDirection.normalize();
+    }
   }
 
   private getPreferredDirection(): Vector3 {
@@ -160,6 +261,7 @@ export class PlayerMovementController {
   private updateJump(dt: number): void {
     if (this.grounded && this.jumpVelocity === 0) return;
 
+    const priorVelocity = this.jumpVelocity;
     this.jumpVelocity -= this.config.gravity * dt;
     this.actor.position.y += this.jumpVelocity * dt;
 
@@ -167,6 +269,10 @@ export class PlayerMovementController {
       this.actor.position.y = 0;
       this.jumpVelocity = 0;
       this.grounded = true;
+
+      if (priorVelocity <= this.config.landingVelocityThreshold) {
+        this.callbacks.onLanded?.(Math.abs(priorVelocity));
+      }
     }
   }
 

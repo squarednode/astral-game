@@ -41,3 +41,34 @@ WASD immediately takes priority over click movement.
 R dodges farther than before.
 Space jumps and lands cleanly.
 Right-click combat, abilities, party switching, loot, and waves still work.
+
+#### v0.2.3
+Version 0.2.3 — Game Balance and Movement Feel
+Replace/add:
+`src/main.ts`
+`src/game/config/GameBalance.ts`
+`src/game/movement/MovementConfig.ts`
+`src/game/movement/PlayerMovementController.ts`
+`src/game/camera/PlayerCameraController.ts`
+`src/ui/debug/MovementDebugOverlay.ts`
+Included
+Centralized movement and camera tuning in `GameBalance.ts`
+Smoothed directional turning
+Continuous dodge over time instead of teleporting
+Dodge invulnerability frames
+Improved jump arc and landing ring
+Camera follow smoothing
+Movement look-ahead
+Slight movement-based camera zoom
+Temporary movement debug overlay
+Validate
+```bash
+npm run build
+npm run dev
+```
+Commit suggestion:
+```bash
+git add .
+git commit -m "feat: add game balance and movement feel tuning"
+git push
+```

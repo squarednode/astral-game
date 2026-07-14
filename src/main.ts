@@ -19,6 +19,8 @@ import {
 } from '@babylonjs/core';
 import { InputManager } from './engine/input/InputManager';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
+import { PlayerCameraController } from './game/camera/PlayerCameraController';
+import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
 
 type Element = 'physical' | 'fire' | 'frost' | 'lightning' | 'arcane';
 type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
@@ -159,11 +161,24 @@ const movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
   getMoveSpeed: () => active.speed,
   canDodge: () => active.cooldowns.dodge <= 0 && !inventoryOpen && !gameOver,
-  onDodge: cooldown => {
+  onDodgeStarted: (cooldown: number) => {
     active.cooldowns.dodge = cooldown;
-    vfxRing(playerRoot.position, active.color, 2.6, 0.22);
+    vfxRing(playerRoot.position, active.color, 2.8, 0.24);
+  },
+  onDodgeEnded: () => {
+    vfxRing(playerRoot.position, active.color, 1.8, 0.16);
+  },
+  onLanded: () => {
+    vfxRing(playerRoot.position, new Color3(0.72, 0.78, 0.86), 2.2, 0.22);
   },
 });
+
+const playerCamera = new PlayerCameraController(
+  camera,
+  playerRoot,
+  () => movement.getVelocity(),
+);
+const movementDebug = new MovementDebugOverlay();
 
 function powerFor(c = active): number { return 100 + (c.equipped?.power ?? 0); }
 function attackFor(c = active): number { return c.attackDamage + (c.equipped?.attackBonus ?? 0); }
@@ -390,6 +405,7 @@ function killEnemy(enemy: Enemy): void {
 }
 
 function hurtActive(amount: number): void {
+  if (movement.isInvulnerable()) return;
   active.hp -= amount;
   vfxRing(playerRoot.position, new Color3(1,.12,.12), 1.5, .16);
   if (active.hp <= 0) {
@@ -480,7 +496,8 @@ scene.onBeforeRenderObservable.add(() => {
   movement.update(dt);
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
-  camera.target = Vector3.Lerp(camera.target, playerRoot.position, 0.08);
+  playerCamera.update(dt);
+  movementDebug.update(dt, engine.getFps(), movement.getDebugState());
   swapInputCooldown = Math.max(0, swapInputCooldown - dt);
 
   party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
@@ -529,4 +546,7 @@ scene.onBeforeRenderObservable.add(() => {
 refreshHud();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener('resize', () => engine.resize());
-window.addEventListener('beforeunload', () => input.dispose());
+window.addEventListener('beforeunload', () => {
+  input.dispose();
+  movementDebug.dispose();
+});
