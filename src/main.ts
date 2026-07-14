@@ -1,5 +1,5 @@
 import './style.css';
-import './devtools/DeveloperConsole.css';
+import './ui/party/PartyManagementScreen.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -28,12 +28,17 @@ import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController
 import { HitFeedbackController } from './game/combat/HitFeedbackController';
 import type { HitWeight } from './game/combat/CombatTypes';
 import { GameBalance } from './game/config/GameBalance';
-import { DeveloperConsole } from './devtools/DeveloperConsole';
-import { developerState } from './devtools/DeveloperState';
-import type { DeveloperActions } from './devtools/DeveloperActions';
+import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
+import type {
+  GearFamily,
+  GearSlot,
+  PartyManagementModel,
+} from './ui/party/PartyManagementTypes';
 
 type Element = 'physical' | 'fire' | 'frost' | 'lightning' | 'arcane';
 type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
+type ItemFamily = GearFamily;
+type ItemSlot = GearSlot;
 type SkillKey = 'Q' | 'E';
 type AbilitySlot = 1 | 2 | 3 | 4;
 
@@ -50,12 +55,13 @@ interface CharacterDef {
   attackCooldown: number;
   qName: string;
   eName: string;
+  preferredFamily: ItemFamily;
 }
 
 interface CharacterState extends CharacterDef {
   hp: number;
   cooldowns: Record<SkillKey | 'attack' | 'dodge' | 'swap', number>;
-  equipped?: LootItem;
+  equipment: Partial<Record<ItemSlot, LootItem>>;
 }
 
 interface Enemy {
@@ -78,6 +84,11 @@ interface LootItem {
   attackBonus: number;
   maxHpBonus: number;
   swapBonus: number;
+  family: ItemFamily;
+  slot: ItemSlot;
+  focus: number;
+  precision: number;
+  technique: number;
   legendaryPower?: string;
 }
 
@@ -129,11 +140,11 @@ for (let i = 0; i < 34; i++) {
 }
 
 const defs: CharacterDef[] = [
-  { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
-  { id: 'warden', name: 'Warden', role: 'Frost support', element: 'frost', color: new Color3(0.28, 0.72, 1), maxHp: 130, speed: 6.5, attackDamage: 16, attackRange: 7.0, attackCooldown: 0.72, qName: 'Frost Field', eName: 'Ice Barrier' },
-  { id: 'tempest', name: 'Tempest', role: 'Lightning assassin', element: 'lightning', color: new Color3(0.72, 0.42, 1), maxHp: 115, speed: 8.2, attackDamage: 19, attackRange: 3.0, attackCooldown: 0.36, qName: 'Chain Arc', eName: 'Blink Strike' },
+  { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
+  { id: 'warden', name: 'Warden', role: 'Frost support', preferredFamily: 'fortified', element: 'frost', color: new Color3(0.28, 0.72, 1), maxHp: 130, speed: 6.5, attackDamage: 16, attackRange: 7.0, attackCooldown: 0.72, qName: 'Frost Field', eName: 'Ice Barrier' },
+  { id: 'tempest', name: 'Tempest', role: 'Lightning assassin', preferredFamily: 'focused', element: 'lightning', color: new Color3(0.72, 0.42, 1), maxHp: 115, speed: 8.2, attackDamage: 19, attackRange: 3.0, attackCooldown: 0.36, qName: 'Chain Arc', eName: 'Blink Strike' },
 ];
-const party: CharacterState[] = defs.map(d => ({ ...d, hp: d.maxHp, cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 } }));
+const party: CharacterState[] = defs.map(d => ({ ...d, hp: d.maxHp, cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 }, equipment: {} }));
 let activeIndex = 0;
 let active = party[0];
 
@@ -159,15 +170,12 @@ let lootId = 1;
 let enemies: Enemy[] = [];
 let loot: LootItem[] = [];
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
-let scheduledWave: number | null = null;
 let projectiles: { mesh: Mesh; vel: Vector3; ttl: number; damage: number; element: Element; pierce: number }[] = [];
 
 const partyEl = document.querySelector<HTMLDivElement>('#party')!;
 const abilitiesEl = document.querySelector<HTMLDivElement>('#abilities')!;
 const lootFeed = document.querySelector<HTMLDivElement>('#lootFeed')!;
 const inventoryEl = document.querySelector<HTMLDivElement>('#inventory')!;
-const itemGrid = document.querySelector<HTMLDivElement>('#itemGrid')!;
-const equippedEl = document.querySelector<HTMLDivElement>('#equipped')!;
 
 const movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
@@ -196,9 +204,41 @@ const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
 const combat = new CombatSystem(damageNumbers, hitFeedback, playerCamera);
 
-function powerFor(c = active): number { return 100 + (c.equipped?.power ?? 0); }
-function attackFor(c = active): number { return c.attackDamage + (c.equipped?.attackBonus ?? 0); }
-function hpMax(c: CharacterState): number { return c.maxHp + (c.equipped?.maxHpBonus ?? 0); }
+const partyManagement = new PartyManagementScreen(inventoryEl, {
+  close: () => {
+    inventoryOpen = false;
+    partyManagement.setOpen(false);
+  },
+  equip: equipItemToCharacter,
+});
+
+function equippedItems(c: CharacterState): LootItem[] {
+  return Object.values(c.equipment).filter(
+    (item): item is LootItem => Boolean(item),
+  );
+}
+
+function powerFor(c = active): number {
+  return 100 + equippedItems(c).reduce((sum, item) => sum + item.power, 0);
+}
+
+function attackFor(c = active): number {
+  return c.attackDamage + equippedItems(c).reduce((sum, item) => sum + item.attackBonus, 0);
+}
+
+function hpMax(c: CharacterState): number {
+  return c.maxHp + equippedItems(c).reduce((sum, item) => sum + item.maxHpBonus, 0);
+}
+
+function swapBonusFor(c: CharacterState): number {
+  return equippedItems(c).reduce((sum, item) => sum + item.swapBonus, 0);
+}
+
+function hasLegendaryPower(c: CharacterState, text: string): boolean {
+  return equippedItems(c).some(item =>
+    item.legendaryPower?.toLowerCase().includes(text.toLowerCase()),
+  );
+}
 
 function refreshHud(): void {
   partyEl.innerHTML = party.map((c, i) => `<div class="party-card ${i === activeIndex ? 'active' : ''}">
@@ -216,23 +256,52 @@ function refreshHud(): void {
   document.querySelector('#wave')!.textContent = String(wave);
   document.querySelector('#kills')!.textContent = String(kills);
   document.querySelector('#power')!.textContent = String(powerFor());
-  renderInventory();
+  renderPartyManagement();
 }
 
-function renderInventory(): void {
-  equippedEl.innerHTML = `<div class="equipped"><b>${active.name} equipped:</b> ${active.equipped ? `${active.equipped.name} (+${active.equipped.power} power)` : 'Nothing'}</div>`;
-  itemGrid.innerHTML = loot.length ? loot.map(item => `<div class="item ${item.rarity}" data-id="${item.id}"><h3>${item.name}</h3><p>${item.rarity.toUpperCase()} · Power ${item.power}</p><p>+${item.attackBonus} attack · +${item.maxHpBonus} health</p>${item.swapBonus ? `<p>+${item.swapBonus}% swap damage</p>` : ''}${item.legendaryPower ? `<p>${item.legendaryPower}</p>` : ''}</div>`).join('') : '<p>No loot yet. Elites have better drop rates.</p>';
-  itemGrid.querySelectorAll<HTMLElement>('.item').forEach(el => el.onclick = () => {
-    const item = loot.find(x => x.id === Number(el.dataset.id));
-    if (!item) return;
-    const priorMax = hpMax(active);
-    active.equipped = item;
-    active.hp = Math.min(hpMax(active), active.hp + (hpMax(active) - priorMax));
-    feed(`${active.name} equipped ${item.name}.`);
-    refreshHud();
-  });
+function partyManagementModel(): PartyManagementModel {
+  return {
+    characters: party.map(character => ({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      preferredFamily: character.preferredFamily,
+      hp: character.hp,
+      maxHp: hpMax(character),
+      controlled: character.id === active.id,
+      equipment: character.equipment,
+      summary: {
+        power: Math.min(100, 35 + attackFor(character) * 1.6),
+        defense: Math.min(100, 25 + hpMax(character) * 0.28 + (character.preferredFamily === 'fortified' ? 22 : 0)),
+        mobility: Math.min(100, character.speed * 8 + equippedItems(character).reduce((sum, item) => sum + item.technique, 0)),
+        support: Math.min(100, 18 + equippedItems(character).reduce((sum, item) => sum + item.focus * 2, 0) + (character.id === 'warden' ? 35 : 0)),
+      },
+    })),
+    items: loot,
+  };
 }
 
+function renderPartyManagement(): void {
+  partyManagement.render(partyManagementModel());
+}
+
+function equipItemToCharacter(itemId: number, characterId: string): void {
+  const item = loot.find(candidate => candidate.id === itemId);
+  const character = party.find(candidate => candidate.id === characterId);
+  if (!item || !character) return;
+
+  for (const member of party) {
+    for (const slot of ['weapon', 'armor', 'relic'] as ItemSlot[]) {
+      if (member.equipment[slot]?.id === item.id) delete member.equipment[slot];
+    }
+  }
+
+  const priorMax = hpMax(character);
+  character.equipment[item.slot] = item;
+  character.hp = Math.min(hpMax(character), character.hp + Math.max(0, hpMax(character) - priorMax));
+  feed(`${character.name} equipped ${item.name}.`);
+  refreshHud();
+}
 function feed(text: string): void {
   const line = document.createElement('div');
   line.className = 'loot-line';
@@ -269,12 +338,9 @@ function spawnEnemy(elite = false): void {
 }
 
 function startWave(): void {
-  if (!developerState.wavesEnabled) return;
   const count = Math.min(6 + wave * 2, 24);
-  for (let i = 0; i < count; i++) {
-    window.setTimeout(() => spawnEnemy(false), i * 170);
-  }
-  if (wave % 2 === 0) window.setTimeout(() => spawnEnemy(true), 500);
+  for (let i = 0; i < count; i++) setTimeout(() => spawnEnemy(false), i * 170);
+  if (wave % 2 === 0) setTimeout(() => spawnEnemy(true), 500);
   feed(`Wave ${wave}: ${count}${wave % 2 === 0 ? ' plus an elite' : ''}.`);
 }
 startWave();
@@ -384,9 +450,9 @@ function swapTo(index: number): void {
   active.cooldowns.swap = 0.42;
   playerBody.material = mat('player', active.color, 0.08);
   vfxRing(playerRoot.position, active.color, 3.5, 0.35);
-  const swapMult = 1 + (active.equipped?.swapBonus ?? 0) / 100;
+  const swapMult = 1 + swapBonusFor(active) / 100;
   enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position) < 2.7).forEach(e => damageEnemy(e, 22 * swapMult, active.element, e.mesh.position, playerRoot.position, 'heavy'));
-  if (prior.equipped?.legendaryPower?.includes('frost trail')) {
+  if (hasLegendaryPower(prior, 'frost trail')) {
     const field = MeshBuilder.CreateCylinder('trail', { diameter: 4.5, height: 0.05 }, scene);
     field.position = playerRoot.position.clone(); field.position.y = 0.04; field.material = mat('trail', new Color3(0.3,0.8,1),0.3); field.visibility = 0.45;
     effects.push({ mesh: field, ttl: 3.5, tick: 0, type: 'frost', radius: 2.25, damage: 5 });
@@ -409,21 +475,35 @@ function cycleControl(direction: 1 | -1): void {
   }
 }
 
-function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
-  if (!forcedRarity && !elite && Math.random() > 0.42) return;
+function generateLoot(elite: boolean): void {
+  if (!elite && Math.random() > 0.42) return;
   const roll = Math.random();
-  const rarity: Rarity = forcedRarity ?? (elite && roll > 0.55 ? 'legendary' : roll > 0.72 ? 'rare' : roll > 0.35 ? 'magic' : 'common');
+  const rarity: Rarity = elite && roll > 0.55 ? 'legendary' : roll > 0.72 ? 'rare' : roll > 0.35 ? 'magic' : 'common';
   const power = ({ common: 6, magic: 12, rare: 20, legendary: 30 }[rarity]) + Math.floor(Math.random() * 8) + wave * 2;
   const prefixes = ['Jagged', 'Runed', 'Stormbound', 'Glacial', 'Astral', 'Bloodforged'];
   const bases = ['Loop', 'Sigil', 'Blade', 'Charm', 'Crest', 'Relic'];
+  const families: ItemFamily[] = ['fortified', 'agile', 'focused'];
+  const slots: ItemSlot[] = ['weapon', 'armor', 'relic'];
+  const family = families[Math.floor(Math.random() * families.length)];
+  const slot = slots[Math.floor(Math.random() * slots.length)];
   const item: LootItem = {
-    id: lootId++, name: `${prefixes[Math.floor(Math.random()*prefixes.length)]} ${bases[Math.floor(Math.random()*bases.length)]}`,
-    rarity, power, attackBonus: Math.floor(power * .42), maxHpBonus: Math.floor(power * 1.1), swapBonus: rarity === 'common' ? 0 : Math.floor(power * .45),
+    id: lootId++,
+    name: `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${bases[Math.floor(Math.random() * bases.length)]}`,
+    rarity,
+    power,
+    attackBonus: Math.floor(power * (family === 'agile' ? 0.52 : 0.34)),
+    maxHpBonus: Math.floor(power * (family === 'fortified' ? 1.55 : 0.82)),
+    swapBonus: rarity === 'common' ? 0 : Math.floor(power * 0.45),
+    family,
+    slot,
+    focus: Math.floor(power * (family === 'focused' ? 0.42 : 0.16)),
+    precision: Math.floor(power * (family === 'agile' ? 0.42 : 0.18)),
+    technique: Math.floor(power * (family === 'focused' ? 0.36 : 0.22)),
   };
   if (rarity === 'legendary') item.legendaryPower = Math.random() > .5 ? 'Swapping out leaves a frost trail.' : 'Swap attacks deal greatly increased damage.';
   loot.unshift(item);
   feed(`${rarity.toUpperCase()} DROP: ${item.name}`);
-  renderInventory();
+  renderPartyManagement();
 }
 
 function killEnemy(enemy: Enemy): void {
@@ -436,18 +516,12 @@ function killEnemy(enemy: Enemy): void {
   if (enemies.length === 0) {
     wave++;
     party.forEach(c => c.hp = Math.min(hpMax(c), c.hp + hpMax(c) * .22));
-    if (developerState.wavesEnabled) {
-      scheduledWave = window.setTimeout(() => {
-        scheduledWave = null;
-        startWave();
-      }, 1500);
-    }
+    setTimeout(startWave, 1500);
   }
   refreshHud();
 }
 
 function hurtActive(amount: number): void {
-  if (developerState.godMode) return;
   if (movement.isInvulnerable()) return;
   if (!combat.registerPlayerHit()) return;
   active.hp -= amount;
@@ -465,73 +539,6 @@ function endGame(): void {
   document.querySelector('#gameOver')!.classList.remove('hidden');
   document.querySelector('#finalScore')!.textContent = `You reached wave ${wave} with ${kills} kills and found ${loot.length} items.`;
 }
-
-const developerActions: DeveloperActions = {
-  restorePartyHealth: () => {
-    party.forEach(character => {
-      character.hp = hpMax(character);
-    });
-    refreshHud();
-    feed('Developer: party health restored.');
-  },
-
-  resetCooldowns: () => {
-    party.forEach(character => {
-      Object.keys(character.cooldowns).forEach(key => {
-        character.cooldowns[key as keyof typeof character.cooldowns] = 0;
-      });
-    });
-    refreshHud();
-    feed('Developer: cooldowns reset.');
-  },
-
-  spawnEnemy: (elite: boolean) => {
-    spawnEnemy(elite);
-    feed(`Developer: spawned ${elite ? 'elite' : 'enemy'}.`);
-  },
-
-  killAllEnemies: () => {
-    for (const enemy of [...enemies]) {
-      enemyTelegraphs.cancel(enemy.mesh);
-      enemy.mesh.dispose();
-    }
-    enemies = [];
-    refreshHud();
-    feed('Developer: all enemies removed.');
-  },
-
-  startNextWave: () => {
-    if (scheduledWave !== null) {
-      clearTimeout(scheduledWave);
-      scheduledWave = null;
-    }
-    wave++;
-    startWave();
-    refreshHud();
-  },
-
-  spawnLoot: (rarity: Rarity) => {
-    generateLoot(rarity === 'legendary', rarity);
-  },
-
-  clearInventory: () => {
-    loot = [];
-    renderInventory();
-    feed('Developer: inventory cleared.');
-  },
-
-  getStatus: () => ({
-    wave,
-    enemies: enemies.length,
-    loot: loot.length,
-    activeCharacter: active.name,
-  }),
-};
-
-const developerConsole = new DeveloperConsole(
-  developerState,
-  developerActions,
-);
 
 function updatePointerWorldFromCursor(): boolean {
   const pick = scene.pick(
@@ -578,13 +585,10 @@ scene.onPointerObservable.add((pi: any) => {
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
-window.addEventListener('keydown', event => {
-  if (event.code === 'Escape' && developerConsole.isOpen()) {
-    event.preventDefault();
-    developerConsole.close();
-  }
+document.querySelector('#closeInventory')?.addEventListener('click', () => {
+  inventoryOpen = false;
+  partyManagement.setOpen(false);
 });
-document.querySelector('#closeInventory')!.addEventListener('click', () => { inventoryOpen = false; inventoryEl.classList.add('hidden'); });
 document.querySelector('#restart')!.addEventListener('click', () => location.reload());
 
 let last = performance.now();
@@ -594,28 +598,13 @@ scene.onBeforeRenderObservable.add(() => {
   last = now;
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);
-  if (input.consumePressed('toggleDeveloperConsole')) {
-    developerConsole.toggle();
-  }
-
-  if (developerConsole.isOpen()) {
-    if (input.consumePressed('toggleInventory')) {
-      inventoryOpen = false;
-      inventoryEl.classList.add('hidden');
-    }
-    combat.hitStopEnabled = developerState.hitStopEnabled;
-    combat.damageNumbersEnabled = developerState.damageNumbersEnabled;
-    combat.knockbackEnabled = developerState.knockbackEnabled;
-    combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
-    combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
-    movementDebug.setVisible(developerState.movementDebugEnabled);
-    input.endFrame();
-    return;
-  }
-
   if (inventoryOpen || gameOver) { input.endFrame(); return; }
 
-  if (input.consumePressed('toggleInventory')) { inventoryOpen = !inventoryOpen; inventoryEl.classList.toggle('hidden', !inventoryOpen); refreshHud(); }
+  if (input.consumePressed('toggleInventory')) {
+    inventoryOpen = !inventoryOpen;
+    partyManagement.setOpen(inventoryOpen);
+    renderPartyManagement();
+  }
   if (input.consumePressed('dodge')) movement.requestDodge();
   if (input.consumePressed('jump')) movement.requestJump();
   if (input.consumePressed('ability1')) castAbilitySlot(1);
@@ -639,11 +628,7 @@ scene.onBeforeRenderObservable.add(() => {
   movementDebug.update(dt, engine.getFps(), movement.getDebugState());
   swapInputCooldown = Math.max(0, swapInputCooldown - dt);
 
-  party.forEach(c => Object.keys(c.cooldowns).forEach(k => {
-    c.cooldowns[k as keyof typeof c.cooldowns] = developerState.noCooldowns
-      ? 0
-      : Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt);
-  }));
+  party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
 
   for (const p of [...projectiles]) {
     p.mesh.position.addInPlace(p.vel.scale(dt)); p.ttl -= dt;
@@ -667,38 +652,18 @@ scene.onBeforeRenderObservable.add(() => {
     if (fx.ttl <= 0) { fx.mesh.dispose(); effects.splice(effects.indexOf(fx), 1); }
   }
 
-  combat.hitStopEnabled = developerState.hitStopEnabled;
-  combat.damageNumbersEnabled = developerState.damageNumbersEnabled;
-  combat.knockbackEnabled = developerState.knockbackEnabled;
-  combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
-  combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
-  movementDebug.setVisible(developerState.movementDebugEnabled);
-
   enemies.forEach(e => {
     combat.updateKnockback(e, dt);
     Object.keys(e.statuses).forEach(k => e.statuses[k as Element] = Math.max(0, (e.statuses[k as Element] ?? 0) - dt));
     const toPlayer = playerRoot.position.subtract(e.mesh.position); toPlayer.y = 0;
     const dist = toPlayer.length();
     e.attackCd -= dt;
-    if (!developerState.enemyAiEnabled) return;
-
     if (dist > GameBalance.combat.enemyAttackRange) {
       if (!enemyTelegraphs.isBusy(e.mesh)) e.mesh.position.addInPlace(toPlayer.normalize().scale(e.speed * dt * ((e.statuses.frost ?? 0) > 0 ? .58 : 1)));
     } else if (e.attackCd <= 0 && !enemyTelegraphs.isBusy(e.mesh)) {
-      if (!developerState.enemyTelegraphsEnabled) {
-        if (developerState.enemyDamageEnabled) hurtActive(e.damage);
-        e.attackCd = e.elite ? 1.15 : 1.55;
-        return;
-      }
-
       enemyTelegraphs.begin(e.mesh, e.elite, () => {
         const strikeDistance = Vector3.Distance(e.mesh.position, playerRoot.position);
-        if (
-          developerState.enemyDamageEnabled &&
-          strikeDistance <= GameBalance.combat.enemyAttackRange + (e.elite ? 0.8 : 0.35)
-        ) {
-          hurtActive(e.damage);
-        }
+        if (strikeDistance <= GameBalance.combat.enemyAttackRange + (e.elite ? 0.8 : 0.35)) hurtActive(e.damage);
         e.attackCd = e.elite ? 1.15 : 1.55;
       });
     }
@@ -714,6 +679,7 @@ scene.onBeforeRenderObservable.add(() => {
   input.endFrame();
 });
 
+partyManagement.setOpen(false);
 refreshHud();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener('resize', () => engine.resize());
@@ -723,5 +689,4 @@ window.addEventListener('beforeunload', () => {
   damageNumbers.dispose();
   hitFeedback.dispose();
   enemyTelegraphs.dispose();
-  developerConsole.dispose();
 });
