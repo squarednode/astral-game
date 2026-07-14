@@ -2,9 +2,7 @@
 
 All notable project changes will be documented here.
 
-## Unreleased
-
-### Added
+## Added
 
 - Initial browser-based ARPG prototype
 - Babylon.js rendering
@@ -12,10 +10,12 @@ All notable project changes will be documented here.
 - GitHub Pages deployment
 - Initial party, combat, enemy, and loot systems
 
+### 0.2.0
 Sprint 2 input update
 Copy the `src` files into the repository, then run `npm run build`.
 Controls: LMB move, RMB basic attack, WASD direct movement, R dodge, Space jump, 1-4 abilities, Tab/Shift+Tab or mouse wheel cycle control, I inventory.
 
+### 0.2.2 movement feel
 Sprint 2B — Movement feel
 Replace/add the included files, then run:
 ```bash
@@ -42,7 +42,7 @@ R dodges farther than before.
 Space jumps and lands cleanly.
 Right-click combat, abilities, party switching, loot, and waves still work.
 
-#### v0.2.3
+### v0.2.3 movement updates
 Version 0.2.3 — Game Balance and Movement Feel
 Replace/add:
 `src/main.ts`
@@ -70,5 +70,21 @@ Commit suggestion:
 ```bash
 git add .
 git commit -m "feat: add game balance and movement feel tuning"
+git push
+```
+##### 0.3.0 - Combat Feel Foundation
+Copy the included files into matching repository paths.
+Run:
+```bash
+npm run build
+npm run dev
+```
+Verify enemy hit flash, damage numbers, knockback, strong-hit camera shake,
+enemy attack telegraphs, dodge avoidance, player hit feedback, and all prior
+movement and party controls.
+Suggested commit:
+```bash
+git add .
+git commit -m "feat: add combat hit feedback and enemy telegraphs"
 git push
 ```

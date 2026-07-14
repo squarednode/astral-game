@@ -21,6 +21,12 @@ import { InputManager } from './engine/input/InputManager';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
+import { CombatSystem } from './game/combat/CombatSystem';
+import { DamageNumberManager } from './game/combat/DamageNumberManager';
+import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController';
+import { HitFeedbackController } from './game/combat/HitFeedbackController';
+import type { HitWeight } from './game/combat/CombatTypes';
+import { GameBalance } from './game/config/GameBalance';
 
 type Element = 'physical' | 'fire' | 'frost' | 'lightning' | 'arcane';
 type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
@@ -57,6 +63,7 @@ interface Enemy {
   elite: boolean;
   attackCd: number;
   statuses: Partial<Record<Element, number>>;
+  knockbackVelocity: Vector3;
 }
 
 interface LootItem {
@@ -179,6 +186,10 @@ const playerCamera = new PlayerCameraController(
   () => movement.getVelocity(),
 );
 const movementDebug = new MovementDebugOverlay();
+const damageNumbers = new DamageNumberManager(scene, camera, engine);
+const hitFeedback = new HitFeedbackController(scene);
+const enemyTelegraphs = new EnemyTelegraphController(scene);
+const combat = new CombatSystem(damageNumbers, hitFeedback, playerCamera);
 
 function powerFor(c = active): number { return 100 + (c.equipped?.power ?? 0); }
 function attackFor(c = active): number { return c.attackDamage + (c.equipped?.attackBonus ?? 0); }
@@ -249,7 +260,7 @@ function spawnEnemy(elite = false): void {
   mesh.material = mat(elite ? 'elite' : 'enemy', elite ? new Color3(0.68, 0.2, 0.58) : new Color3(0.34, 0.5, 0.34), elite ? 0.2 : 0.03);
   shadows.addShadowCaster(mesh);
   const hp = (elite ? 280 : 58) * (1 + (wave - 1) * 0.18);
-  enemies.push({ mesh, hp, maxHp: hp, speed: elite ? 2.1 : 2.65 + Math.random() * 0.7, damage: (elite ? 19 : 8) * (1 + wave * 0.08), elite, attackCd: Math.random(), statuses: {} });
+  enemies.push({ mesh, hp, maxHp: hp, speed: elite ? 2.1 : 2.65 + Math.random() * 0.7, damage: (elite ? 19 : 8) * (1 + wave * 0.08), elite, attackCd: Math.random(), statuses: {}, knockbackVelocity: Vector3.Zero() });
 }
 
 function startWave(): void {
@@ -260,26 +271,43 @@ function startWave(): void {
 }
 startWave();
 
-function damageEnemy(enemy: Enemy, amount: number, element: Element, hitPos = enemy.mesh.position): void {
+function damageEnemy(
+  enemy: Enemy,
+  amount: number,
+  element: Element,
+  hitPos = enemy.mesh.position,
+  sourcePosition = playerRoot.position,
+  weight: HitWeight = 'light',
+): void {
   const powerScale = powerFor() / 100;
   let final = amount * powerScale;
+  let resolvedWeight = weight;
+
   if (element === 'physical' && (enemy.statuses.frost ?? 0) > 0) {
     final *= 1.65;
     enemy.statuses.frost = 0;
+    resolvedWeight = 'reaction';
     vfxRing(hitPos, new Color3(0.65, 0.9, 1), 2.4);
+    combat.showReaction(hitPos, 'SHATTER', 'frost');
     feed('SHATTER!');
   }
+
   if (element === 'lightning' && (enemy.statuses.frost ?? 0) > 0) {
     final *= 1.35;
+    resolvedWeight = 'reaction';
     const nearby = enemies.filter(e => e !== enemy && Vector3.Distance(e.mesh.position, enemy.mesh.position) < 5).slice(0, 2);
-    nearby.forEach(e => { e.hp -= final * 0.45; vfxRing(e.mesh.position, active.color, 1.1, 0.2); });
+    nearby.forEach(e => {
+      const chainDamage = final * 0.45;
+      e.hp -= chainDamage;
+      combat.applyEnemyHit({ target: e, damage: chainDamage, element: 'lightning', worldPosition: e.mesh.position, sourcePosition: enemy.mesh.position, weight: 'light' });
+      vfxRing(e.mesh.position, active.color, 1.1, 0.2);
+    });
   }
+
   enemy.hp -= final;
   if (element !== 'physical') enemy.statuses[element] = 3.5;
-  enemy.mesh.scaling.setAll(1.12);
-  setTimeout(() => { if (!enemy.mesh.isDisposed()) enemy.mesh.scaling.setAll(1); }, 70);
+  combat.applyEnemyHit({ target: enemy, damage: final, element, worldPosition: hitPos, sourcePosition, weight: resolvedWeight });
 }
-
 function basicAttack(): void {
   if (active.cooldowns.attack > 0 || inventoryOpen || gameOver) return;
   active.cooldowns.attack = active.attackCooldown;
@@ -305,7 +333,7 @@ function castSkill(key: SkillKey): void {
   if (active.id === 'vanguard' && key === 'Q') {
     active.cooldowns.Q = 5;
     vfxRing(playerRoot.position, active.color, 7, 0.45);
-    enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position) < 4).forEach(e => damageEnemy(e, 52, 'physical'));
+    enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position) < 4).forEach(e => damageEnemy(e, 52, 'physical', e.mesh.position, playerRoot.position, 'heavy'));
   } else if (active.id === 'vanguard') {
     active.cooldowns.E = 8;
     party.forEach(c => c.cooldowns.attack = 0);
@@ -333,7 +361,7 @@ function castSkill(key: SkillKey): void {
       const destination = target.mesh.position.add(dir.scale(-1.1));
       destination.y = 0;
       playerRoot.position.copyFrom(destination);
-      damageEnemy(target, 48, 'lightning');
+      damageEnemy(target, 48, 'lightning', target.mesh.position, playerRoot.position, 'heavy');
       vfxRing(target.mesh.position, active.color, 2.8, 0.25);
     }
   }
@@ -349,7 +377,7 @@ function swapTo(index: number): void {
   playerBody.material = mat('player', active.color, 0.08);
   vfxRing(playerRoot.position, active.color, 3.5, 0.35);
   const swapMult = 1 + (active.equipped?.swapBonus ?? 0) / 100;
-  enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position) < 2.7).forEach(e => damageEnemy(e, 22 * swapMult, active.element));
+  enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position) < 2.7).forEach(e => damageEnemy(e, 22 * swapMult, active.element, e.mesh.position, playerRoot.position, 'heavy'));
   if (prior.equipped?.legendaryPower?.includes('frost trail')) {
     const field = MeshBuilder.CreateCylinder('trail', { diameter: 4.5, height: 0.05 }, scene);
     field.position = playerRoot.position.clone(); field.position.y = 0.04; field.material = mat('trail', new Color3(0.3,0.8,1),0.3); field.visibility = 0.45;
@@ -391,6 +419,7 @@ function generateLoot(elite: boolean): void {
 }
 
 function killEnemy(enemy: Enemy): void {
+  enemyTelegraphs.cancel(enemy.mesh);
   kills++;
   generateLoot(enemy.elite);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
@@ -406,6 +435,7 @@ function killEnemy(enemy: Enemy): void {
 
 function hurtActive(amount: number): void {
   if (movement.isInvulnerable()) return;
+  if (!combat.registerPlayerHit()) return;
   active.hp -= amount;
   vfxRing(playerRoot.position, new Color3(1,.12,.12), 1.5, .16);
   if (active.hp <= 0) {
@@ -473,7 +503,10 @@ document.querySelector('#restart')!.addEventListener('click', () => location.rel
 let last = performance.now();
 scene.onBeforeRenderObservable.add(() => {
   const now = performance.now();
-  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  const realDt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  const dt = combat.update(realDt);
+  enemyTelegraphs.update(realDt);
   if (inventoryOpen || gameOver) { input.endFrame(); return; }
 
   if (input.consumePressed('toggleInventory')) { inventoryOpen = !inventoryOpen; inventoryEl.classList.toggle('hidden', !inventoryOpen); refreshHud(); }
@@ -505,7 +538,7 @@ scene.onBeforeRenderObservable.add(() => {
   for (const p of [...projectiles]) {
     p.mesh.position.addInPlace(p.vel.scale(dt)); p.ttl -= dt;
     const hit = enemies.find(e => Vector3.Distance(e.mesh.position, p.mesh.position) < 0.8);
-    if (hit) { damageEnemy(hit, p.damage, p.element); p.pierce--; if (p.pierce < 0) p.ttl = 0; }
+    if (hit) { damageEnemy(hit, p.damage, p.element, hit.mesh.position, p.mesh.position.subtract(p.vel), p.damage >= 40 ? 'heavy' : 'light'); vfxRing(hit.mesh.position, active.color, 1.35, 0.16); p.pierce--; if (p.pierce < 0) p.ttl = 0; }
     if (p.ttl <= 0) { p.mesh.dispose(); projectiles.splice(projectiles.indexOf(p), 1); }
   }
 
@@ -525,12 +558,20 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   enemies.forEach(e => {
+    combat.updateKnockback(e, dt);
     Object.keys(e.statuses).forEach(k => e.statuses[k as Element] = Math.max(0, (e.statuses[k as Element] ?? 0) - dt));
     const toPlayer = playerRoot.position.subtract(e.mesh.position); toPlayer.y = 0;
     const dist = toPlayer.length();
     e.attackCd -= dt;
-    if (dist > 1.25) e.mesh.position.addInPlace(toPlayer.normalize().scale(e.speed * dt * ((e.statuses.frost ?? 0) > 0 ? .58 : 1)));
-    else if (e.attackCd <= 0) { hurtActive(e.damage); e.attackCd = e.elite ? 1.15 : 1.55; }
+    if (dist > GameBalance.combat.enemyAttackRange) {
+      if (!enemyTelegraphs.isBusy(e.mesh)) e.mesh.position.addInPlace(toPlayer.normalize().scale(e.speed * dt * ((e.statuses.frost ?? 0) > 0 ? .58 : 1)));
+    } else if (e.attackCd <= 0 && !enemyTelegraphs.isBusy(e.mesh)) {
+      enemyTelegraphs.begin(e.mesh, e.elite, () => {
+        const strikeDistance = Vector3.Distance(e.mesh.position, playerRoot.position);
+        if (strikeDistance <= GameBalance.combat.enemyAttackRange + (e.elite ? 0.8 : 0.35)) hurtActive(e.damage);
+        e.attackCd = e.elite ? 1.15 : 1.55;
+      });
+    }
   });
   [...enemies].filter(e => e.hp <= 0).forEach(killEnemy);
 
@@ -549,4 +590,7 @@ window.addEventListener('resize', () => engine.resize());
 window.addEventListener('beforeunload', () => {
   input.dispose();
   movementDebug.dispose();
+  damageNumbers.dispose();
+  hitFeedback.dispose();
+  enemyTelegraphs.dispose();
 });

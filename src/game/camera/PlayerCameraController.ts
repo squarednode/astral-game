@@ -4,6 +4,8 @@ import { GameBalance } from '../config/GameBalance';
 export class PlayerCameraController {
   private readonly lookAhead = Vector3.Zero();
   private readonly target = Vector3.Zero();
+  private shakeMagnitude = 0;
+  private shakeTime = 0;
 
   constructor(
     private readonly camera: ArcRotateCamera,
@@ -11,6 +13,11 @@ export class PlayerCameraController {
     private readonly getVelocity: () => Vector3,
   ) {
     this.target.copyFrom(actor.position);
+  }
+
+  requestShake(magnitude: number, duration = 0.14): void {
+    this.shakeMagnitude = Math.max(this.shakeMagnitude, magnitude);
+    this.shakeTime = Math.max(this.shakeTime, duration);
   }
 
   update(dt: number): void {
@@ -29,6 +36,18 @@ export class PlayerCameraController {
     const followBlend = 1 - Math.exp(-GameBalance.camera.followSharpness * dt);
     Vector3.LerpToRef(this.target, desiredTarget, followBlend, this.target);
     this.camera.target.copyFrom(this.target);
+
+    if (this.shakeTime > 0) {
+      this.shakeTime = Math.max(0, this.shakeTime - dt);
+      const fade = Math.min(1, this.shakeTime / 0.14);
+      this.camera.target.addInPlace(new Vector3(
+        (Math.random() - 0.5) * this.shakeMagnitude * fade,
+        0,
+        (Math.random() - 0.5) * this.shakeMagnitude * fade,
+      ));
+    } else {
+      this.shakeMagnitude = 0;
+    }
 
     const movementRatio = Math.min(
       1,
