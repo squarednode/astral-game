@@ -2,20 +2,18 @@
 
 All notable project changes will be documented here.
 
-## Added
-
 - Initial browser-based ARPG prototype
 - Babylon.js rendering
 - TypeScript and Vite build system
 - GitHub Pages deployment
 - Initial party, combat, enemy, and loot systems
 
-### 0.2.0
+## 0.2.0
 Sprint 2 input update
 Copy the `src` files into the repository, then run `npm run build`.
 Controls: LMB move, RMB basic attack, WASD direct movement, R dodge, Space jump, 1-4 abilities, Tab/Shift+Tab or mouse wheel cycle control, I inventory.
 
-### 0.2.2 movement feel
+## 0.2.2 movement feel
 Sprint 2B — Movement feel
 Replace/add the included files, then run:
 ```bash
@@ -42,7 +40,7 @@ R dodges farther than before.
 Space jumps and lands cleanly.
 Right-click combat, abilities, party switching, loot, and waves still work.
 
-### v0.2.3 movement updates
+## v0.2.3 movement updates
 Version 0.2.3 — Game Balance and Movement Feel
 Replace/add:
 `src/main.ts`
@@ -72,7 +70,7 @@ git add .
 git commit -m "feat: add game balance and movement feel tuning"
 git push
 ```
-##### 0.3.0 - Combat Feel Foundation
+### 0.3.0 - Combat Feel Foundation
 Copy the included files into matching repository paths.
 Run:
 ```bash
@@ -86,5 +84,44 @@ Suggested commit:
 ```bash
 git add .
 git commit -m "feat: add combat hit feedback and enemy telegraphs"
+git push
+```
+
+### 0.3.1 — Developer Tools
+New files
+`src/devtools/DeveloperConsole.ts`
+`src/devtools/DeveloperActions.ts`
+`src/devtools/DeveloperState.ts`
+`src/devtools/DeveloperConsole.css`
+Modified files
+`src/main.ts`
+`src/engine/input/InputTypes.ts`
+`src/engine/input/InputBindings.ts`
+`src/engine/input/InputManager.ts`
+`src/game/combat/CombatSystem.ts`
+`src/ui/debug/MovementDebugOverlay.ts`
+Other included combat/config files are unchanged reference copies.
+Controls
+`F1`: open or close Developer Tools
+`Escape`: close Developer Tools
+Test
+Open the panel with F1.
+Spawn normal and elite enemies.
+Toggle enemy AI and enemy damage separately.
+Toggle telegraphs.
+Restore party health and reset cooldowns.
+Toggle god mode and no cooldowns.
+Spawn all loot rarities.
+Toggle hit stop, damage numbers, knockback, camera shake, and player feedback.
+Pause auto waves and start the next wave manually.
+Toggle the movement debug overlay.
+```bash
+npm run build
+npm run dev
+```
+Suggested commit:
+```bash
+git add .
+git commit -m "feat: add in-game developer tools panel"
 git push
 ```

@@ -25,6 +25,10 @@ export class MovementDebugOverlay {
     document.body.appendChild(this.element);
   }
 
+  setVisible(visible: boolean): void {
+    this.element.hidden = !visible;
+  }
+
   update(dt: number, fps: number, state: MovementDebugState): void {
     if (this.element.hidden) return;
 

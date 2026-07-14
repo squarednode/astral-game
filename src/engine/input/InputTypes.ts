@@ -11,7 +11,8 @@ export type InputAction =
   | 'ability4'
   | 'partyNext'
   | 'partyPrevious'
-  | 'toggleInventory';
+  | 'toggleInventory'
+  | 'toggleDeveloperConsole';
 
 export type MovementMode = 'hybrid' | 'wasd' | 'click';
 

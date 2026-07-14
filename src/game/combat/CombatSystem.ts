@@ -9,6 +9,11 @@ import type { DamageElement, HitWeight, KnockbackTarget } from './CombatTypes';
 export class CombatSystem {
   private hitStopRemaining = 0;
   private playerHitInvulnerabilityRemaining = 0;
+  hitStopEnabled = true;
+  knockbackEnabled = true;
+  cameraShakeEnabled = true;
+  damageNumbersEnabled = true;
+  playerFeedbackEnabled = true;
 
   constructor(
     private readonly damageNumbers: DamageNumberManager,
@@ -26,9 +31,10 @@ export class CombatSystem {
     weight?: HitWeight;
   }): void {
     const weight = options.weight ?? 'light';
-    this.damageNumbers.spawn(options.worldPosition, options.damage, options.element);
+    if (this.damageNumbersEnabled) this.damageNumbers.spawn(options.worldPosition, options.damage, options.element);
     this.hitFeedback.flashEnemy(options.target.mesh, weight);
     const direction = options.target.mesh.position.subtract(options.sourcePosition);
+    if (!this.knockbackEnabled) direction.setAll(0);
     direction.y = 0;
     if (direction.lengthSquared() > 0.0001) {
       direction.normalize();
@@ -36,20 +42,20 @@ export class CombatSystem {
       options.target.knockbackVelocity.addInPlace(direction.scale(speed));
     }
     const stop = weight === 'reaction' ? this.config.reactionHitStopSeconds : weight === 'heavy' ? this.config.heavyHitStopSeconds : this.config.lightHitStopSeconds;
-    this.hitStopRemaining = Math.max(this.hitStopRemaining, stop);
+    if (this.hitStopEnabled) this.hitStopRemaining = Math.max(this.hitStopRemaining, stop);
     const shake = weight === 'reaction' ? this.config.cameraShakeReaction : weight === 'heavy' ? this.config.cameraShakeHeavy : this.config.cameraShakeLight;
-    this.camera.requestShake(shake);
+    if (this.cameraShakeEnabled) this.camera.requestShake(shake);
   }
 
   showReaction(position: Vector3, label: string, element: DamageElement): void {
-    this.damageNumbers.spawn(position, 0, element, label);
+    if (this.damageNumbersEnabled) this.damageNumbers.spawn(position, 0, element, label);
   }
 
   registerPlayerHit(): boolean {
     if (this.playerHitInvulnerabilityRemaining > 0) return false;
     this.playerHitInvulnerabilityRemaining = this.config.playerHitInvulnerabilitySeconds;
-    this.hitFeedback.flashPlayer();
-    this.camera.requestShake(this.config.cameraShakeHeavy);
+    if (this.playerFeedbackEnabled) this.hitFeedback.flashPlayer();
+    if (this.cameraShakeEnabled) this.camera.requestShake(this.config.cameraShakeHeavy);
     return true;
   }
 
