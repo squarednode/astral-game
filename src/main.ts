@@ -457,7 +457,7 @@ scene.onBeforeRenderObservable.add(() => {
   if (input.consumePressed('partyPrevious')) cycleControl(-1);
   const wheelDirection = input.consumeWheelDirection();
   if (wheelDirection !== 0) cycleControl(wheelDirection);
-  if (input.consumePointerPressed('right') || input.isPointerHeld('right')) basicAttack();
+  if (input.consumeRightPressed() || input.isRightHeld()) basicAttack();
 
   const axes = input.getMoveAxes();
   let move = new Vector3(axes.x, 0, axes.z);
@@ -531,4 +531,3 @@ scene.onBeforeRenderObservable.add(() => {
 refreshHud();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener('resize', () => engine.resize());
-window.addEventListener('beforeunload', () => input.dispose());
