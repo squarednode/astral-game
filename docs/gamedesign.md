@@ -153,15 +153,17 @@ Fight stronger enemies and bosses
     ↓
 Repeat
 
+---
+
 # 6. Camera and Presentation
 
-6.1 Perspective
+## 6.1 Perspective
 
 The game uses a 2.5D presentation.
 
 The world is built in 3D, but gameplay is viewed from a fixed or semi-fixed elevated camera.
 
-6.2 Camera Requirements
+## 6.2 Camera Requirements
 
 The camera should provide:
 
@@ -247,7 +249,7 @@ Players may later enable click-to-attack as an option.
 This avoids the common ARPG problem where the player becomes locked in place because the game attacks when the player intended to move.
 
 # 8. Movement and Traversal
-8.1 Movement
+## 8.1 Movement
 
 Movement should feel immediate and readable.
 
@@ -1124,6 +1126,34 @@ A mixture
 24.10 Loot Volume
 
 How much gear should drop before inventory management becomes annoying?
+
+## Encounter Structure
+
+The main game uses authored encounters rather than infinite enemy waves.
+
+Encounters may include:
+
+- Fixed enemy groups
+- Reinforcement phases
+- Elite arrivals
+- Environmental hazards
+- Objectives
+- Rewards
+- Route unlocks
+
+The encounter ends when its defined completion conditions are met.
+
+## Survival Mode
+
+The existing wave system is retained as a separate mode for:
+
+- Combat testing
+- Build testing
+- Performance testing
+- Endless survival gameplay
+- Future challenge or leaderboard modes
+
+Survival Mode is not the default campaign structure.
 
 # 25. Future Ideas Parking Lot
 

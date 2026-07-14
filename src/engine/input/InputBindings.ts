@@ -17,6 +17,6 @@ export const KEY_BINDINGS: Readonly<Partial<Record<string, InputAction>>> = {
   Digit3: 'ability3',
   Digit4: 'ability4',
   KeyI: 'toggleInventory',
-  F1: 'toggleDeveloperConsole',
+  KeyP: 'toggleDeveloperConsole',
 };
 

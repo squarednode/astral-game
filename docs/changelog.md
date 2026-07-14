@@ -125,3 +125,23 @@ git add .
 git commit -m "feat: add in-game developer tools panel"
 git push
 ```
+
+#### 0.4.0 - Party Management
+New files:
+src/ui/party/PartyManagementTypes.ts
+src/ui/party/PartyManagementScreen.ts
+src/ui/party/PartyManagementScreen.css
+Modified:
+src/main.ts
+Press I to open the unified party screen. Generate loot with the developer console, select an item, compare all three characters, and equip in two clicks.
+Validate:
+```bash
+npm run build
+npm run dev
+```
+Suggested commit:
+```bash
+git add .
+git commit -m "feat: add unified party management and shared inventory"
+git push
+```
