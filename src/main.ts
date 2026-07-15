@@ -62,6 +62,7 @@ interface CharacterState extends CharacterDef {
   hp: number;
   cooldowns: Record<SkillKey | 'attack' | 'dodge' | 'swap', number>;
   equipment: Partial<Record<ItemSlot, LootItem>>;
+  skillSlots: Partial<Record<AbilitySlot, SkillKey>>;
 }
 
 interface Enemy {
@@ -144,7 +145,13 @@ const defs: CharacterDef[] = [
   { id: 'warden', name: 'Warden', role: 'Frost support', preferredFamily: 'fortified', element: 'frost', color: new Color3(0.28, 0.72, 1), maxHp: 130, speed: 6.5, attackDamage: 16, attackRange: 7.0, attackCooldown: 0.72, qName: 'Frost Field', eName: 'Ice Barrier' },
   { id: 'tempest', name: 'Tempest', role: 'Lightning assassin', preferredFamily: 'focused', element: 'lightning', color: new Color3(0.72, 0.42, 1), maxHp: 115, speed: 8.2, attackDamage: 19, attackRange: 3.0, attackCooldown: 0.36, qName: 'Chain Arc', eName: 'Blink Strike' },
 ];
-const party: CharacterState[] = defs.map(d => ({ ...d, hp: d.maxHp, cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 }, equipment: {} }));
+const party: CharacterState[] = defs.map(d => ({
+  ...d,
+  hp: d.maxHp,
+  cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 },
+  equipment: {},
+  skillSlots: { 1: 'Q', 2: 'E' },
+}));
 let activeIndex = 0;
 let active = party[0];
 
@@ -210,6 +217,8 @@ const partyManagement = new PartyManagementScreen(inventoryEl, {
     partyManagement.setOpen(false);
   },
   equip: equipItemToCharacter,
+  destroyItems: destroyLootItems,
+  assignSkill: assignSkillSlot,
 });
 
 function equippedItems(c: CharacterState): LootItem[] {
@@ -223,11 +232,19 @@ function powerFor(c = active): number {
 }
 
 function attackFor(c = active): number {
-  return c.attackDamage + equippedItems(c).reduce((sum, item) => sum + item.attackBonus, 0);
+  return Math.max(
+    1,
+    c.attackDamage +
+      equippedItems(c).reduce((sum, item) => sum + item.attackBonus, 0),
+  );
 }
 
 function hpMax(c: CharacterState): number {
-  return c.maxHp + equippedItems(c).reduce((sum, item) => sum + item.maxHpBonus, 0);
+  return Math.max(
+    25,
+    c.maxHp +
+      equippedItems(c).reduce((sum, item) => sum + item.maxHpBonus, 0),
+  );
 }
 
 function swapBonusFor(c: CharacterState): number {
@@ -270,6 +287,11 @@ function partyManagementModel(): PartyManagementModel {
       maxHp: hpMax(character),
       controlled: character.id === active.id,
       equipment: character.equipment,
+      skills: [
+        { id: 'Q', name: character.qName },
+        { id: 'E', name: character.eName },
+      ],
+      skillSlots: character.skillSlots,
       summary: {
         power: Math.min(100, 35 + attackFor(character) * 1.6),
         defense: Math.min(100, 25 + hpMax(character) * 0.28 + (character.preferredFamily === 'fortified' ? 22 : 0)),
@@ -300,6 +322,49 @@ function equipItemToCharacter(itemId: number, characterId: string): void {
   character.equipment[item.slot] = item;
   character.hp = Math.min(hpMax(character), character.hp + Math.max(0, hpMax(character) - priorMax));
   feed(`${character.name} equipped ${item.name}.`);
+  refreshHud();
+}
+
+function destroyLootItems(itemIds: number[]): void {
+  const equippedIds = new Set(
+    party.flatMap(character =>
+      equippedItems(character).map(item => item.id),
+    ),
+  );
+  const destroyable = new Set(
+    itemIds.filter(itemId => !equippedIds.has(itemId)),
+  );
+
+  if (destroyable.size === 0) {
+    feed('No selected items could be destroyed.');
+    return;
+  }
+
+  loot = loot.filter(item => !destroyable.has(item.id));
+  feed(`Destroyed ${destroyable.size} item${destroyable.size === 1 ? '' : 's'}.`);
+  renderPartyManagement();
+}
+
+function assignSkillSlot(
+  characterId: string,
+  slot: AbilitySlot,
+  skillId: SkillKey | null,
+): void {
+  const character = party.find(candidate => candidate.id === characterId);
+  if (!character) return;
+
+  if (skillId === null) {
+    delete character.skillSlots[slot];
+  } else {
+    for (const existingSlot of [1, 2, 3, 4] as AbilitySlot[]) {
+      if (character.skillSlots[existingSlot] === skillId) {
+        delete character.skillSlots[existingSlot];
+      }
+    }
+    character.skillSlots[slot] = skillId;
+  }
+
+  feed(`${character.name} skill slot ${slot} updated.`);
   refreshHud();
 }
 function feed(text: string): void {
@@ -462,8 +527,8 @@ function swapTo(index: number): void {
 }
 
 function castAbilitySlot(slot: AbilitySlot): void {
-  if (slot === 1) castSkill('Q');
-  else if (slot === 2) castSkill('E');
+  const skill = active.skillSlots[slot];
+  if (skill) castSkill(skill);
   else feed(`Ability slot ${slot} is not assigned yet.`);
 }
 
@@ -491,14 +556,44 @@ function generateLoot(elite: boolean): void {
     name: `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${bases[Math.floor(Math.random() * bases.length)]}`,
     rarity,
     power,
-    attackBonus: Math.floor(power * (family === 'agile' ? 0.52 : 0.34)),
-    maxHpBonus: Math.floor(power * (family === 'fortified' ? 1.55 : 0.82)),
-    swapBonus: rarity === 'common' ? 0 : Math.floor(power * 0.45),
+    attackBonus:
+      family === 'agile'
+        ? Math.floor(power * 0.62)
+        : family === 'focused'
+          ? Math.floor(power * 0.24)
+          : Math.floor(power * 0.18),
+    maxHpBonus:
+      family === 'fortified'
+        ? Math.floor(power * 1.75)
+        : family === 'agile'
+          ? -Math.floor(power * 0.42)
+          : -Math.floor(power * 0.2),
+    swapBonus:
+      rarity === 'common'
+        ? 0
+        : family === 'agile'
+          ? Math.floor(power * 0.58)
+          : Math.floor(power * 0.28),
     family,
     slot,
-    focus: Math.floor(power * (family === 'focused' ? 0.42 : 0.16)),
-    precision: Math.floor(power * (family === 'agile' ? 0.42 : 0.18)),
-    technique: Math.floor(power * (family === 'focused' ? 0.36 : 0.22)),
+    focus:
+      family === 'focused'
+        ? Math.floor(power * 0.56)
+        : family === 'fortified'
+          ? Math.floor(power * 0.22)
+          : -Math.floor(power * 0.08),
+    precision:
+      family === 'agile'
+        ? Math.floor(power * 0.52)
+        : family === 'focused'
+          ? Math.floor(power * 0.24)
+          : -Math.floor(power * 0.08),
+    technique:
+      family === 'focused'
+        ? Math.floor(power * 0.48)
+        : family === 'agile'
+          ? Math.floor(power * 0.22)
+          : -Math.floor(power * 0.18),
   };
   if (rarity === 'legendary') item.legendaryPower = Math.random() > .5 ? 'Swapping out leaves a frost trail.' : 'Swap attacks deal greatly increased damage.';
   loot.unshift(item);

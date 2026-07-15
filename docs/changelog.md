@@ -145,3 +145,55 @@ git add .
 git commit -m "feat: add unified party management and shared inventory"
 git push
 ```
+
+#### 0.4.1 — Party Management Refinement
+New behavior
+Inventory has a fixed-height scroll region.
+Party and character information remain visible as loot grows.
+Character selection in Party Management is independent from the character
+controlled in the game.
+Inventory recommendation sorting and comparisons use the selected menu
+character.
+Equipped slots use rarity-colored borders.
+Equipment has one equip path: the button under the selected character.
+Bulk selection supports:
+Select all visible unequipped items
+Clear selection
+Destroy selected
+Destroy visible common and magic items
+Equipped items cannot be destroyed.
+The selected character has Equipment, Skills, and Statistics tabs.
+Existing Q and E skills can be reassigned to slots 1–4.
+Gear now has explicit tradeoffs:
+Fortified: health and focus, reduced technique/precision
+Agile: attack, precision, and swap power, reduced health
+Focused: focus and technique, reduced health/raw attack
+Files
+Replace:
+`src/main.ts`
+`src/ui/party/PartyManagementTypes.ts`
+`src/ui/party/PartyManagementScreen.ts`
+`src/ui/party/PartyManagementScreen.css`
+Test
+```bash
+npm run build
+npm run dev
+```
+Validate:
+Generate enough loot to exceed one screen.
+Confirm only the inventory area scrolls.
+Select each character without changing the controlled game character.
+Confirm recommendation sorting changes with the selected character.
+Confirm equipped slot colors reflect rarity.
+Confirm only the selected character panel contains the Equip button.
+Select visible loot and destroy it in bulk.
+Confirm equipped items are protected from destruction.
+Reassign Q and E to different skill slots.
+Confirm the changed skill slots work in combat.
+Equip gear with negative stats and confirm comparisons clearly show tradeoffs.
+Suggested commit:
+```bash
+git add .
+git commit -m "feat: refine party management, skills, and loot cleanup"
+git push
+```
