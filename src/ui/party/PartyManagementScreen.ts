@@ -36,7 +36,7 @@ export class PartyManagementScreen {
   private model: PartyManagementModel = { characters: [], items: [] };
   private selectedItemId: number | null = null;
   private selectedCharacterId: string | null = null;
-  private selectedIds = new Set<number>();
+  private hoveredItemId: number | null = null;
   private filter: Filter = 'all';
   private sortMode: SortMode = 'recommended';
   private activeTab: CharacterTab = 'equipment';
@@ -50,6 +50,8 @@ export class PartyManagementScreen {
     this.host.addEventListener('click', this.onClick);
     this.host.addEventListener('input', this.onInput);
     this.host.addEventListener('change', this.onChange);
+    this.host.addEventListener('mouseover', this.onMouseOver);
+    this.host.addEventListener('mouseout', this.onMouseOut);
   }
 
   setOpen(open: boolean): void {
@@ -77,12 +79,6 @@ export class PartyManagementScreen {
       this.selectedItemId = null;
     }
 
-    this.selectedIds = new Set(
-      [...this.selectedIds].filter(id =>
-        model.items.some(item => item.id === id),
-      ),
-    );
-
     this.draw();
   }
 
@@ -90,12 +86,15 @@ export class PartyManagementScreen {
     this.host.removeEventListener('click', this.onClick);
     this.host.removeEventListener('input', this.onInput);
     this.host.removeEventListener('change', this.onChange);
+    this.host.removeEventListener('mouseover', this.onMouseOver);
+    this.host.removeEventListener('mouseout', this.onMouseOut);
   }
 
   private draw(): void {
     const selectedCharacter = this.getSelectedCharacter();
+    const previewItemId = this.hoveredItemId ?? this.selectedItemId;
     const selectedItem = this.model.items.find(
-      item => item.id === this.selectedItemId,
+      item => item.id === previewItemId,
     );
     const filteredItems = this.getFilteredItems();
     const partyPower = this.model.characters.reduce(
@@ -220,7 +219,7 @@ export class PartyManagementScreen {
             <div class="pm-selected-heading">
               <div>
                 <span>${selectedItem.rarity.toUpperCase()} · ${SLOT_LABELS[selectedItem.slot]}</span>
-                <h3>${selectedItem.name}</h3>
+                <h3>${selectedItem.favorite ? '★ ' : ''}${selectedItem.name}</h3>
                 <div class="pm-family ${selectedItem.family}">
                   ${FAMILY_LABELS[selectedItem.family]}
                 </div>
@@ -337,10 +336,6 @@ export class PartyManagementScreen {
     filteredItems: PartyEquipmentItem[],
     selectedCharacter?: PartyCharacterView,
   ): string {
-    const selectedVisibleCount = filteredItems.filter(item =>
-      this.selectedIds.has(item.id),
-    ).length;
-
     return `
       <div class="pm-inventory-header">
         <div>
@@ -380,17 +375,19 @@ export class PartyManagementScreen {
       </div>
 
       <div class="pm-maintenance">
-        <span>${this.selectedIds.size} selected</span>
-        <button data-action="select-visible">
-          Select visible (${filteredItems.length})
+        <span>${this.selectedItemId === null ? 'No item selected' : 'Selected item actions'}</span>
+        <button
+          data-action="favorite-selected"
+          ${this.selectedItemId === null ? 'disabled' : ''}
+        >
+          ${this.selectedItemId !== null && this.model.items.find(item => item.id === this.selectedItemId)?.favorite ? '★ Unfavorite' : '☆ Favorite'}
         </button>
-        <button data-action="clear-selection">Clear selection</button>
         <button
           class="danger"
           data-action="destroy-selected"
-          ${this.selectedIds.size === 0 ? 'disabled' : ''}
+          ${this.canDestroySelected() ? '' : 'disabled'}
         >
-          Destroy selected
+          Destroy selected item
         </button>
         <button
           class="danger subtle"
@@ -399,9 +396,7 @@ export class PartyManagementScreen {
         >
           Destroy visible common/magic
         </button>
-        ${selectedVisibleCount > 0
-          ? `<small>${selectedVisibleCount} selected items are visible</small>`
-          : ''}
+        <small>Equipped and favorited items are protected.</small>
       </div>
 
       <div class="pm-item-scroll">
@@ -450,11 +445,11 @@ export class PartyManagementScreen {
       ? this.compareForCharacter(item, selectedCharacter)
       : null;
     const equippedBy = this.equippedBy(item.id);
-    const selected = this.selectedIds.has(item.id);
 
     return `
       <article
         class="pm-item-card ${item.rarity} ${item.id === this.selectedItemId ? 'active' : ''}"
+        data-hover-item-id="${item.id}"
       >
         <button
           class="pm-item-main"
@@ -462,7 +457,7 @@ export class PartyManagementScreen {
           data-item-id="${item.id}"
         >
           <div class="pm-item-top">
-            <span>${item.rarity}</span>
+            <span>${item.favorite ? '★ ' : ''}${item.rarity}</span>
             <b>${item.power}</b>
           </div>
           <strong>${item.name}</strong>
@@ -477,16 +472,6 @@ export class PartyManagementScreen {
             : ''}
           ${equippedBy ? `<em>Equipped: ${equippedBy}</em>` : ''}
         </button>
-        <label class="pm-select-item">
-          <input
-            type="checkbox"
-            data-input="bulk-select"
-            data-item-id="${item.id}"
-            ${selected ? 'checked' : ''}
-            ${equippedBy ? 'disabled' : ''}
-          />
-          <span>${equippedBy ? 'Equipped' : 'Select'}</span>
-        </label>
       </article>
     `;
   }
@@ -696,6 +681,30 @@ export class PartyManagementScreen {
     })[character]!);
   }
 
+  private canDestroySelected(): boolean {
+    if (this.selectedItemId === null) return false;
+    const item = this.model.items.find(candidate => candidate.id === this.selectedItemId);
+    return Boolean(item && !item.favorite && !this.equippedBy(item.id));
+  }
+
+  private readonly onMouseOver = (event: MouseEvent): void => {
+    const card = (event.target as HTMLElement).closest<HTMLElement>('[data-hover-item-id]');
+    if (!card) return;
+    const id = Number(card.dataset.hoverItemId);
+    if (this.hoveredItemId === id) return;
+    this.hoveredItemId = id;
+    this.draw();
+  };
+
+  private readonly onMouseOut = (event: MouseEvent): void => {
+    const card = (event.target as HTMLElement).closest<HTMLElement>('[data-hover-item-id]');
+    if (!card) return;
+    const related = event.relatedTarget as Node | null;
+    if (related && card.contains(related)) return;
+    this.hoveredItemId = null;
+    this.draw();
+  };
+
   private readonly onClick = (event: MouseEvent): void => {
     const target = (event.target as HTMLElement).closest<HTMLElement>(
       '[data-action]',
@@ -735,32 +744,36 @@ export class PartyManagementScreen {
         );
         return;
 
-      case 'select-visible': {
-        for (const item of this.getFilteredItems()) {
-          if (!this.equippedBy(item.id)) this.selectedIds.add(item.id);
+      case 'favorite-selected':
+        if (this.selectedItemId !== null) {
+          this.actions.toggleFavorite(this.selectedItemId);
         }
-        this.draw();
+        return;
+
+      case 'destroy-selected': {
+        if (this.selectedItemId === null) return;
+        const item = this.model.items.find(candidate => candidate.id === this.selectedItemId);
+        if (!item || item.favorite || this.equippedBy(item.id)) return;
+        if (window.confirm(`Destroy ${item.name}?`)) {
+          this.destroy([item.id]);
+        }
         return;
       }
 
-      case 'clear-selection':
-        this.selectedIds.clear();
-        this.draw();
-        return;
-
-      case 'destroy-selected':
-        this.destroy([...this.selectedIds]);
-        return;
-
       case 'destroy-visible-low': {
-        const ids = this.getFilteredItems()
-          .filter(
-            item =>
-              !this.equippedBy(item.id) &&
-              (item.rarity === 'common' || item.rarity === 'magic'),
-          )
-          .map(item => item.id);
-        this.destroy(ids);
+        const candidates = this.getFilteredItems().filter(
+          item =>
+            !item.favorite &&
+            !this.equippedBy(item.id) &&
+            (item.rarity === 'common' || item.rarity === 'magic'),
+        );
+        if (candidates.length === 0) return;
+        const common = candidates.filter(item => item.rarity === 'common').length;
+        const magic = candidates.filter(item => item.rarity === 'magic').length;
+        const confirmed = window.confirm(
+          `Destroy ${candidates.length} visible items?\n\nCommon: ${common}\nMagic: ${magic}\n\nEquipped and favorited items are excluded.`,
+        );
+        if (confirmed) this.destroy(candidates.map(item => item.id));
         return;
       }
     }
@@ -779,10 +792,6 @@ export class PartyManagementScreen {
       return;
     }
 
-    if (target.dataset.input === 'bulk-select') {
-      const id = Number(target.dataset.itemId);
-      target.checked ? this.selectedIds.add(id) : this.selectedIds.delete(id);
-    }
   };
 
   private readonly onChange = (event: Event): void => {
@@ -806,7 +815,6 @@ export class PartyManagementScreen {
   private destroy(ids: number[]): void {
     if (ids.length === 0) return;
     this.actions.destroyItems(ids);
-    this.selectedIds.clear();
     if (this.selectedItemId !== null && ids.includes(this.selectedItemId)) {
       this.selectedItemId = null;
     }

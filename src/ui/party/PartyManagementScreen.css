@@ -454,6 +454,7 @@
 .pm-item-card.rare { border-color: rgba(244,204,74,.55); }
 .pm-item-card.legendary { border-color: rgba(224,129,43,.74); }
 .pm-item-card.active { outline: 2px solid #82b4ff; }
+.pm-item-card:hover { transform: translateY(-1px); background: rgba(90,130,200,.09); }
 
 .pm-item-main {
   display: block;
@@ -481,14 +482,6 @@
 .pm-item-main > em { margin-top: 6px; color: #a8b7cf; font-size: 9px; }
 .pm-recommendation { margin-top: 8px; padding: 5px; border-radius: 5px; font-size: 9px; }
 
-.pm-select-item {
-  display: flex;
-  gap: 5px;
-  padding: 6px 9px;
-  border-top: 1px solid rgba(255,255,255,.08);
-  color: #9cacbf;
-  font-size: 9px;
-}
 
 .pm-empty-inventory {
   grid-column: 1 / -1;

@@ -17,6 +17,7 @@ export interface PartyEquipmentItem {
   focus: number;
   precision: number;
   technique: number;
+  favorite: boolean;
   legendaryPower?: string;
 }
 
@@ -53,6 +54,7 @@ export interface PartyManagementActions {
   close(): void;
   equip(itemId: number, characterId: string): void;
   destroyItems(itemIds: number[]): void;
+  toggleFavorite(itemId: number): void;
   assignSkill(
     characterId: string,
     slot: SkillSlot,

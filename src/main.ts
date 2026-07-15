@@ -1,4 +1,5 @@
 import './style.css';
+import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
 import {
   ArcRotateCamera,
@@ -28,6 +29,9 @@ import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController
 import { HitFeedbackController } from './game/combat/HitFeedbackController';
 import type { HitWeight } from './game/combat/CombatTypes';
 import { GameBalance } from './game/config/GameBalance';
+import { DeveloperConsole } from './devtools/DeveloperConsole';
+import { developerState } from './devtools/DeveloperState';
+import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import type {
   GearFamily,
@@ -90,6 +94,7 @@ interface LootItem {
   focus: number;
   precision: number;
   technique: number;
+  favorite: boolean;
   legendaryPower?: string;
 }
 
@@ -177,6 +182,7 @@ let lootId = 1;
 let enemies: Enemy[] = [];
 let loot: LootItem[] = [];
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
+let scheduledWave: number | null = null;
 let projectiles: { mesh: Mesh; vel: Vector3; ttl: number; damage: number; element: Element; pierce: number }[] = [];
 
 const partyEl = document.querySelector<HTMLDivElement>('#party')!;
@@ -218,6 +224,7 @@ const partyManagement = new PartyManagementScreen(inventoryEl, {
   },
   equip: equipItemToCharacter,
   destroyItems: destroyLootItems,
+  toggleFavorite: toggleFavoriteLoot,
   assignSkill: assignSkillSlot,
 });
 
@@ -261,12 +268,22 @@ function refreshHud(): void {
   partyEl.innerHTML = party.map((c, i) => `<div class="party-card ${i === activeIndex ? 'active' : ''}">
     <div class="party-line"><div><div class="party-name">${i === activeIndex ? 'CONTROL · ' : ''}${c.name}</div><div class="party-role">${c.role}</div></div><b>${Math.ceil(c.hp)}</b></div>
     <div class="hpbar"><div class="hpfill" style="width:${Math.max(0, c.hp / hpMax(c) * 100)}%"></div></div></div>`).join('');
+  const skillName = (slot: AbilitySlot): string => {
+    const skill = active.skillSlots[slot];
+    if (skill === 'Q') return active.qName;
+    if (skill === 'E') return active.eName;
+    return 'Unassigned';
+  };
+  const skillCooldown = (slot: AbilitySlot): number => {
+    const skill = active.skillSlots[slot];
+    return skill ? active.cooldowns[skill] : 0;
+  };
   abilitiesEl.innerHTML = [
     ['RMB', 'Basic', active.cooldowns.attack],
-    ['1', active.qName, active.cooldowns.Q],
-    ['2', active.eName, active.cooldowns.E],
-    ['3', 'Unassigned', 0],
-    ['4', 'Unassigned', 0],
+    ['1', skillName(1), skillCooldown(1)],
+    ['2', skillName(2), skillCooldown(2)],
+    ['3', skillName(3), skillCooldown(3)],
+    ['4', skillName(4), skillCooldown(4)],
     ['R', 'Dodge', active.cooldowns.dodge],
     ['Space', 'Jump', 0],
   ].map(([key, name, cd]) => `<div class="ability"><kbd>${key}</kbd>${name}${Number(cd) > 0 ? `<div class="cooldown">${Number(cd).toFixed(1)}</div>` : ''}</div>`).join('');
@@ -332,7 +349,10 @@ function destroyLootItems(itemIds: number[]): void {
     ),
   );
   const destroyable = new Set(
-    itemIds.filter(itemId => !equippedIds.has(itemId)),
+    itemIds.filter(itemId => {
+      const item = loot.find(candidate => candidate.id === itemId);
+      return !equippedIds.has(itemId) && !item?.favorite;
+    }),
   );
 
   if (destroyable.size === 0) {
@@ -342,6 +362,14 @@ function destroyLootItems(itemIds: number[]): void {
 
   loot = loot.filter(item => !destroyable.has(item.id));
   feed(`Destroyed ${destroyable.size} item${destroyable.size === 1 ? '' : 's'}.`);
+  renderPartyManagement();
+}
+
+function toggleFavoriteLoot(itemId: number): void {
+  const item = loot.find(candidate => candidate.id === itemId);
+  if (!item) return;
+  item.favorite = !item.favorite;
+  feed(`${item.favorite ? 'Favorited' : 'Unfavorited'} ${item.name}.`);
   renderPartyManagement();
 }
 
@@ -403,6 +431,7 @@ function spawnEnemy(elite = false): void {
 }
 
 function startWave(): void {
+  if (!developerState.wavesEnabled) return;
   const count = Math.min(6 + wave * 2, 24);
   for (let i = 0; i < count; i++) setTimeout(() => spawnEnemy(false), i * 170);
   if (wave % 2 === 0) setTimeout(() => spawnEnemy(true), 500);
@@ -540,10 +569,10 @@ function cycleControl(direction: 1 | -1): void {
   }
 }
 
-function generateLoot(elite: boolean): void {
-  if (!elite && Math.random() > 0.42) return;
+function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
+  if (!forcedRarity && !elite && Math.random() > 0.42) return;
   const roll = Math.random();
-  const rarity: Rarity = elite && roll > 0.55 ? 'legendary' : roll > 0.72 ? 'rare' : roll > 0.35 ? 'magic' : 'common';
+  const rarity: Rarity = forcedRarity ?? (elite && roll > 0.55 ? 'legendary' : roll > 0.72 ? 'rare' : roll > 0.35 ? 'magic' : 'common');
   const power = ({ common: 6, magic: 12, rare: 20, legendary: 30 }[rarity]) + Math.floor(Math.random() * 8) + wave * 2;
   const prefixes = ['Jagged', 'Runed', 'Stormbound', 'Glacial', 'Astral', 'Bloodforged'];
   const bases = ['Loop', 'Sigil', 'Blade', 'Charm', 'Crest', 'Relic'];
@@ -588,6 +617,7 @@ function generateLoot(elite: boolean): void {
         : family === 'focused'
           ? Math.floor(power * 0.24)
           : -Math.floor(power * 0.08),
+    favorite: false,
     technique:
       family === 'focused'
         ? Math.floor(power * 0.48)
@@ -617,6 +647,7 @@ function killEnemy(enemy: Enemy): void {
 }
 
 function hurtActive(amount: number): void {
+  if (developerState.godMode) return;
   if (movement.isInvulnerable()) return;
   if (!combat.registerPlayerHit()) return;
   active.hp -= amount;
@@ -634,6 +665,73 @@ function endGame(): void {
   document.querySelector('#gameOver')!.classList.remove('hidden');
   document.querySelector('#finalScore')!.textContent = `You reached wave ${wave} with ${kills} kills and found ${loot.length} items.`;
 }
+
+const developerActions: DeveloperActions = {
+  restorePartyHealth: () => {
+    party.forEach(character => {
+      character.hp = hpMax(character);
+    });
+    refreshHud();
+    feed('Developer: party health restored.');
+  },
+
+  resetCooldowns: () => {
+    party.forEach(character => {
+      Object.keys(character.cooldowns).forEach(key => {
+        character.cooldowns[key as keyof typeof character.cooldowns] = 0;
+      });
+    });
+    refreshHud();
+    feed('Developer: cooldowns reset.');
+  },
+
+  spawnEnemy: (elite: boolean) => {
+    spawnEnemy(elite);
+    feed(`Developer: spawned ${elite ? 'elite' : 'enemy'}.`);
+  },
+
+  killAllEnemies: () => {
+    for (const enemy of [...enemies]) {
+      enemyTelegraphs.cancel(enemy.mesh);
+      enemy.mesh.dispose();
+    }
+    enemies = [];
+    refreshHud();
+    feed('Developer: all enemies removed.');
+  },
+
+  startNextWave: () => {
+    if (scheduledWave !== null) {
+      clearTimeout(scheduledWave);
+      scheduledWave = null;
+    }
+    wave++;
+    startWave();
+    refreshHud();
+  },
+
+  spawnLoot: (rarity: Rarity) => {
+    generateLoot(rarity === 'legendary', rarity);
+  },
+
+  clearInventory: () => {
+    loot = [];
+    renderPartyManagement();
+    feed('Developer: inventory cleared.');
+  },
+
+  getStatus: () => ({
+    wave,
+    enemies: enemies.length,
+    loot: loot.length,
+    activeCharacter: active.name,
+  }),
+};
+
+const developerConsole = new DeveloperConsole(
+  developerState,
+  developerActions,
+);
 
 function updatePointerWorldFromCursor(): boolean {
   const pick = scene.pick(
@@ -680,6 +778,12 @@ scene.onPointerObservable.add((pi: any) => {
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
+window.addEventListener('keydown', event => {
+  if (event.code === 'Escape' && developerConsole.isOpen()) {
+    event.preventDefault();
+    developerConsole.close();
+  }
+});
 document.querySelector('#closeInventory')?.addEventListener('click', () => {
   inventoryOpen = false;
   partyManagement.setOpen(false);
@@ -693,6 +797,21 @@ scene.onBeforeRenderObservable.add(() => {
   last = now;
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);
+  if (input.consumePressed('toggleDeveloperConsole')) {
+    developerConsole.toggle();
+  }
+
+  if (developerConsole.isOpen()) {
+    combat.hitStopEnabled = developerState.hitStopEnabled;
+    combat.damageNumbersEnabled = developerState.damageNumbersEnabled;
+    combat.knockbackEnabled = developerState.knockbackEnabled;
+    combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
+    combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
+    movementDebug.setVisible(developerState.movementDebugEnabled);
+    input.endFrame();
+    return;
+  }
+
   if (inventoryOpen || gameOver) { input.endFrame(); return; }
 
   if (input.consumePressed('toggleInventory')) {
@@ -723,7 +842,7 @@ scene.onBeforeRenderObservable.add(() => {
   movementDebug.update(dt, engine.getFps(), movement.getDebugState());
   swapInputCooldown = Math.max(0, swapInputCooldown - dt);
 
-  party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
+  party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = developerState.noCooldowns ? 0 : Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
 
   for (const p of [...projectiles]) {
     p.mesh.position.addInPlace(p.vel.scale(dt)); p.ttl -= dt;
@@ -747,12 +866,21 @@ scene.onBeforeRenderObservable.add(() => {
     if (fx.ttl <= 0) { fx.mesh.dispose(); effects.splice(effects.indexOf(fx), 1); }
   }
 
+  combat.hitStopEnabled = developerState.hitStopEnabled;
+  combat.damageNumbersEnabled = developerState.damageNumbersEnabled;
+  combat.knockbackEnabled = developerState.knockbackEnabled;
+  combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
+  combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
+  movementDebug.setVisible(developerState.movementDebugEnabled);
+
   enemies.forEach(e => {
     combat.updateKnockback(e, dt);
     Object.keys(e.statuses).forEach(k => e.statuses[k as Element] = Math.max(0, (e.statuses[k as Element] ?? 0) - dt));
     const toPlayer = playerRoot.position.subtract(e.mesh.position); toPlayer.y = 0;
     const dist = toPlayer.length();
     e.attackCd -= dt;
+    if (!developerState.enemyAiEnabled) return;
+
     if (dist > GameBalance.combat.enemyAttackRange) {
       if (!enemyTelegraphs.isBusy(e.mesh)) e.mesh.position.addInPlace(toPlayer.normalize().scale(e.speed * dt * ((e.statuses.frost ?? 0) > 0 ? .58 : 1)));
     } else if (e.attackCd <= 0 && !enemyTelegraphs.isBusy(e.mesh)) {

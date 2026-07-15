@@ -197,3 +197,34 @@ git add .
 git commit -m "feat: refine party management, skills, and loot cleanup"
 git push
 ```
+
+#### 0.4.2 — Party Management Polish
+Changes
+A clicked item is now the single selected item for inspect, equip, favorite, and destroy actions.
+Removed the separate selection checkbox workflow.
+Hovering an item temporarily previews its comparison; moving away returns to the clicked item.
+Favorited items display a star and are protected from destruction.
+Single-item destruction asks for confirmation.
+Bulk common/magic cleanup summarizes the count and excludes equipped/favorited items.
+Ability HUD labels now follow the actual 1–4 skill assignments.
+Developer console is restored on `P`.
+Save/load work remains deferred.
+Replace/add
+Copy all included `src/` files into matching paths.
+Test
+```bash
+npm run build
+npm run dev
+```
+Click one item and use Equip, Favorite, and Destroy without a checkbox.
+Hover another item and confirm preview returns to the clicked item afterward.
+Confirm favorited and equipped items cannot be destroyed.
+Confirm bulk cleanup shows a summary and excludes protected items.
+Reassign skills and confirm the in-game HUD names move to the correct number slots.
+Press `P` and confirm Developer Tools opens.
+Suggested commit:
+```bash
+git add .
+git commit -m "fix: polish item actions and restore developer tools"
+git push
+```

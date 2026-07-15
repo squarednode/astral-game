@@ -31,7 +31,7 @@ export class DeveloperConsole {
       <div class="dev-header">
         <div>
           <strong>Developer Tools</strong>
-          <small>KeyP / Escape to close</small>
+          <small>F1 / Escape to close</small>
         </div>
         <button data-action="close">×</button>
       </div>
