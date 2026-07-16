@@ -21,18 +21,24 @@ export interface MovementDebugState {
   invulnerable: boolean;
   movementSource: 'wasd' | 'click' | 'none';
   velocity: Vector3;
+  verticalVelocity: number;
+  supportHeight: number;
 }
 
 export class PlayerMovementController {
   private readonly velocity = Vector3.Zero();
   private readonly desiredDirection = Vector3.Zero();
   private readonly dodgeDirection = Vector3.Zero();
+
   private pointerWorld = new Vector3(0, 0, 4);
   private clickTarget: Vector3 | null = null;
   private pointerDownAt = 0;
   private pointerSteering = false;
-  private jumpVelocity = 0;
+
+  private verticalVelocity = 0;
+  private supportHeight = 0;
   private grounded = true;
+
   private dodgeTimeRemaining = 0;
   private invulnerabilityTimeRemaining = 0;
   private movementSource: MovementDebugState['movementSource'] = 'none';
@@ -49,7 +55,23 @@ export class PlayerMovementController {
   }
 
   getVelocity(): Vector3 {
+    return new Vector3(
+      this.velocity.x,
+      this.verticalVelocity,
+      this.velocity.z,
+    );
+  }
+
+  getHorizontalVelocity(): Vector3 {
     return this.velocity.clone();
+  }
+
+  getVerticalVelocity(): number {
+    return this.verticalVelocity;
+  }
+
+  getSupportHeight(): number {
+    return this.supportHeight;
   }
 
   getSpeed(): number {
@@ -75,15 +97,81 @@ export class PlayerMovementController {
       dodging: this.isDodging(),
       invulnerable: this.isInvulnerable(),
       movementSource: this.movementSource,
-      velocity: this.velocity.clone(),
+      velocity: this.getVelocity(),
+      verticalVelocity: this.verticalVelocity,
+      supportHeight: this.supportHeight,
     };
+  }
+
+  /**
+   * Updates the surface currently supporting the actor.
+   *
+   * Raising the support while grounded places the actor onto that surface.
+   * Lowering the support starts a natural fall instead of snapping downward.
+   * Airborne actors only receive the new landing height.
+   */
+  setSupportHeight(height: number): void {
+    const nextHeight = Math.max(0, height);
+    const priorHeight = this.supportHeight;
+    this.supportHeight = nextHeight;
+
+    if (!this.grounded) return;
+
+    if (nextHeight < priorHeight - 0.04) {
+      this.grounded = false;
+      this.verticalVelocity = 0;
+      return;
+    }
+
+    this.actor.position.y = nextHeight;
+  }
+
+  /**
+   * Reconciles movement after the support provider changes during the frame.
+   * This allows a descending jump to land on a raised log, rock, or platform.
+   */
+  reconcileSupportHeight(): void {
+    if (
+      !this.grounded &&
+      this.verticalVelocity <= 0 &&
+      this.actor.position.y <= this.supportHeight
+    ) {
+      const impactSpeed = Math.abs(this.verticalVelocity);
+      this.actor.position.y = this.supportHeight;
+      this.verticalVelocity = 0;
+      this.grounded = true;
+
+      if (impactSpeed >= Math.abs(this.config.landingVelocityThreshold)) {
+        this.callbacks.onLanded?.(impactSpeed);
+      }
+
+      return;
+    }
+
+    if (this.grounded) {
+      this.actor.position.y = this.supportHeight;
+    }
+  }
+
+  /**
+   * Used by teleports and Blink to reset vertical state without carrying an
+   * old jump or support surface into the new position.
+   */
+  resetVerticalState(height = 0): void {
+    this.supportHeight = Math.max(0, height);
+    this.actor.position.y = this.supportHeight;
+    this.verticalVelocity = 0;
+    this.grounded = true;
   }
 
   setPointerWorld(worldPosition: Vector3): void {
     this.pointerWorld.copyFrom(worldPosition);
     this.pointerWorld.y = 0;
 
-    if (this.pointerSteering && this.input.getMovementMode() !== 'wasd') {
+    if (
+      this.pointerSteering &&
+      this.input.getMovementMode() !== 'wasd'
+    ) {
       this.clickTarget = this.pointerWorld.clone();
     }
   }
@@ -109,9 +197,16 @@ export class PlayerMovementController {
   }
 
   requestJump(): void {
-    if (!this.callbacks.canMove() || !this.grounded || this.isDodging()) return;
+    if (
+      !this.callbacks.canMove() ||
+      !this.grounded ||
+      this.isDodging()
+    ) {
+      return;
+    }
+
     this.grounded = false;
-    this.jumpVelocity = this.config.jumpVelocity;
+    this.verticalVelocity = this.config.jumpVelocity;
   }
 
   requestDodge(): void {
@@ -122,7 +217,8 @@ export class PlayerMovementController {
 
     this.dodgeDirection.copyFrom(direction.normalize());
     this.dodgeTimeRemaining = this.config.dodgeDuration;
-    this.invulnerabilityTimeRemaining = this.config.dodgeInvulnerabilityDuration;
+    this.invulnerabilityTimeRemaining =
+      this.config.dodgeInvulnerabilityDuration;
     this.velocity.setAll(0);
     this.clickTarget = null;
     this.callbacks.onDodgeStarted(this.config.dodgeCooldown);
@@ -141,7 +237,7 @@ export class PlayerMovementController {
 
     if (this.isDodging()) {
       this.updateDodge(dt);
-      this.updateJump(dt);
+      this.updateVerticalMotion(dt);
       this.applyBounds();
       return;
     }
@@ -152,24 +248,28 @@ export class PlayerMovementController {
     const desiredVelocity = this.desiredDirection.scale(
       this.callbacks.getMoveSpeed(),
     );
-    const rate = desired.lengthSquared() > 0
-      ? this.config.acceleration
-      : this.config.deceleration;
+    const rate =
+      desired.lengthSquared() > 0
+        ? this.config.acceleration
+        : this.config.deceleration;
 
     this.moveVelocityToward(desiredVelocity, rate * dt);
     this.actor.position.addInPlace(this.velocity.scale(dt));
 
-    this.updateJump(dt);
+    this.updateVerticalMotion(dt);
     this.applyBounds();
   }
 
   private updateDodge(dt: number): void {
     const prior = this.dodgeTimeRemaining;
     const activeDt = Math.min(dt, prior);
-    const speed = this.config.dodgeDistance / this.config.dodgeDuration;
+    const speed =
+      this.config.dodgeDistance / this.config.dodgeDuration;
+
     this.actor.position.addInPlace(
       this.dodgeDirection.scale(speed * activeDt),
     );
+
     this.dodgeTimeRemaining = Math.max(0, prior - dt);
 
     if (prior > 0 && this.dodgeTimeRemaining === 0) {
@@ -181,14 +281,22 @@ export class PlayerMovementController {
     const axes = this.input.getMoveAxes();
     const direct = new Vector3(axes.x, 0, axes.z);
 
-    if (direct.lengthSquared() > 0 && this.input.getMovementMode() !== 'click') {
+    if (
+      direct.lengthSquared() > 0 &&
+      this.input.getMovementMode() !== 'click'
+    ) {
       this.clickTarget = null;
       this.movementSource = 'wasd';
       return direct.normalize();
     }
 
-    if (this.clickTarget && this.input.getMovementMode() !== 'wasd') {
-      const toTarget = this.clickTarget.subtract(this.actor.position);
+    if (
+      this.clickTarget &&
+      this.input.getMovementMode() !== 'wasd'
+    ) {
+      const toTarget = this.clickTarget.subtract(
+        this.actor.position,
+      );
       toTarget.y = 0;
       const distance = toTarget.length();
 
@@ -206,7 +314,10 @@ export class PlayerMovementController {
     return Vector3.Zero();
   }
 
-  private turnTowardDesiredDirection(target: Vector3, dt: number): void {
+  private turnTowardDesiredDirection(
+    target: Vector3,
+    dt: number,
+  ): void {
     if (target.lengthSquared() <= 0.0001) {
       this.desiredDirection.setAll(0);
       return;
@@ -217,8 +328,16 @@ export class PlayerMovementController {
       return;
     }
 
-    const blend = 1 - Math.exp(-this.config.turnResponsiveness * dt);
-    Vector3.LerpToRef(this.desiredDirection, target, blend, this.desiredDirection);
+    const blend =
+      1 - Math.exp(-this.config.turnResponsiveness * dt);
+
+    Vector3.LerpToRef(
+      this.desiredDirection,
+      target,
+      blend,
+      this.desiredDirection,
+    );
+
     if (this.desiredDirection.lengthSquared() > 0.0001) {
       this.desiredDirection.normalize();
     }
@@ -227,17 +346,27 @@ export class PlayerMovementController {
   private getPreferredDirection(): Vector3 {
     const axes = this.input.getMoveAxes();
     const direct = new Vector3(axes.x, 0, axes.z);
+
     if (direct.lengthSquared() > 0) return direct;
 
     if (this.clickTarget) {
-      const clickDirection = this.clickTarget.subtract(this.actor.position);
+      const clickDirection = this.clickTarget.subtract(
+        this.actor.position,
+      );
       clickDirection.y = 0;
-      if (clickDirection.lengthSquared() > 0) return clickDirection;
+      if (clickDirection.lengthSquared() > 0) {
+        return clickDirection;
+      }
     }
 
-    const cursorDirection = this.pointerWorld.subtract(this.actor.position);
+    const cursorDirection = this.pointerWorld.subtract(
+      this.actor.position,
+    );
     cursorDirection.y = 0;
-    if (cursorDirection.lengthSquared() > 0) return cursorDirection;
+
+    if (cursorDirection.lengthSquared() > 0) {
+      return cursorDirection;
+    }
 
     return new Vector3(
       Math.sin(this.actor.rotation.y),
@@ -246,7 +375,10 @@ export class PlayerMovementController {
     );
   }
 
-  private moveVelocityToward(target: Vector3, maxDelta: number): void {
+  private moveVelocityToward(
+    target: Vector3,
+    maxDelta: number,
+  ): void {
     const delta = target.subtract(this.velocity);
     const distance = delta.length();
 
@@ -255,23 +387,32 @@ export class PlayerMovementController {
       return;
     }
 
-    this.velocity.addInPlace(delta.scale(maxDelta / distance));
+    this.velocity.addInPlace(
+      delta.scale(maxDelta / distance),
+    );
   }
 
-  private updateJump(dt: number): void {
-    if (this.grounded && this.jumpVelocity === 0) return;
+  private updateVerticalMotion(dt: number): void {
+    if (this.grounded) {
+      this.actor.position.y = this.supportHeight;
+      return;
+    }
 
-    const priorVelocity = this.jumpVelocity;
-    this.jumpVelocity -= this.config.gravity * dt;
-    this.actor.position.y += this.jumpVelocity * dt;
+    const priorVelocity = this.verticalVelocity;
+    this.verticalVelocity -= this.config.gravity * dt;
+    this.actor.position.y += this.verticalVelocity * dt;
 
-    if (this.actor.position.y <= 0) {
-      this.actor.position.y = 0;
-      this.jumpVelocity = 0;
+    if (this.actor.position.y <= this.supportHeight) {
+      this.actor.position.y = this.supportHeight;
+      this.verticalVelocity = 0;
       this.grounded = true;
 
-      if (priorVelocity <= this.config.landingVelocityThreshold) {
-        this.callbacks.onLanded?.(Math.abs(priorVelocity));
+      if (
+        priorVelocity <= this.config.landingVelocityThreshold
+      ) {
+        this.callbacks.onLanded?.(
+          Math.abs(priorVelocity),
+        );
       }
     }
   }

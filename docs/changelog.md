@@ -8,7 +8,7 @@ All notable project changes will be documented here.
 - GitHub Pages deployment
 - Initial party, combat, enemy, and loot systems
 
-## 0.2.0
+# 0.2.0
 Sprint 2 input update
 Copy the `src` files into the repository, then run `npm run build`.
 Controls: LMB move, RMB basic attack, WASD direct movement, R dodge, Space jump, 1-4 abilities, Tab/Shift+Tab or mouse wheel cycle control, I inventory.
@@ -55,7 +55,7 @@ Movement look-ahead
 Slight movement-based camera zoom
 Temporary movement debug overlay
 
-### 0.3.0 - Combat Feel Foundation
+# 0.3.0 - Combat Feel Foundation
 Copy the included files into matching repository paths.
 
 Verify enemy hit flash, damage numbers, knockback, strong-hit camera shake,
@@ -63,7 +63,7 @@ enemy attack telegraphs, dodge avoidance, player hit feedback, and all prior
 movement and party controls.
 
 
-### 0.3.1 — Developer Tools
+## 0.3.1 — Developer Tools
 New files
 `src/devtools/DeveloperConsole.ts`
 `src/devtools/DeveloperActions.ts`
@@ -81,7 +81,7 @@ Controls
 `F1`: open or close Developer Tools
 `Escape`: close Developer Tools
 
-#### 0.4.0 - Party Management
+# 0.4.0 - Party Management
 New files:
 src/ui/party/PartyManagementTypes.ts
 src/ui/party/PartyManagementScreen.ts
@@ -91,7 +91,7 @@ src/main.ts
 Press I to open the unified party screen. Generate loot with the developer console, select an item, compare all three characters, and equip in two clicks.
 
 
-#### 0.4.1 — Party Management Refinement
+## 0.4.1 — Party Management Refinement
 New behavior
 Inventory has a fixed-height scroll region.
 Party and character information remain visible as loot grows.
@@ -120,7 +120,7 @@ Replace:
 `src/ui/party/PartyManagementScreen.ts`
 `src/ui/party/PartyManagementScreen.css`
 
-#### 0.4.2 — Party Management Polish
+## 0.4.2 — Party Management Polish
 Changes
 A clicked item is now the single selected item for inspect, equip, favorite, and destroy actions.
 Removed the separate selection checkbox workflow.
@@ -134,7 +134,7 @@ Save/load work remains deferred.
 Replace/add
 Copy all included `src/` files into matching paths.
 
-##### 0.5.0.1 — Outdoor Zone Foundation
+# 0.5.0.1 — Outdoor Zone Foundation
 This update replaces the small combat arena with the first handcrafted outdoor
 prototype zone.
 New files
@@ -179,7 +179,7 @@ Teleport to Exit
 Toggle World Collision
 Toggle Traversal Highlight
 
-##### 0.5.0.2 — Traversal Surface System
+## 0.5.0.2 — Traversal Surface System
 This update replaces the simple jump-clearance behavior for logs with reusable
 traversal surfaces.
 New file
@@ -215,7 +215,7 @@ Developer testing
 Press `P`, then enable `Traversal Highlight`.
 Blue anchor markers show the valid entry and exit locations.
 
-##### 0.5.0.3 — Guided and Free Traversal Surfaces
+## 0.5.0.3 — Guided and Free Traversal Surfaces
 This update generalizes traversal into two deliberate modes.
 Traversal modes
 Guided
@@ -257,7 +257,7 @@ Press `P` and enable `Traversal Highlight`.
 Blue anchor markers identify guided entry and exit points.
 Green overlays identify free traversal footprints.
 
-##### 0.5.0.4 — Movement Surface Polish and Blink Rules
+## 0.5.0.4 — Movement Surface Polish and Blink Rules
 This update refines traversal transitions and establishes the first formal
 Blink traversal rules.
 Traversal changes
@@ -304,7 +304,7 @@ Modified files
 `src/game/world/OutdoorZoneBuilder.ts`
 The package includes the complete matching 0.5.0.3 source set.
 
-##### 0.5.0.5 — Traversal Hotfix
+## 0.5.0.5 — Traversal Hotfix
 This hotfix removes the over-constrained entry/exit state machine introduced in
 0.5.0.4.
 Fixes
@@ -323,6 +323,81 @@ Modified files
 The package includes the complete matching 0.5.0.4 source set.
 
 
+# Astral 0.5.1.0 — Surface-Aware Movement
+
+This update replaces the competing traversal/jump logic with one coordinated
+vertical movement model.
+
+## Architecture
+
+`PlayerMovementController` now owns all vertical behavior:
+
+- Grounded state
+- Jump velocity
+- Gravity
+- Landing
+- Support height
+- Falling from raised surfaces
+
+`TraversalSurfaceSystem` now owns only:
+
+- Which surface is under the player
+- Surface support height
+- Guided horizontal constraints
+- Free-surface boundaries
+- Safe edge exits
+- Collider exclusions
+
+The traversal system no longer directly changes player height or jump state.
+
+## Modified files
+
+- `src/main.ts`
+- `src/game/movement/PlayerMovementController.ts`
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/WorldCollisionSystem.ts`
+
+`MovementConfig.ts` is included unchanged from the current project.
+
+## Expected behavior
+
+### Jumping
+
+- Jump works normally from ground, guided logs, free logs, rocks, and slabs.
+- Jump starts from the current support height.
+- Gravity and landing remain controlled by one movement system.
+- Jumping from a raised surface naturally releases the traversal guide.
+- Walking off a raised free surface begins a short natural fall instead of
+  snapping immediately to ground.
+
+### Guided surfaces
+
+- Narrow stream logs remain endpoint-entry only.
+- Horizontal movement is constrained along the log while grounded.
+- Continuing outward at either endpoint exits the log.
+- Jumping releases the guide immediately.
+
+### Free surfaces
+
+- Broad logs, rocks, and slabs can be landed on from any accessible side.
+- Movement remains free across the top.
+- Safe edges allow exit.
+- Unsafe edges remain blocked.
+- Jump works from anywhere on the surface.
+
+### Collision
+
+- Traversable colliders still block grounded movement.
+- Airborne players above the object's clearance height may pass over the
+  collider and land on its support surface.
+- Solid geometry still blocks walking, jumping paths, and Blink.
+
+### Blink
+
+- Blink still crosses thin water and short gaps.
+- Blink still cannot pass through walls, trees, cliffs, or other solid
+  geometry.
+- Blink resets vertical and traversal state at its final safe landing.
 
 
 ###### Validate

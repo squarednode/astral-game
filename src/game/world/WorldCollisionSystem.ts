@@ -147,6 +147,15 @@ export class WorldCollisionSystem {
         return false;
       }
 
+      // Traversable objects block at ground level, but an airborne actor may
+      // pass above them and land on the support surface provided separately.
+      if (
+        collider.interaction === 'traversable' &&
+        position.y >= (collider.clearanceHeight ?? 0.65) - 0.05
+      ) {
+        return false;
+      }
+
       if (collider.kind === 'circle') {
         const dx = position.x - collider.centerX;
         const dz = position.z - collider.centerZ;

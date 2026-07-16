@@ -508,6 +508,7 @@ function performBlink(
   );
 
   playerRoot.position.copyFrom(blink.position);
+  movement.resetVerticalState(blink.position.y);
   movement.setPointerWorld(blink.position);
   pointerWorld.copyFrom(blink.position);
 
@@ -797,6 +798,7 @@ const developerActions: DeveloperActions = {
 
     traversalSurfaces.reset();
     playerRoot.position.copyFrom(landmark.position);
+    movement.resetVerticalState(landmark.position.y);
     movement.setPointerWorld(landmark.position);
     pointerWorld.copyFrom(landmark.position);
     feed(`Developer: teleported to ${landmark.label}.`);
@@ -912,7 +914,6 @@ scene.onBeforeRenderObservable.add(() => {
   }
   if (input.consumePressed('dodge')) movement.requestDodge();
   if (input.consumePressed('jump')) {
-    traversalSurfaces.releaseForJump();
     movement.requestJump();
   }
   if (input.consumePressed('ability1')) castAbilitySlot(1);
@@ -932,10 +933,15 @@ scene.onBeforeRenderObservable.add(() => {
   const positionBeforeMovement = playerRoot.position.clone();
   movement.update(dt);
 
+  const movementPosition = playerRoot.position.clone();
+
   const traversalResolution = traversalSurfaces.update(
     positionBeforeMovement,
-    playerRoot.position,
+    movementPosition,
     dt,
+    movement.isGrounded(),
+    movement.getVerticalVelocity(),
+    movement.getSupportHeight(),
     (landingPosition, ignoredColliderLabels) =>
       worldCollision.isBlocked(
         landingPosition,
@@ -949,7 +955,16 @@ scene.onBeforeRenderObservable.add(() => {
     traversalResolution.ignoredColliderLabels,
   );
 
-  playerRoot.position.copyFrom(resolvedPosition);
+  // Collision and traversal own horizontal placement only. Vertical motion
+  // remains entirely inside PlayerMovementController.
+  playerRoot.position.x = resolvedPosition.x;
+  playerRoot.position.z = resolvedPosition.z;
+  playerRoot.position.y = movementPosition.y;
+
+  movement.setSupportHeight(
+    traversalResolution.supportHeight,
+  );
+  movement.reconcileSupportHeight();
 
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
