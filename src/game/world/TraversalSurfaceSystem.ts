@@ -1,4 +1,5 @@
 import { Vector3 } from '@babylonjs/core';
+import { GameBalance } from '../config/GameBalance';
 import type {
   FreeTraversalSurface,
   GuidedTraversalSurface,
@@ -21,6 +22,12 @@ export interface SurfaceResolution {
   ignoredColliderLabels: ReadonlySet<string>;
   surfaceId: string | null;
   mode: SurfaceMovementMode;
+
+  /**
+   * Reserved for moving platforms, elevators, and boats. Current static
+   * surfaces return zero.
+   */
+  surfaceDelta: Vector3;
 }
 
 interface GuidedProjection {
@@ -30,7 +37,6 @@ interface GuidedProjection {
   lateralDistance: number;
   axis: Vector3;
   perpendicular: Vector3;
-  closestPoint: Vector3;
 }
 
 export class TraversalSurfaceSystem {
@@ -41,13 +47,21 @@ export class TraversalSurfaceSystem {
   ) {}
 
   reset(): void {
-    // Continuous geometry support stores no active traversal state.
+    // Continuous support stores no traversal state.
   }
 
   releaseForBlink(): void {
     // Support is recalculated from Blink's destination.
   }
 
+  /**
+   * Stateless support query used every frame.
+   *
+   * Raised surfaces may be acquired in two ways:
+   * - Walk/step when the height change is at or below stepHeight.
+   * - Descending jump when the height change is at or below
+   *   maximumJumpOntoHeight.
+   */
   querySupport(
     previous: Vector3,
     desired: Vector3,
@@ -90,6 +104,13 @@ export class TraversalSurfaceSystem {
     currentSupportHeight: number,
     isLandingBlocked: LandingValidator,
   ): SurfaceResolution | null {
+    if (
+      (surface.slopeDegrees ?? 0) >
+      GameBalance.movement.maximumWalkableSlopeDegrees
+    ) {
+      return null;
+    }
+
     if (surface.mode === 'guided') {
       return this.evaluateGuided(
         surface,
@@ -112,14 +133,6 @@ export class TraversalSurfaceSystem {
     );
   }
 
-  /**
-   * Guided surfaces behave like narrow bridges with invisible soft rails.
-   *
-   * The player may land anywhere inside the corridor, including the middle.
-   * While supported, lateral movement is clamped to the corridor rather than
-   * snapped to its centerline. Moving beyond either end naturally removes
-   * support, and jumping removes support because the actor is airborne.
-   */
   private evaluateGuided(
     surface: GuidedTraversalSurface,
     previous: Vector3,
@@ -132,56 +145,56 @@ export class TraversalSurfaceSystem {
       surface,
       desired,
     );
-
-    const corridorHalfWidth = Math.max(
-      0.58,
-      surface.width * 0.72,
+    const supportHeight = this.sampleHeight(
+      surface,
+      desired.x,
+      desired.z,
     );
-    const endPadding = Math.max(
-      0.12,
-      surface.entryRadius * 0.18,
-    );
+    const heightDifference =
+      supportHeight - currentSupportHeight;
 
     const insideLength =
-      projection.progress >= -endPadding &&
-      projection.progress <= 1 + endPadding;
-    const insideCorridor =
-      projection.lateralDistance <= corridorHalfWidth;
+      projection.progress >= 0 &&
+      projection.progress <= 1;
+    const insideLandingWidth =
+      projection.lateralDistance <=
+      Math.max(surface.width / 2, 0.52);
+    const insideGuide =
+      projection.lateralDistance <=
+      surface.guideHalfWidth;
 
-    const standingOnSurface =
+    const standing =
       grounded &&
       Math.abs(
-        currentSupportHeight - surface.surfaceHeight,
-      ) <= 0.08 &&
+        currentSupportHeight - supportHeight,
+      ) <= GameBalance.movement.groundSnapDistance &&
       insideLength &&
-      insideCorridor;
+      insideGuide;
 
-    const descendingOntoCorridor =
+    const canStepOnto =
+      grounded &&
+      heightDifference > 0.01 &&
+      heightDifference <=
+        GameBalance.movement.stepHeight &&
+      insideLength &&
+      insideLandingWidth;
+
+    const canLandFromJump =
       !grounded &&
       verticalVelocity <= 0 &&
+      heightDifference <=
+        GameBalance.movement.maximumJumpOntoHeight &&
+      heightDifference >
+        -GameBalance.movement.groundSnapDistance &&
+      insideLength &&
+      insideLandingWidth &&
       this.crossesSurfaceHeight(
         previous,
         desired,
-        surface.surfaceHeight,
-      ) &&
-      projection.progress >= 0 &&
-      projection.progress <= 1 &&
-      projection.lateralDistance <=
-        corridorHalfWidth + 0.18;
+        supportHeight,
+      );
 
-    if (!standingOnSurface && !descendingOntoCorridor) {
-      return null;
-    }
-
-    // Once movement passes beyond either physical end, support disappears.
-    // This permits walking or jumping off without endpoint state logic.
-    if (
-      standingOnSurface &&
-      (
-        projection.progress < 0 ||
-        projection.progress > 1
-      )
-    ) {
+    if (!standing && !canStepOnto && !canLandFromJump) {
       return null;
     }
 
@@ -189,17 +202,21 @@ export class TraversalSurfaceSystem {
       surface,
       desired,
       projection,
-      corridorHalfWidth,
     );
+    const frameDelta =
+      surface.frameDelta?.clone() ?? Vector3.Zero();
+    position.addInPlace(frameDelta);
 
     return {
       position,
-      supportHeight: surface.surfaceHeight,
+      supportHeight:
+        supportHeight + frameDelta.y,
       ignoredColliderLabels: new Set([
         surface.colliderLabel,
       ]),
       surfaceId: surface.id,
       mode: 'guided',
+      surfaceDelta: frameDelta,
     };
   }
 
@@ -212,53 +229,85 @@ export class TraversalSurfaceSystem {
     currentSupportHeight: number,
     isLandingBlocked: LandingValidator,
   ): SurfaceResolution | null {
+    const supportHeight = this.sampleHeight(
+      surface,
+      desired.x,
+      desired.z,
+    );
+    const heightDifference =
+      supportHeight - currentSupportHeight;
     const insideFootprint = this.isInsideFree(
       surface,
       desired,
       0,
     );
+    const insideLandingFootprint = this.isInsideFree(
+      surface,
+      desired,
+      surface.entryPadding,
+    );
 
-    const standingOnSurface =
+    const standing =
       grounded &&
       Math.abs(
-        currentSupportHeight - surface.surfaceHeight,
-      ) <= 0.08 &&
+        currentSupportHeight - supportHeight,
+      ) <= GameBalance.movement.groundSnapDistance &&
       insideFootprint;
 
-    const descendingOntoSurface =
+    const canStepOnto =
+      grounded &&
+      heightDifference > 0.01 &&
+      heightDifference <=
+        GameBalance.movement.stepHeight &&
+      insideFootprint;
+
+    const canLandFromJump =
       !grounded &&
       verticalVelocity <= 0 &&
+      heightDifference <=
+        GameBalance.movement.maximumJumpOntoHeight &&
+      heightDifference >
+        -GameBalance.movement.groundSnapDistance &&
+      insideLandingFootprint &&
       this.crossesSurfaceHeight(
         previous,
         desired,
-        surface.surfaceHeight,
-      ) &&
-      this.isInsideFree(
-        surface,
-        desired,
-        surface.entryPadding,
+        supportHeight,
       );
 
-    if (standingOnSurface || descendingOntoSurface) {
+    if (standing || canStepOnto || canLandFromJump) {
+      const frameDelta =
+        surface.frameDelta?.clone() ?? Vector3.Zero();
+      const position = desired.add(frameDelta);
+
       return {
-        position: desired.clone(),
-        supportHeight: surface.surfaceHeight,
+        position,
+        supportHeight:
+          supportHeight + frameDelta.y,
         ignoredColliderLabels: new Set([
           surface.colliderLabel,
         ]),
         surfaceId: surface.id,
         mode: 'free',
+        surfaceDelta: frameDelta,
       };
     }
 
-    const wasStandingOnSurface =
+    // If the player was standing on a free surface and walks toward an unsafe
+    // edge, keep them within its footprint. Safe edges release support.
+    const previousSupportHeight = this.sampleHeight(
+      surface,
+      previous.x,
+      previous.z,
+    );
+    const wasStanding =
       grounded &&
       Math.abs(
-        currentSupportHeight - surface.surfaceHeight,
-      ) <= 0.08 &&
+        currentSupportHeight - previousSupportHeight,
+      ) <= GameBalance.movement.groundSnapDistance &&
       this.isInsideFree(surface, previous, 0);
 
-    if (!wasStandingOnSurface || insideFootprint) {
+    if (!wasStanding || insideFootprint) {
       return null;
     }
 
@@ -279,11 +328,22 @@ export class TraversalSurfaceSystem {
         surface,
         desired,
       ),
-      supportHeight: surface.surfaceHeight,
+      supportHeight,
       ignoredColliderLabels: ignored,
       surfaceId: surface.id,
       mode: 'free',
+      surfaceDelta: Vector3.Zero(),
     };
+  }
+
+  private sampleHeight(
+    surface: TraversalSurface,
+    x: number,
+    z: number,
+  ): number {
+    return surface.sampleHeight
+      ? surface.sampleHeight(x, z)
+      : surface.surfaceHeight;
   }
 
   private crossesSurfaceHeight(
@@ -291,12 +351,12 @@ export class TraversalSurfaceSystem {
     desired: Vector3,
     surfaceHeight: number,
   ): boolean {
-    const toleranceAbove = 0.24;
-    const toleranceBelow = 0.18;
+    const snap =
+      GameBalance.movement.groundSnapDistance;
 
     return (
-      previous.y >= surfaceHeight - toleranceBelow &&
-      desired.y <= surfaceHeight + toleranceAbove
+      previous.y >= surfaceHeight - snap &&
+      desired.y <= surfaceHeight + snap
     );
   }
 
@@ -316,7 +376,6 @@ export class TraversalSurfaceSystem {
         lateralDistance: Number.POSITIVE_INFINITY,
         axis: new Vector3(0, 0, 1),
         perpendicular: new Vector3(1, 0, 0),
-        closestPoint: surface.start.clone(),
       };
     }
 
@@ -329,30 +388,22 @@ export class TraversalSurfaceSystem {
     const relative = position.subtract(surface.start);
     relative.y = 0;
 
-    const alongDistance = Vector3.Dot(relative, axis);
+    const alongDistance =
+      Vector3.Dot(relative, axis);
     const progress = alongDistance / length;
-    const clampedProgress = Math.max(
-      0,
-      Math.min(1, progress),
-    );
-    const closestPoint = surface.start.add(
-      axis.scale(
-        clampedProgress * length,
-      ),
-    );
-    const lateralOffset = Vector3.Dot(
-      relative,
-      perpendicular,
-    );
+    const lateralOffset =
+      Vector3.Dot(relative, perpendicular);
 
     return {
       progress,
-      clampedProgress,
+      clampedProgress: Math.max(
+        0,
+        Math.min(1, progress),
+      ),
       lateralOffset,
       lateralDistance: Math.abs(lateralOffset),
       axis,
       perpendicular,
-      closestPoint,
     };
   }
 
@@ -360,7 +411,6 @@ export class TraversalSurfaceSystem {
     surface: GuidedTraversalSurface,
     desired: Vector3,
     projection: GuidedProjection,
-    corridorHalfWidth: number,
   ): Vector3 {
     const axisLength = this.planarDistance(
       surface.start,
@@ -369,15 +419,17 @@ export class TraversalSurfaceSystem {
     const alongDistance =
       projection.clampedProgress * axisLength;
     const lateralOffset = Math.max(
-      -corridorHalfWidth,
+      -surface.guideHalfWidth,
       Math.min(
-        corridorHalfWidth,
+        surface.guideHalfWidth,
         projection.lateralOffset,
       ),
     );
 
     const position = surface.start
-      .add(projection.axis.scale(alongDistance))
+      .add(
+        projection.axis.scale(alongDistance),
+      )
       .add(
         projection.perpendicular.scale(
           lateralOffset,
@@ -541,6 +593,7 @@ export class TraversalSurfaceSystem {
       ignoredColliderLabels: new Set(),
       surfaceId: null,
       mode: 'ground',
+      surfaceDelta: Vector3.Zero(),
     };
   }
 

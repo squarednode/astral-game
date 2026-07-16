@@ -239,12 +239,9 @@ export function buildOutdoorZone(
     colliderLabel: string,
     start: Vector3,
     end: Vector3,
-    startLanding: Vector3,
-    endLanding: Vector3,
     surfaceHeight: number,
-    entryRadius = 1.15,
     width = 1.05,
-    minimumEntryHeight = 0.28,
+    guideHalfWidth = 0.75,
   ): void => {
     traversalSurfaces.push({
       mode: 'guided',
@@ -253,34 +250,11 @@ export function buildOutdoorZone(
       colliderLabel,
       start,
       end,
-      startLanding,
-      endLanding,
       surfaceHeight,
-      entryRadius,
       width,
-      minimumEntryHeight,
+      guideHalfWidth,
+      slopeDegrees: 0,
     });
-
-    // Entry markers are only visible when traversal highlighting is enabled.
-    for (const [suffix, point] of [
-      ['start', start],
-      ['end', end],
-    ] as const) {
-      const marker = MeshBuilder.CreateCylinder(
-        `${id}-${suffix}-anchor`,
-        { diameter: 0.45, height: 0.06, tessellation: 24 },
-        scene,
-      );
-      marker.position.copyFrom(point);
-      marker.position.y = 0.08;
-      marker.material = material(
-        'traversal-anchor',
-        new Color3(0.15, 0.72, 1),
-        0.55,
-      );
-      marker.visibility = 0;
-      traversalHighlights.push(marker);
-    }
 
     const corridorAxis = end.subtract(start);
     corridorAxis.y = 0;
@@ -290,7 +264,7 @@ export function buildOutdoorZone(
     const corridorDebug = MeshBuilder.CreateBox(
       `${id}-guided-corridor-debug`,
       {
-        width: Math.max(1.16, width * 1.44),
+        width: guideHalfWidth * 2,
         depth: corridorLength,
         height: 0.05,
       },
@@ -319,7 +293,6 @@ export function buildOutdoorZone(
     halfWidth: number,
     halfDepth: number,
     surfaceHeight: number,
-    minimumEntryHeight = 0.28,
     entryPadding = 0.55,
     exitDistance = 0.75,
   ): void => {
@@ -333,7 +306,6 @@ export function buildOutdoorZone(
       halfWidth,
       halfDepth,
       surfaceHeight,
-      minimumEntryHeight,
       entryPadding,
       exitDistance,
     });
@@ -365,7 +337,6 @@ export function buildOutdoorZone(
     center: Vector3,
     radius: number,
     surfaceHeight: number,
-    minimumEntryHeight = 0.28,
     entryPadding = 0.5,
     exitDistance = 0.75,
   ): void => {
@@ -378,7 +349,6 @@ export function buildOutdoorZone(
       center,
       radius,
       surfaceHeight,
-      minimumEntryHeight,
       entryPadding,
       exitDistance,
     });
@@ -485,12 +455,9 @@ export function buildOutdoorZone(
     'stream-log-crossing',
     new Vector3(-11, 0.58, -0.85),
     new Vector3(-11, 0.58, 4.85),
-    new Vector3(-11, 0, -1.55),
-    new Vector3(-11, 0, 5.55),
     0.58,
-    1.25,
     1.05,
-    0.28,
+    0.72,
   );
 
   // Entrance traversal lesson: jump or go around. The traversal direction is
@@ -504,7 +471,6 @@ export function buildOutdoorZone(
     3.1,
     0.52,
     0.58,
-    0.28,
     0.62,
     0.8,
   );
@@ -563,7 +529,6 @@ export function buildOutdoorZone(
     2.2,
     1.6,
     0.9,
-    0.3,
     0.65,
     0.85,
   );
@@ -674,7 +639,6 @@ export function buildOutdoorZone(
     setTraversalHighlightVisible(visible: boolean): void {
       traversalHighlights.forEach(mesh => {
         if (
-          mesh.name.endsWith('-anchor') ||
           mesh.name.endsWith('-free-traversal-debug') ||
           mesh.name.endsWith('-guided-corridor-debug')
         ) {

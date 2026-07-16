@@ -30,25 +30,58 @@ export interface BoxWorldCollider {
 
 export type WorldCollider = CircleWorldCollider | BoxWorldCollider;
 
-interface TraversalSurfaceBase {
+interface WalkableSurfaceBase {
   id: string;
   label: string;
   colliderLabel: string;
+
+  /**
+   * Default top elevation. Future hills, stairs, ramps, and moving platforms
+   * may override this through sampleHeight.
+   */
   surfaceHeight: number;
-  minimumEntryHeight: number;
+
+  /**
+   * Optional sampled top elevation for ramps, hills, stairs, and irregular
+   * surfaces.
+   */
+  sampleHeight?: (x: number, z: number) => number;
+
+  /**
+   * Optional surface slope. Surfaces beyond the movement limit are not
+   * considered walkable.
+   */
+  slopeDegrees?: number;
+
+  /**
+   * Optional per-frame platform movement. Reserved for moving platforms,
+   * elevators, and boats.
+   */
+  frameDelta?: Vector3;
 }
 
-export interface GuidedTraversalSurface extends TraversalSurfaceBase {
+export interface GuidedTraversalSurface extends WalkableSurfaceBase {
   mode: 'guided';
+
+  /**
+   * Full usable centerline. There are no special entry or exit points.
+   */
   start: Vector3;
   end: Vector3;
-  startLanding: Vector3;
-  endLanding: Vector3;
-  entryRadius: number;
+
+  /**
+   * Physical walkable width used for landing detection.
+   */
   width: number;
+
+  /**
+   * Soft invisible guide width. Lateral movement is clamped within this
+   * corridor while the player is supported.
+   */
+  guideHalfWidth: number;
 }
 
-export interface FreeBoxTraversalSurface extends TraversalSurfaceBase {
+export interface FreeBoxTraversalSurface extends WalkableSurfaceBase {
   mode: 'free';
   shape: 'box';
   center: Vector3;
@@ -58,7 +91,7 @@ export interface FreeBoxTraversalSurface extends TraversalSurfaceBase {
   exitDistance: number;
 }
 
-export interface FreeCircleTraversalSurface extends TraversalSurfaceBase {
+export interface FreeCircleTraversalSurface extends WalkableSurfaceBase {
   mode: 'free';
   shape: 'circle';
   center: Vector3;

@@ -529,6 +529,92 @@ Press `P` and enable `Traversal Highlight`.
 - `src/game/world/TraversalSurfaceSystem.ts`
 - `src/game/world/OutdoorZoneBuilder.ts`
 
+# Astral 0.5.1.3 — Movement Model Lock
+
+This milestone finalizes the movement and surface-support model before World
+Volumes begin in 0.5.2.
+
+## Locked movement rules
+
+Universal values are now defined in `GameBalance.movement`:
+
+- `stepHeight: 0.22`
+- `maximumJumpOntoHeight: 1.15`
+- `maximumWalkableSlopeDegrees: 42`
+- `groundSnapDistance: 0.18`
+
+### Height behavior
+
+- Height changes at or below `stepHeight` may be walked onto.
+- Raised surfaces above `stepHeight` require an airborne descending landing.
+- Normal jumps may land only on surfaces no more than
+  `maximumJumpOntoHeight` above the prior support.
+- Surfaces beyond the maximum walkable slope are rejected as support.
+- The stream log remains raised at `Y = 0.58`, so it cannot be walked over or
+  entered without jumping.
+
+## Stream-log changes
+
+The river log is now one continuous raised walkable surface:
+
+- No endpoint landing spots
+- No entry anchors
+- No endpoint state logic
+- Land anywhere along the usable length
+- Continuous support at `Y = 0.58`
+- Soft lateral guide corridor similar to bridge-side protection
+- Walk or jump off either end
+- Jump remains required to get onto it
+
+The guide corridor is a movement constraint, not a hard physical wall.
+
+## Surface model
+
+All walkable geometry now supports the same foundation:
+
+- Static support height
+- Optional sampled support height for hills, stairs, ramps, and uneven terrain
+- Optional slope metadata
+- Optional per-frame surface movement for moving platforms, elevators, boats,
+  and similar systems
+- Optional lateral guidance for narrow walkable objects
+
+## Future-ready examples
+
+### Stairs
+
+Use a sampled ramp support surface. Visible stair treads remain art geometry.
+
+### Hills and ramps
+
+Provide `sampleHeight(x, z)` and `slopeDegrees`.
+
+### Moving platforms
+
+Provide `frameDelta` each frame. Supported actors inherit that movement.
+
+### Narrow beams and pipes
+
+Use a guided surface with a narrow `guideHalfWidth`.
+
+### Broad rocks, roofs, and slabs
+
+Use free box or circular surfaces without lateral guidance.
+
+## Modified files
+
+- `src/game/config/GameBalance.ts`
+- `src/game/movement/MovementConfig.ts`
+- `src/game/world/WorldTypes.ts`
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+
+## Validate
+
+The supplied source package does not contain the repository-level
+`package.json`, so validation must be run after copying it into the repository:
+
+
 
 ### Validate
 ```bash

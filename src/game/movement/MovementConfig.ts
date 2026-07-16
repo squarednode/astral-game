@@ -13,6 +13,10 @@ export interface MovementConfig {
   jumpVelocity: number;
   gravity: number;
   landingVelocityThreshold: number;
+  stepHeight: number;
+  maximumJumpOntoHeight: number;
+  maximumWalkableSlopeDegrees: number;
+  groundSnapDistance: number;
   minX: number;
   maxX: number;
   minZ: number;
