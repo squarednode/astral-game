@@ -15,11 +15,6 @@ Controls: LMB move, RMB basic attack, WASD direct movement, R dodge, Space jump,
 
 ## 0.2.2 movement feel
 Sprint 2B — Movement feel
-Replace/add the included files, then run:
-```bash
-npm run build
-npm run dev
-```
 Changes
 Movement logic extracted to `PlayerMovementController`.
 Movement tuning centralized in `MovementConfig`.
@@ -59,33 +54,14 @@ Camera follow smoothing
 Movement look-ahead
 Slight movement-based camera zoom
 Temporary movement debug overlay
-Validate
-```bash
-npm run build
-npm run dev
-```
-Commit suggestion:
-```bash
-git add .
-git commit -m "feat: add game balance and movement feel tuning"
-git push
-```
+
 ### 0.3.0 - Combat Feel Foundation
 Copy the included files into matching repository paths.
-Run:
-```bash
-npm run build
-npm run dev
-```
+
 Verify enemy hit flash, damage numbers, knockback, strong-hit camera shake,
 enemy attack telegraphs, dodge avoidance, player hit feedback, and all prior
 movement and party controls.
-Suggested commit:
-```bash
-git add .
-git commit -m "feat: add combat hit feedback and enemy telegraphs"
-git push
-```
+
 
 ### 0.3.1 — Developer Tools
 New files
@@ -104,27 +80,6 @@ Other included combat/config files are unchanged reference copies.
 Controls
 `F1`: open or close Developer Tools
 `Escape`: close Developer Tools
-Test
-Open the panel with F1.
-Spawn normal and elite enemies.
-Toggle enemy AI and enemy damage separately.
-Toggle telegraphs.
-Restore party health and reset cooldowns.
-Toggle god mode and no cooldowns.
-Spawn all loot rarities.
-Toggle hit stop, damage numbers, knockback, camera shake, and player feedback.
-Pause auto waves and start the next wave manually.
-Toggle the movement debug overlay.
-```bash
-npm run build
-npm run dev
-```
-Suggested commit:
-```bash
-git add .
-git commit -m "feat: add in-game developer tools panel"
-git push
-```
 
 #### 0.4.0 - Party Management
 New files:
@@ -134,17 +89,7 @@ src/ui/party/PartyManagementScreen.css
 Modified:
 src/main.ts
 Press I to open the unified party screen. Generate loot with the developer console, select an item, compare all three characters, and equip in two clicks.
-Validate:
-```bash
-npm run build
-npm run dev
-```
-Suggested commit:
-```bash
-git add .
-git commit -m "feat: add unified party management and shared inventory"
-git push
-```
+
 
 #### 0.4.1 — Party Management Refinement
 New behavior
@@ -174,29 +119,6 @@ Replace:
 `src/ui/party/PartyManagementTypes.ts`
 `src/ui/party/PartyManagementScreen.ts`
 `src/ui/party/PartyManagementScreen.css`
-Test
-```bash
-npm run build
-npm run dev
-```
-Validate:
-Generate enough loot to exceed one screen.
-Confirm only the inventory area scrolls.
-Select each character without changing the controlled game character.
-Confirm recommendation sorting changes with the selected character.
-Confirm equipped slot colors reflect rarity.
-Confirm only the selected character panel contains the Equip button.
-Select visible loot and destroy it in bulk.
-Confirm equipped items are protected from destruction.
-Reassign Q and E to different skill slots.
-Confirm the changed skill slots work in combat.
-Equip gear with negative stats and confirm comparisons clearly show tradeoffs.
-Suggested commit:
-```bash
-git add .
-git commit -m "feat: refine party management, skills, and loot cleanup"
-git push
-```
 
 #### 0.4.2 — Party Management Polish
 Changes
@@ -211,23 +133,6 @@ Developer console is restored on `P`.
 Save/load work remains deferred.
 Replace/add
 Copy all included `src/` files into matching paths.
-Test
-```bash
-npm run build
-npm run dev
-```
-Click one item and use Equip, Favorite, and Destroy without a checkbox.
-Hover another item and confirm preview returns to the clicked item afterward.
-Confirm favorited and equipped items cannot be destroyed.
-Confirm bulk cleanup shows a summary and excludes protected items.
-Reassign skills and confirm the in-game HUD names move to the correct number slots.
-Press `P` and confirm Developer Tools opens.
-Suggested commit:
-```bash
-git add .
-git commit -m "fix: polish item actions and restore developer tools"
-git push
-```
 
 ##### 0.5.0.1 — Outdoor Zone Foundation
 This update replaces the small combat arena with the first handcrafted outdoor
@@ -273,30 +178,6 @@ Teleport to Elite Arena
 Teleport to Exit
 Toggle World Collision
 Toggle Traversal Highlight
-Validate
-```bash
-npm run build
-npm run dev
-```
-Test:
-Confirm the game begins at the zone entrance.
-Walk through small and tall bushes.
-Confirm tree trunks and large rocks block movement.
-Walk around the entrance fallen log.
-Jump over the entrance fallen log.
-Cross the stream by the bridge.
-Cross the stream using the western log while jumping.
-Explore both alternate routes.
-Confirm no enemies spawn automatically.
-Use `P` to test every world teleport.
-Toggle collision and traversal highlighting.
-Confirm Party Management, combat, loot, and developer spawning still work.
-Suggested commit:
-```bash
-git add .
-git commit -m "feat: add first outdoor zone and traversal collisions"
-git push
-```
 
 ##### 0.5.0.2 — Traversal Surface System
 This update replaces the simple jump-clearance behavior for logs with reusable
@@ -333,31 +214,6 @@ Developer teleporting cancels any active traversal state.
 Developer testing
 Press `P`, then enable `Traversal Highlight`.
 Blue anchor markers show the valid entry and exit locations.
-Validate
-```bash
-npm run build
-npm run dev
-```
-Test:
-Approach the entrance log while grounded; confirm it blocks movement.
-Jump near either blue entry anchor.
-Move across the log and confirm lateral movement is constrained.
-Exit either side and confirm player height returns to zero.
-Reverse direction while on the log and exit from the original side.
-Repeat on the stream log.
-Confirm no exit position lands in the stream.
-Attempt to jump into the middle of the stream log; confirm it does not
-bypass the defined entry points.
-Teleport while on a traversal surface and confirm the player is reset.
-Confirm bridge movement, normal world collision, combat, loot, and Party
-Management still work.
-Enemy-body collision is intentionally deferred to the enemy territory update.
-Suggested commit:
-```bash
-git add .
-git commit -m "feat: add anchored traversal surfaces for logs"
-git push
-```
 
 ##### 0.5.0.3 — Guided and Free Traversal Surfaces
 This update generalizes traversal into two deliberate modes.
@@ -400,4 +256,56 @@ Developer visualization
 Press `P` and enable `Traversal Highlight`.
 Blue anchor markers identify guided entry and exit points.
 Green overlays identify free traversal footprints.
-Validate
+
+##### 0.5.0.4 — Movement Surface Polish and Blink Rules
+This update refines traversal transitions and establishes the first formal
+Blink traversal rules.
+Traversal changes
+Traversal now reports explicit movement states:
+Ground
+Air
+Entering guided
+Guided
+Entering free
+Free
+Leaving
+Entering a traversal surface uses a short smooth blend instead of a hard
+positional snap.
+Walking off a valid edge uses a short exit blend back to ground height.
+Jump can be used directly from guided and free traversal surfaces.
+Jump immediately releases the surface constraint and returns control to the
+normal airborne movement.
+Re-entry is temporarily locked while airborne to prevent snapping back onto
+the surface.
+Blink cancels traversal state cleanly.
+Blink rules
+Tempest's Blink Strike now works as both a combat and traversal ability.
+Blink can:
+Cross thin water
+Cross short gaps
+Clear low traversable objects
+Exit traversal surfaces
+Blink toward an enemy or toward the cursor when no enemy is selected
+Blink cannot:
+Pass through trees
+Pass through rocks
+Pass through walls, cliffs, ruins, gates, or other solid geometry
+End in water
+End inside a collider
+exceed its configured maximum range
+The Blink path is sampled from start to destination. Hazards such as water do
+not block the path, but solid geometry does. If the requested endpoint is not
+safe, Blink backs up to the last valid landing point.
+Modified files
+`src/main.ts`
+`src/game/world/WorldTypes.ts`
+`src/game/world/WorldCollisionSystem.ts`
+`src/game/world/TraversalSurfaceSystem.ts`
+`src/game/world/OutdoorZoneBuilder.ts`
+The package includes the complete matching 0.5.0.3 source set.
+
+
+###### Validate
+```bash
+npm run build
+npm run dev

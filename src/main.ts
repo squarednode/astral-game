@@ -492,6 +492,37 @@ function basicAttack(): void {
   }
 }
 
+function performBlink(
+  requestedDestination: Vector3,
+  maximumDistance = 8.5,
+): Vector3 {
+  const start = playerRoot.position.clone();
+  start.y = 0;
+
+  traversalSurfaces.releaseForBlink();
+
+  const blink = worldCollision.resolveBlink(
+    start,
+    requestedDestination,
+    maximumDistance,
+  );
+
+  playerRoot.position.copyFrom(blink.position);
+  movement.setPointerWorld(blink.position);
+  pointerWorld.copyFrom(blink.position);
+
+  vfxRing(start, active.color, 1.4, 0.14);
+  vfxRing(blink.position, active.color, 2.4, 0.22);
+
+  if (blink.blockedBySolid) {
+    feed('Blink stopped by solid terrain.');
+  } else if (!blink.reachedRequestedDestination) {
+    feed('Blink shortened to the last safe landing point.');
+  }
+
+  return blink.position;
+}
+
 function castSkill(key: SkillKey): void {
   if (active.cooldowns[key] > 0 || inventoryOpen || gameOver) return;
   const dir = pointerWorld.subtract(playerRoot.position);
@@ -523,13 +554,52 @@ function castSkill(key: SkillKey): void {
     vfxRing(playerRoot.position, active.color, 5, 0.3);
   } else if (active.id === 'tempest') {
     active.cooldowns.E = 6;
-    const target = [...enemies].sort((a,b) => Vector3.Distance(a.mesh.position, pointerWorld) - Vector3.Distance(b.mesh.position, pointerWorld))[0];
-    if (target && Vector3.Distance(target.mesh.position, playerRoot.position) < 10) {
-      const destination = target.mesh.position.add(dir.scale(-1.1));
-      destination.y = 0;
-      playerRoot.position.copyFrom(destination);
-      damageEnemy(target, 48, 'lightning', target.mesh.position, playerRoot.position, 'heavy');
-      vfxRing(target.mesh.position, active.color, 2.8, 0.25);
+
+    const target = [...enemies]
+      .filter(
+        enemy =>
+          Vector3.Distance(
+            enemy.mesh.position,
+            playerRoot.position,
+          ) < 10,
+      )
+      .sort(
+        (a, b) =>
+          Vector3.Distance(a.mesh.position, pointerWorld) -
+          Vector3.Distance(b.mesh.position, pointerWorld),
+      )[0];
+
+    const requestedDestination = target
+      ? target.mesh.position.add(dir.scale(-1.1))
+      : pointerWorld.clone();
+    requestedDestination.y = 0;
+
+    const blinkDestination = performBlink(
+      requestedDestination,
+      8.5,
+    );
+
+    if (
+      target &&
+      Vector3.Distance(
+        target.mesh.position,
+        blinkDestination,
+      ) <= 2.4
+    ) {
+      damageEnemy(
+        target,
+        48,
+        'lightning',
+        target.mesh.position,
+        blinkDestination,
+        'heavy',
+      );
+      vfxRing(
+        target.mesh.position,
+        active.color,
+        2.8,
+        0.25,
+      );
     }
   }
   refreshHud();
@@ -841,7 +911,10 @@ scene.onBeforeRenderObservable.add(() => {
     renderPartyManagement();
   }
   if (input.consumePressed('dodge')) movement.requestDodge();
-  if (input.consumePressed('jump')) movement.requestJump();
+  if (input.consumePressed('jump')) {
+    traversalSurfaces.requestJumpExit();
+    movement.requestJump();
+  }
   if (input.consumePressed('ability1')) castAbilitySlot(1);
   if (input.consumePressed('ability2')) castAbilitySlot(2);
   if (input.consumePressed('ability3')) castAbilitySlot(3);

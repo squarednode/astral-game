@@ -12,7 +12,7 @@ export interface CircleWorldCollider {
   centerX: number;
   centerZ: number;
   radius: number;
-  interaction: 'solid' | 'traversable';
+  interaction: 'solid' | 'traversable' | 'hazard';
   clearanceHeight?: number;
   label: string;
 }
@@ -23,7 +23,7 @@ export interface BoxWorldCollider {
   centerZ: number;
   halfWidth: number;
   halfDepth: number;
-  interaction: 'solid' | 'traversable';
+  interaction: 'solid' | 'traversable' | 'hazard';
   clearanceHeight?: number;
   label: string;
 }

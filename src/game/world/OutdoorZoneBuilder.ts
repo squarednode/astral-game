@@ -60,7 +60,7 @@ export function buildOutdoorZone(
     z: number,
     width: number,
     depth: number,
-    interaction: 'solid' | 'traversable' = 'solid',
+    interaction: 'solid' | 'traversable' | 'hazard' = 'solid',
     clearanceHeight = 0.65,
   ): void => {
     colliders.push({
@@ -80,7 +80,7 @@ export function buildOutdoorZone(
     x: number,
     z: number,
     radius: number,
-    interaction: 'solid' | 'traversable' = 'solid',
+    interaction: 'solid' | 'traversable' | 'hazard' = 'solid',
     clearanceHeight = 0.65,
   ): void => {
     colliders.push({
@@ -445,9 +445,9 @@ export function buildOutdoorZone(
   stream.visibility = 0.82;
 
   // Blocking stream sections. Gaps exist at x=-11 and x=5.
-  addBoxCollider('stream-west-boundary', -25.5, 2, 19, 4.4);
-  addBoxCollider('stream-middle-boundary', -3, 2, 12, 4.4);
-  addBoxCollider('stream-east-boundary', 22.5, 2, 31, 4.4);
+  addBoxCollider('stream-west-boundary', -25.5, 2, 19, 4.4, 'hazard');
+  addBoxCollider('stream-middle-boundary', -3, 2, 12, 4.4, 'hazard');
+  addBoxCollider('stream-east-boundary', 22.5, 2, 31, 4.4, 'hazard');
 
   addBridge('old-bridge', 5, 2, 4.6, 5.2);
   addLog('stream-log-crossing', -11, 2, 5.5, Math.PI / 2, true);

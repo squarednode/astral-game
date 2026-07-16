@@ -1,6 +1,12 @@
 import { Vector3 } from '@babylonjs/core';
 import type { WorldCollider } from './WorldTypes';
 
+export interface BlinkResolution {
+  position: Vector3;
+  reachedRequestedDestination: boolean;
+  blockedBySolid: boolean;
+}
+
 export class WorldCollisionSystem {
   enabled = true;
 
@@ -15,13 +21,19 @@ export class WorldCollisionSystem {
     ignoredColliderLabels: ReadonlySet<string> = new Set(),
   ): Vector3 {
     if (!this.enabled) return desired.clone();
-    if (!this.collides(desired, ignoredColliderLabels)) return desired.clone();
+    if (!this.collides(desired, ignoredColliderLabels, true)) {
+      return desired.clone();
+    }
 
     const xOnly = new Vector3(desired.x, desired.y, previous.z);
-    if (!this.collides(xOnly, ignoredColliderLabels)) return xOnly;
+    if (!this.collides(xOnly, ignoredColliderLabels, true)) {
+      return xOnly;
+    }
 
     const zOnly = new Vector3(previous.x, desired.y, desired.z);
-    if (!this.collides(zOnly, ignoredColliderLabels)) return zOnly;
+    if (!this.collides(zOnly, ignoredColliderLabels, true)) {
+      return zOnly;
+    }
 
     return previous.clone();
   }
@@ -30,15 +42,110 @@ export class WorldCollisionSystem {
     position: Vector3,
     ignoredColliderLabels: ReadonlySet<string> = new Set(),
   ): boolean {
-    return this.enabled && this.collides(position, ignoredColliderLabels);
+    return (
+      this.enabled &&
+      this.collides(position, ignoredColliderLabels, true)
+    );
+  }
+
+  isValidBlinkLanding(
+    position: Vector3,
+    ignoredColliderLabels: ReadonlySet<string> = new Set(),
+  ): boolean {
+    return !this.collides(position, ignoredColliderLabels, true);
+  }
+
+  resolveBlink(
+    start: Vector3,
+    requestedDestination: Vector3,
+    maximumDistance: number,
+    ignoredColliderLabels: ReadonlySet<string> = new Set(),
+  ): BlinkResolution {
+    const direction = requestedDestination.subtract(start);
+    direction.y = 0;
+
+    const requestedDistance = direction.length();
+    if (requestedDistance <= 0.001) {
+      return {
+        position: start.clone(),
+        reachedRequestedDestination: false,
+        blockedBySolid: false,
+      };
+    }
+
+    direction.normalize();
+    const distance = Math.min(requestedDistance, maximumDistance);
+    const step = 0.22;
+
+    let lastPathPoint = start.clone();
+    let blockedBySolid = false;
+
+    // Hazards such as water do not block Blink's path. Solid objects do.
+    for (let traveled = step; traveled <= distance; traveled += step) {
+      const point = start.add(direction.scale(traveled));
+      point.y = 0;
+
+      if (
+        this.collides(
+          point,
+          ignoredColliderLabels,
+          false,
+          true,
+        )
+      ) {
+        blockedBySolid = true;
+        break;
+      }
+
+      lastPathPoint = point;
+    }
+
+    // Backtrack from the furthest path point until valid land is found.
+    let landing = lastPathPoint.clone();
+    let foundLanding = this.isValidBlinkLanding(
+      landing,
+      ignoredColliderLabels,
+    );
+
+    while (
+      !foundLanding &&
+      Vector3.DistanceSquared(landing, start) > step * step
+    ) {
+      landing.subtractInPlace(direction.scale(step));
+      landing.y = 0;
+      foundLanding = this.isValidBlinkLanding(
+        landing,
+        ignoredColliderLabels,
+      );
+    }
+
+    if (!foundLanding) {
+      landing.copyFrom(start);
+    }
+
+    const requestedCapped = start.add(direction.scale(distance));
+    requestedCapped.y = 0;
+
+    return {
+      position: landing,
+      reachedRequestedDestination:
+        Vector3.DistanceSquared(landing, requestedCapped) < 0.12,
+      blockedBySolid,
+    };
   }
 
   private collides(
     position: Vector3,
     ignoredColliderLabels: ReadonlySet<string>,
+    includeHazards: boolean,
+    solidOnly = false,
   ): boolean {
     return this.colliders.some(collider => {
       if (ignoredColliderLabels.has(collider.label)) return false;
+      if (solidOnly && collider.interaction !== 'solid') return false;
+      if (!includeHazards && collider.interaction === 'hazard') {
+        return false;
+      }
 
       if (collider.kind === 'circle') {
         const dx = position.x - collider.centerX;
