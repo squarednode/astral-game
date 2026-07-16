@@ -304,6 +304,26 @@ Modified files
 `src/game/world/OutdoorZoneBuilder.ts`
 The package includes the complete matching 0.5.0.3 source set.
 
+##### 0.5.0.5 — Traversal Hotfix
+This hotfix removes the over-constrained entry/exit state machine introduced in
+0.5.0.4.
+Fixes
+Jump immediately releases guided and free traversal surfaces.
+Normal airborne movement controls the player after release.
+The player is temporarily prevented from reattaching to the same surface.
+Guided surfaces exit when the player reaches an endpoint and continues moving
+outward.
+The stream log no longer requires movement beyond a clamped hidden threshold.
+Entry assistance is lightweight and does not freeze normal movement.
+Free surfaces retain unrestricted movement across their top.
+Blink rules from 0.5.0.4 remain unchanged.
+Modified files
+`src/main.ts`
+`src/game/world/TraversalSurfaceSystem.ts`
+The package includes the complete matching 0.5.0.4 source set.
+
+
+
 
 ###### Validate
 ```bash

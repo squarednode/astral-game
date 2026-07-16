@@ -912,7 +912,7 @@ scene.onBeforeRenderObservable.add(() => {
   }
   if (input.consumePressed('dodge')) movement.requestDodge();
   if (input.consumePressed('jump')) {
-    traversalSurfaces.requestJumpExit();
+    traversalSurfaces.releaseForJump();
     movement.requestJump();
   }
   if (input.consumePressed('ability1')) castAbilitySlot(1);

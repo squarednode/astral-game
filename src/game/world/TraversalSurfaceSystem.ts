@@ -8,11 +8,8 @@ import type {
 export type MovementSurfaceState =
   | 'ground'
   | 'air'
-  | 'entering-guided'
   | 'guided'
-  | 'entering-free'
-  | 'free'
-  | 'leaving';
+  | 'free';
 
 export type LandingValidator = (
   position: Vector3,
@@ -29,12 +26,29 @@ export interface TraversalResolution {
   exitedSurface: boolean;
 }
 
-interface BlendState {
-  from: Vector3;
-  to: Vector3;
-  elapsed: number;
-  duration: number;
-  nextState: 'guided' | 'free' | 'ground';
+interface GuidedTraversalEntry {
+  surface: GuidedTraversalSurface;
+  atStart: boolean;
+}
+
+interface FreeTraversalEntry {
+  surface: FreeTraversalSurface;
+}
+
+type TraversalEntry =
+  | GuidedTraversalEntry
+  | FreeTraversalEntry;
+
+function isGuidedEntry(
+  entry: TraversalEntry,
+): entry is GuidedTraversalEntry {
+  return entry.surface.mode === 'guided';
+}
+
+function isFreeEntry(
+  entry: TraversalEntry,
+): entry is FreeTraversalEntry {
+  return entry.surface.mode === 'free';
 }
 
 export class TraversalSurfaceSystem {
@@ -44,14 +58,11 @@ export class TraversalSurfaceSystem {
   private state: MovementSurfaceState = 'ground';
   private guidedProgress = 0;
   private entryCooldown = 0;
-  private airborneLock = false;
-  private blend: BlendState | null = null;
-  private pendingJumpRelease = false;
+  private airborneLockRemaining = 0;
+  private entryAssistRemaining = 0;
 
   constructor(
     private readonly surfaces: ReadonlyArray<TraversalSurface>,
-    private readonly entryBlendSeconds = 0.11,
-    private readonly exitBlendSeconds = 0.13,
   ) {}
 
   reset(): void {
@@ -59,33 +70,28 @@ export class TraversalSurfaceSystem {
     this.state = 'ground';
     this.guidedProgress = 0;
     this.entryCooldown = 0.18;
-    this.airborneLock = false;
-    this.blend = null;
-    this.pendingJumpRelease = false;
+    this.airborneLockRemaining = 0;
+    this.entryAssistRemaining = 0;
   }
 
-  requestJumpExit(): void {
-    if (
-      this.activeSurface &&
-      (
-        this.state === 'guided' ||
-        this.state === 'free' ||
-        this.state === 'entering-guided' ||
-        this.state === 'entering-free'
-      )
-    ) {
-      this.pendingJumpRelease = true;
-    }
+  releaseForJump(): void {
+    if (!this.activeSurface) return;
+
+    this.activeSurface = null;
+    this.state = 'air';
+    this.guidedProgress = 0;
+    this.entryCooldown = 0.3;
+    this.airborneLockRemaining = 0.28;
+    this.entryAssistRemaining = 0;
   }
 
   releaseForBlink(): void {
     this.activeSurface = null;
+    this.state = 'ground';
     this.guidedProgress = 0;
     this.entryCooldown = 0.25;
-    this.airborneLock = false;
-    this.blend = null;
-    this.pendingJumpRelease = false;
-    this.state = 'ground';
+    this.airborneLockRemaining = 0;
+    this.entryAssistRemaining = 0;
   }
 
   getActiveSurfaceId(): string | null {
@@ -107,55 +113,29 @@ export class TraversalSurfaceSystem {
     isLandingBlocked: LandingValidator,
   ): TraversalResolution {
     this.entryCooldown = Math.max(0, this.entryCooldown - dt);
+    this.airborneLockRemaining = Math.max(
+      0,
+      this.airborneLockRemaining - dt,
+    );
+    this.entryAssistRemaining = Math.max(
+      0,
+      this.entryAssistRemaining - dt,
+    );
 
     if (!this.enabled) {
       this.state = desired.y > 0.04 ? 'air' : 'ground';
-      return this.resolution(
-        desired.clone(),
-        new Set(),
-        false,
-        false,
-      );
+      return this.result(desired.clone(), new Set(), false, false);
     }
 
-    if (this.pendingJumpRelease) {
-      this.pendingJumpRelease = false;
-      this.activeSurface = null;
-      this.blend = null;
-      this.entryCooldown = 0.25;
-      this.airborneLock = true;
-      this.state = 'air';
-
-      return this.resolution(
-        desired.clone(),
-        new Set(),
-        false,
-        true,
-      );
-    }
-
-    if (this.blend) {
-      return this.updateBlend(dt);
-    }
-
-    if (this.airborneLock) {
-      if (desired.y <= 0.03) {
-        this.airborneLock = false;
-        this.state = 'ground';
-      } else {
-        this.state = 'air';
-      }
-
-      return this.resolution(
-        desired.clone(),
-        new Set(),
-        false,
-        false,
-      );
+    // After jumping from a surface, normal movement owns the character until
+    // the jump has had time to clear the object.
+    if (this.airborneLockRemaining > 0) {
+      this.state = desired.y > 0.03 ? 'air' : 'ground';
+      return this.result(desired.clone(), new Set(), false, false);
     }
 
     if (this.activeSurface?.mode === 'guided') {
-      return this.updateGuidedSurface(
+      return this.updateGuided(
         this.activeSurface,
         previous,
         desired,
@@ -163,7 +143,7 @@ export class TraversalSurfaceSystem {
     }
 
     if (this.activeSurface?.mode === 'free') {
-      return this.updateFreeSurface(
+      return this.updateFree(
         this.activeSurface,
         desired,
         isLandingBlocked,
@@ -172,45 +152,34 @@ export class TraversalSurfaceSystem {
 
     const entry = this.findEntry(previous, desired);
 
-    if (entry?.surface.mode === 'guided') {
+    if (entry && isGuidedEntry(entry)) {
       this.activeSurface = entry.surface;
       this.guidedProgress = entry.atStart ? 0 : 1;
-      const target = this.pointOnGuidedSurface(
+      this.entryAssistRemaining = 0.1;
+      this.state = 'guided';
+
+      const target = this.pointOnGuided(
         entry.surface,
         this.guidedProgress,
       );
-      this.beginBlend(
-        previous,
-        target,
-        this.entryBlendSeconds,
-        'guided',
-      );
-      this.state = 'entering-guided';
 
-      return this.resolution(
-        previous.clone(),
+      return this.result(
+        Vector3.Lerp(desired, target, 0.55),
         new Set([entry.surface.colliderLabel]),
         true,
         false,
       );
     }
 
-    if (entry?.surface.mode === 'free') {
+    if (entry && isFreeEntry(entry)) {
       this.activeSurface = entry.surface;
-      const target = this.clampToFreeSurface(
-        entry.surface,
-        desired,
-      );
-      this.beginBlend(
-        previous,
-        target,
-        this.entryBlendSeconds,
-        'free',
-      );
-      this.state = 'entering-free';
+      this.entryAssistRemaining = 0.1;
+      this.state = 'free';
 
-      return this.resolution(
-        previous.clone(),
+      const target = this.clampToFree(entry.surface, desired);
+
+      return this.result(
+        Vector3.Lerp(desired, target, 0.45),
         new Set([entry.surface.colliderLabel]),
         true,
         false,
@@ -218,59 +187,10 @@ export class TraversalSurfaceSystem {
     }
 
     this.state = desired.y > 0.04 ? 'air' : 'ground';
-
-    return this.resolution(
-      desired.clone(),
-      new Set(),
-      false,
-      false,
-    );
+    return this.result(desired.clone(), new Set(), false, false);
   }
 
-  private updateBlend(dt: number): TraversalResolution {
-    const blend = this.blend!;
-    blend.elapsed = Math.min(
-      blend.duration,
-      blend.elapsed + dt,
-    );
-
-    const t = blend.duration <= 0
-      ? 1
-      : blend.elapsed / blend.duration;
-    const smooth = t * t * (3 - 2 * t);
-    const position = Vector3.Lerp(
-      blend.from,
-      blend.to,
-      smooth,
-    );
-
-    if (t >= 1) {
-      const nextState = blend.nextState;
-      this.blend = null;
-
-      if (nextState === 'ground') {
-        this.activeSurface = null;
-        this.entryCooldown = 0.2;
-        this.state = 'ground';
-        position.y = 0;
-      } else {
-        this.state = nextState;
-      }
-    }
-
-    const ignored = this.activeSurface
-      ? new Set([this.activeSurface.colliderLabel])
-      : new Set<string>();
-
-    return this.resolution(
-      position,
-      ignored,
-      false,
-      this.state === 'ground',
-    );
-  }
-
-  private updateGuidedSurface(
+  private updateGuided(
     surface: GuidedTraversalSurface,
     previous: Vector3,
     desired: Vector3,
@@ -280,141 +200,109 @@ export class TraversalSurfaceSystem {
     const length = axis.length();
 
     if (length <= 0.001) {
-      return this.cancelAt(previous);
+      this.reset();
+      return this.result(
+        new Vector3(previous.x, 0, previous.z),
+        new Set(),
+        false,
+        true,
+      );
     }
 
     axis.scaleInPlace(1 / length);
 
     const desiredDelta = desired.subtract(previous);
     desiredDelta.y = 0;
+    const along = Vector3.Dot(desiredDelta, axis);
+    const nextProgress = this.guidedProgress + along / length;
 
-    const alongSurface = Vector3.Dot(
-      desiredDelta,
-      axis,
-    );
-    this.guidedProgress += alongSurface / length;
-
-    const exitThreshold = 0.045;
-
-    if (this.guidedProgress < -exitThreshold) {
-      return this.beginExitBlend(
-        previous,
-        surface.startLanding,
-      );
+    // Leaving is based on continued outward movement at the endpoint. This
+    // avoids requiring progress to exceed a hidden threshold while clamped.
+    if (this.guidedProgress <= 0.001 && along < -0.0001) {
+      return this.exitGuided(surface.startLanding);
     }
 
-    if (this.guidedProgress > 1 + exitThreshold) {
-      return this.beginExitBlend(
-        previous,
-        surface.endLanding,
-      );
+    if (this.guidedProgress >= 0.999 && along > 0.0001) {
+      return this.exitGuided(surface.endLanding);
     }
 
-    this.guidedProgress = Math.max(
-      0,
-      Math.min(1, this.guidedProgress),
-    );
+    this.guidedProgress = Math.max(0, Math.min(1, nextProgress));
     this.state = 'guided';
 
-    return this.resolution(
-      this.pointOnGuidedSurface(
-        surface,
-        this.guidedProgress,
-      ),
+    const target = this.pointOnGuided(
+      surface,
+      this.guidedProgress,
+    );
+
+    const position =
+      this.entryAssistRemaining > 0
+        ? Vector3.Lerp(desired, target, 0.35)
+        : target;
+
+    return this.result(
+      position,
       new Set([surface.colliderLabel]),
       false,
       false,
     );
   }
 
-  private updateFreeSurface(
+  private updateFree(
     surface: FreeTraversalSurface,
     desired: Vector3,
     isLandingBlocked: LandingValidator,
   ): TraversalResolution {
-    if (this.isInsideFreeSurface(surface, desired, 0)) {
+    if (this.isInsideFree(surface, desired, 0)) {
       this.state = 'free';
+      const target = this.clampToFree(surface, desired);
 
-      return this.resolution(
-        this.clampToFreeSurface(surface, desired),
+      return this.result(
+        this.entryAssistRemaining > 0
+          ? Vector3.Lerp(desired, target, 0.3)
+          : target,
         new Set([surface.colliderLabel]),
         false,
         false,
       );
     }
 
-    const landing = this.createFreeExitLanding(
-      surface,
-      desired,
-    );
+    const landing = this.createFreeLanding(surface, desired);
     const ignored = new Set([surface.colliderLabel]);
 
     if (!isLandingBlocked(landing, ignored)) {
-      return this.beginExitBlend(
-        this.clampToFreeSurface(surface, desired),
+      this.activeSurface = null;
+      this.state = 'ground';
+      this.entryCooldown = 0.22;
+      landing.y = 0;
+
+      return this.result(
         landing,
+        new Set(),
+        false,
+        true,
       );
     }
 
     this.state = 'free';
-
-    return this.resolution(
-      this.clampToFreeSurface(surface, desired),
+    return this.result(
+      this.clampToFree(surface, desired),
       ignored,
       false,
       false,
     );
   }
 
-  private beginExitBlend(
-    from: Vector3,
-    landing: Vector3,
-  ): TraversalResolution {
-    const groundedLanding = landing.clone();
-    groundedLanding.y = 0;
-
-    this.beginBlend(
-      from,
-      groundedLanding,
-      this.exitBlendSeconds,
-      'ground',
-    );
-    this.state = 'leaving';
-
-    return this.resolution(
-      from.clone(),
-      this.activeSurface
-        ? new Set([this.activeSurface.colliderLabel])
-        : new Set(),
-      false,
-      false,
-    );
-  }
-
-  private beginBlend(
-    from: Vector3,
-    to: Vector3,
-    duration: number,
-    nextState: 'guided' | 'free' | 'ground',
-  ): void {
-    this.blend = {
-      from: from.clone(),
-      to: to.clone(),
-      elapsed: 0,
-      duration,
-      nextState,
-    };
-  }
-
-  private cancelAt(position: Vector3): TraversalResolution {
+  private exitGuided(landing: Vector3): TraversalResolution {
     this.activeSurface = null;
-    this.guidedProgress = 0;
     this.state = 'ground';
+    this.guidedProgress = 0;
+    this.entryCooldown = 0.22;
+    this.entryAssistRemaining = 0;
 
-    const grounded = position.clone();
+    const grounded = landing.clone();
     grounded.y = 0;
 
-    return this.resolution(
+    return this.result(
       grounded,
       new Set(),
       false,
@@ -422,7 +310,7 @@ export class TraversalSurfaceSystem {
     );
   }
 
-  private pointOnGuidedSurface(
+  private pointOnGuided(
     surface: GuidedTraversalSurface,
     progress: number,
   ): Vector3 {
@@ -435,7 +323,7 @@ export class TraversalSurfaceSystem {
     return point;
   }
 
-  private clampToFreeSurface(
+  private clampToFree(
     surface: FreeTraversalSurface,
     desired: Vector3,
   ): Vector3 {
@@ -445,17 +333,11 @@ export class TraversalSurfaceSystem {
     if (surface.shape === 'box') {
       point.x = Math.max(
         surface.center.x - surface.halfWidth,
-        Math.min(
-          surface.center.x + surface.halfWidth,
-          point.x,
-        ),
+        Math.min(surface.center.x + surface.halfWidth, point.x),
       );
       point.z = Math.max(
         surface.center.z - surface.halfDepth,
-        Math.min(
-          surface.center.z + surface.halfDepth,
-          point.z,
-        ),
+        Math.min(surface.center.z + surface.halfDepth, point.z),
       );
       return point;
     }
@@ -473,7 +355,7 @@ export class TraversalSurfaceSystem {
     return point;
   }
 
-  private createFreeExitLanding(
+  private createFreeLanding(
     surface: FreeTraversalSurface,
     desired: Vector3,
   ): Vector3 {
@@ -483,10 +365,8 @@ export class TraversalSurfaceSystem {
     if (surface.shape === 'box') {
       const localX = desired.x - surface.center.x;
       const localZ = desired.z - surface.center.z;
-      const xOverflow =
-        Math.abs(localX) - surface.halfWidth;
-      const zOverflow =
-        Math.abs(localZ) - surface.halfDepth;
+      const xOverflow = Math.abs(localX) - surface.halfWidth;
+      const zOverflow = Math.abs(localZ) - surface.halfDepth;
 
       if (xOverflow >= zOverflow) {
         landing.x =
@@ -495,10 +375,7 @@ export class TraversalSurfaceSystem {
             (surface.halfWidth + surface.exitDistance);
         landing.z = Math.max(
           surface.center.z - surface.halfDepth,
-          Math.min(
-            surface.center.z + surface.halfDepth,
-            desired.z,
-          ),
+          Math.min(surface.center.z + surface.halfDepth, desired.z),
         );
       } else {
         landing.z =
@@ -507,10 +384,7 @@ export class TraversalSurfaceSystem {
             (surface.halfDepth + surface.exitDistance);
         landing.x = Math.max(
           surface.center.x - surface.halfWidth,
-          Math.min(
-            surface.center.x + surface.halfWidth,
-            desired.x,
-          ),
+          Math.min(surface.center.x + surface.halfWidth, desired.x),
         );
       }
 
@@ -539,17 +413,9 @@ export class TraversalSurfaceSystem {
   private findEntry(
     previous: Vector3,
     desired: Vector3,
-  ):
-    | {
-        surface: GuidedTraversalSurface;
-        atStart: boolean;
-      }
-    | {
-        surface: FreeTraversalSurface;
-      }
-    | null {
+  ): TraversalEntry | null {
     if (this.entryCooldown > 0) return null;
-    if (Math.max(previous.y, desired.y) <= 0.02) return null;
+    if (Math.max(previous.y, desired.y) <= 0.04) return null;
 
     for (const surface of this.surfaces) {
       if (
@@ -560,38 +426,31 @@ export class TraversalSurfaceSystem {
       }
 
       if (surface.mode === 'guided') {
-        const distanceToStart = this.planarDistance(
-          desired,
-          surface.start,
-        );
-        const distanceToEnd = this.planarDistance(
-          desired,
-          surface.end,
-        );
-
-        if (distanceToStart <= surface.entryRadius) {
+        if (
+          this.planarDistance(desired, surface.start) <=
+          surface.entryRadius
+        ) {
           return { surface, atStart: true };
         }
 
-        if (distanceToEnd <= surface.entryRadius) {
+        if (
+          this.planarDistance(desired, surface.end) <=
+          surface.entryRadius
+        ) {
           return { surface, atStart: false };
         }
 
         continue;
       }
 
-      const wasInside = this.isInsideFreeSurface(
-        surface,
-        previous,
-        0,
-      );
-      const isNearSurface = this.isInsideFreeSurface(
-        surface,
-        desired,
-        surface.entryPadding,
-      );
-
-      if (!wasInside && isNearSurface) {
+      if (
+        !this.isInsideFree(surface, previous, 0) &&
+        this.isInsideFree(
+          surface,
+          desired,
+          surface.entryPadding,
+        )
+      ) {
         return { surface };
       }
     }
@@ -599,7 +458,7 @@ export class TraversalSurfaceSystem {
     return null;
   }
 
-  private isInsideFreeSurface(
+  private isInsideFree(
     surface: FreeTraversalSurface,
     position: Vector3,
     padding: number,
@@ -625,7 +484,7 @@ export class TraversalSurfaceSystem {
     return Math.sqrt(dx * dx + dz * dz);
   }
 
-  private resolution(
+  private result(
     position: Vector3,
     ignoredColliderLabels: ReadonlySet<string>,
     enteredSurface: boolean,
