@@ -26,7 +26,10 @@ export interface SurfaceResolution {
 interface GuidedProjection {
   progress: number;
   clampedProgress: number;
+  lateralOffset: number;
   lateralDistance: number;
+  axis: Vector3;
+  perpendicular: Vector3;
   closestPoint: Vector3;
 }
 
@@ -38,20 +41,13 @@ export class TraversalSurfaceSystem {
   ) {}
 
   reset(): void {
-    // Continuous support has no active traversal state to clear.
+    // Continuous geometry support stores no active traversal state.
   }
 
   releaseForBlink(): void {
-    // Continuous support will be recalculated from Blink's destination.
+    // Support is recalculated from Blink's destination.
   }
 
-  /**
-   * Performs a stateless geometry query.
-   *
-   * The same surface must be rediscovered every frame. This keeps support
-   * stable while standing on geometry and naturally releases it when the
-   * player moves or jumps away.
-   */
   querySupport(
     previous: Vector3,
     desired: Vector3,
@@ -65,15 +61,17 @@ export class TraversalSurfaceSystem {
     }
 
     const candidates = this.surfaces
-      .map(surface => this.evaluateSurface(
-        surface,
-        previous,
-        desired,
-        grounded,
-        verticalVelocity,
-        currentSupportHeight,
-        isLandingBlocked,
-      ))
+      .map(surface =>
+        this.evaluateSurface(
+          surface,
+          previous,
+          desired,
+          grounded,
+          verticalVelocity,
+          currentSupportHeight,
+          isLandingBlocked,
+        ),
+      )
       .filter(
         (candidate): candidate is SurfaceResolution =>
           candidate !== null,
@@ -114,6 +112,14 @@ export class TraversalSurfaceSystem {
     );
   }
 
+  /**
+   * Guided surfaces behave like narrow bridges with invisible soft rails.
+   *
+   * The player may land anywhere inside the corridor, including the middle.
+   * While supported, lateral movement is clamped to the corridor rather than
+   * snapped to its centerline. Moving beyond either end naturally removes
+   * support, and jumping removes support because the actor is airborne.
+   */
   private evaluateGuided(
     surface: GuidedTraversalSurface,
     previous: Vector3,
@@ -127,17 +133,30 @@ export class TraversalSurfaceSystem {
       desired,
     );
 
+    const corridorHalfWidth = Math.max(
+      0.58,
+      surface.width * 0.72,
+    );
+    const endPadding = Math.max(
+      0.12,
+      surface.entryRadius * 0.18,
+    );
+
+    const insideLength =
+      projection.progress >= -endPadding &&
+      projection.progress <= 1 + endPadding;
+    const insideCorridor =
+      projection.lateralDistance <= corridorHalfWidth;
+
     const standingOnSurface =
       grounded &&
       Math.abs(
         currentSupportHeight - surface.surfaceHeight,
       ) <= 0.08 &&
-      projection.progress >= -0.08 &&
-      projection.progress <= 1.08 &&
-      projection.lateralDistance <=
-        Math.max(0.62, surface.width * 0.7);
+      insideLength &&
+      insideCorridor;
 
-    const descendingOntoEndpoint =
+    const descendingOntoCorridor =
       !grounded &&
       verticalVelocity <= 0 &&
       this.crossesSurfaceHeight(
@@ -145,39 +164,33 @@ export class TraversalSurfaceSystem {
         desired,
         surface.surfaceHeight,
       ) &&
-      (
-        this.planarDistance(
-          desired,
-          surface.start,
-        ) <= surface.entryRadius ||
-        this.planarDistance(
-          desired,
-          surface.end,
-        ) <= surface.entryRadius
-      );
+      projection.progress >= 0 &&
+      projection.progress <= 1 &&
+      projection.lateralDistance <=
+        corridorHalfWidth + 0.18;
 
-    if (!standingOnSurface && !descendingOntoEndpoint) {
+    if (!standingOnSurface && !descendingOntoCorridor) {
       return null;
     }
 
-    const progress = standingOnSurface
-      ? projection.clampedProgress
-      : this.planarDistance(
-          desired,
-          surface.start,
-        ) <= this.planarDistance(
-          desired,
-          surface.end,
-        )
-        ? 0
-        : 1;
+    // Once movement passes beyond either physical end, support disappears.
+    // This permits walking or jumping off without endpoint state logic.
+    if (
+      standingOnSurface &&
+      (
+        projection.progress < 0 ||
+        projection.progress > 1
+      )
+    ) {
+      return null;
+    }
 
-    const position = Vector3.Lerp(
-      surface.start,
-      surface.end,
-      progress,
+    const position = this.clampToGuidedCorridor(
+      surface,
+      desired,
+      projection,
+      corridorHalfWidth,
     );
-    position.y = desired.y;
 
     return {
       position,
@@ -227,10 +240,8 @@ export class TraversalSurfaceSystem {
       );
 
     if (standingOnSurface || descendingOntoSurface) {
-      const position = desired.clone();
-
       return {
-        position,
+        position: desired.clone(),
         supportHeight: surface.surfaceHeight,
         ignoredColliderLabels: new Set([
           surface.colliderLabel,
@@ -240,8 +251,6 @@ export class TraversalSurfaceSystem {
       };
     }
 
-    // A grounded player leaving a free surface should only remain constrained
-    // when the adjacent landing is unsafe, such as water beside a slab.
     const wasStandingOnSurface =
       grounded &&
       Math.abs(
@@ -282,8 +291,8 @@ export class TraversalSurfaceSystem {
     desired: Vector3,
     surfaceHeight: number,
   ): boolean {
-    const toleranceAbove = 0.22;
-    const toleranceBelow = 0.16;
+    const toleranceAbove = 0.24;
+    const toleranceBelow = 0.18;
 
     return (
       previous.y >= surfaceHeight - toleranceBelow &&
@@ -295,43 +304,88 @@ export class TraversalSurfaceSystem {
     surface: GuidedTraversalSurface,
     position: Vector3,
   ): GuidedProjection {
-    const axis = surface.end.subtract(surface.start);
-    axis.y = 0;
-    const lengthSquared = axis.lengthSquared();
+    const rawAxis = surface.end.subtract(surface.start);
+    rawAxis.y = 0;
+    const length = rawAxis.length();
 
-    if (lengthSquared <= 0.0001) {
+    if (length <= 0.0001) {
       return {
         progress: 0,
         clampedProgress: 0,
+        lateralOffset: 0,
         lateralDistance: Number.POSITIVE_INFINITY,
+        axis: new Vector3(0, 0, 1),
+        perpendicular: new Vector3(1, 0, 0),
         closestPoint: surface.start.clone(),
       };
     }
 
+    const axis = rawAxis.scale(1 / length);
+    const perpendicular = new Vector3(
+      -axis.z,
+      0,
+      axis.x,
+    );
     const relative = position.subtract(surface.start);
     relative.y = 0;
 
-    const progress =
-      Vector3.Dot(relative, axis) / lengthSquared;
+    const alongDistance = Vector3.Dot(relative, axis);
+    const progress = alongDistance / length;
     const clampedProgress = Math.max(
       0,
       Math.min(1, progress),
     );
-    const closestPoint = Vector3.Lerp(
-      surface.start,
-      surface.end,
-      clampedProgress,
+    const closestPoint = surface.start.add(
+      axis.scale(
+        clampedProgress * length,
+      ),
+    );
+    const lateralOffset = Vector3.Dot(
+      relative,
+      perpendicular,
     );
 
     return {
       progress,
       clampedProgress,
-      lateralDistance: this.planarDistance(
-        position,
-        closestPoint,
-      ),
+      lateralOffset,
+      lateralDistance: Math.abs(lateralOffset),
+      axis,
+      perpendicular,
       closestPoint,
     };
+  }
+
+  private clampToGuidedCorridor(
+    surface: GuidedTraversalSurface,
+    desired: Vector3,
+    projection: GuidedProjection,
+    corridorHalfWidth: number,
+  ): Vector3 {
+    const axisLength = this.planarDistance(
+      surface.start,
+      surface.end,
+    );
+    const alongDistance =
+      projection.clampedProgress * axisLength;
+    const lateralOffset = Math.max(
+      -corridorHalfWidth,
+      Math.min(
+        corridorHalfWidth,
+        projection.lateralOffset,
+      ),
+    );
+
+    const position = surface.start
+      .add(projection.axis.scale(alongDistance))
+      .add(
+        projection.perpendicular.scale(
+          lateralOffset,
+        ),
+      );
+
+    position.y = desired.y;
+    return position;
   }
 
   private clampToFree(

@@ -462,6 +462,72 @@ Broad logs, shortcut rocks, and slabs:
 - `src/main.ts`
 - `src/game/world/TraversalSurfaceSystem.ts`
 
+# Astral 0.5.1.2 — Guided Traversal Corridors
+
+This update keeps continuous geometry support and changes narrow crossings into
+soft guided corridors.
+
+## Traversal categories
+
+### Free geometry
+
+Used for:
+
+- Broad logs
+- Slab rocks
+- Shortcut rocks
+- Platforms
+- Ruined floors later
+
+Behavior:
+
+- Land from any accessible side
+- Move freely across the top
+- Jump off normally
+- Leave any safe edge
+
+### Guided corridors
+
+Used for:
+
+- Stream logs
+- Narrow beams
+- Pipes
+- Fallen columns
+- Narrow bridges later
+
+Behavior:
+
+- Land anywhere along the corridor, including the middle
+- Continuous support from geometry every frame
+- Soft invisible side guides keep the player over the crossing
+- Lateral movement is clamped rather than snapped to the centerline
+- Jumping removes support naturally
+- Walking beyond either end removes support naturally
+
+## Current stream-log behavior
+
+The western stream log now:
+
+- Accepts a descending jump anywhere along its usable length
+- Supports the player continuously in the middle
+- Allows some side-to-side movement
+- Prevents accidental sideways movement into water
+- Allows jumping off at any point
+- Allows walking off either bank-facing end
+
+## Developer visualization
+
+Press `P` and enable `Traversal Highlight`.
+
+- Blue endpoint markers remain visible.
+- A translucent blue rectangle shows the full guided corridor.
+- Green overlays continue to show free traversal surfaces.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
 
 
 ### Validate

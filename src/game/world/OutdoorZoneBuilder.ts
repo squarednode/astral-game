@@ -281,6 +281,34 @@ export function buildOutdoorZone(
       marker.visibility = 0;
       traversalHighlights.push(marker);
     }
+
+    const corridorAxis = end.subtract(start);
+    corridorAxis.y = 0;
+    const corridorLength = corridorAxis.length();
+    const corridorCenter = Vector3.Lerp(start, end, 0.5);
+
+    const corridorDebug = MeshBuilder.CreateBox(
+      `${id}-guided-corridor-debug`,
+      {
+        width: Math.max(1.16, width * 1.44),
+        depth: corridorLength,
+        height: 0.05,
+      },
+      scene,
+    );
+    corridorDebug.position.copyFrom(corridorCenter);
+    corridorDebug.position.y = surfaceHeight + 0.07;
+    corridorDebug.rotation.y = Math.atan2(
+      corridorAxis.x,
+      corridorAxis.z,
+    );
+    corridorDebug.material = material(
+      'guided-corridor-debug',
+      new Color3(0.2, 0.65, 1),
+      0.5,
+    );
+    corridorDebug.visibility = 0;
+    traversalHighlights.push(corridorDebug);
   };
 
   const addFreeBoxTraversalSurface = (
@@ -647,7 +675,8 @@ export function buildOutdoorZone(
       traversalHighlights.forEach(mesh => {
         if (
           mesh.name.endsWith('-anchor') ||
-          mesh.name.endsWith('-free-traversal-debug')
+          mesh.name.endsWith('-free-traversal-debug') ||
+          mesh.name.endsWith('-guided-corridor-debug')
         ) {
           mesh.visibility = visible ? 0.72 : 0;
           return;
