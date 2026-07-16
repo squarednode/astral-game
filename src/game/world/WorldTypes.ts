@@ -4,7 +4,8 @@ export type EnvironmentInteractionClass =
   | 'decorative'
   | 'soft'
   | 'traversable'
-  | 'solid';
+  | 'solid'
+  | 'dynamic';
 
 export interface CircleWorldCollider {
   kind: 'circle';
@@ -29,6 +30,20 @@ export interface BoxWorldCollider {
 
 export type WorldCollider = CircleWorldCollider | BoxWorldCollider;
 
+export interface TraversalSurface {
+  id: string;
+  label: string;
+  colliderLabel: string;
+  start: Vector3;
+  end: Vector3;
+  startLanding: Vector3;
+  endLanding: Vector3;
+  surfaceHeight: number;
+  entryRadius: number;
+  width: number;
+  minimumEntryHeight: number;
+}
+
 export interface WorldLandmark {
   id: string;
   label: string;
@@ -38,6 +53,7 @@ export interface WorldLandmark {
 export interface OutdoorZone {
   groundName: string;
   colliders: WorldCollider[];
+  traversalSurfaces: TraversalSurface[];
   landmarks: WorldLandmark[];
   setTraversalHighlightVisible(visible: boolean): void;
 }

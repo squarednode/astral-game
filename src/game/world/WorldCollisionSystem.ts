@@ -12,32 +12,33 @@ export class WorldCollisionSystem {
   resolvePosition(
     previous: Vector3,
     desired: Vector3,
-    actorHeight: number,
+    ignoredColliderLabels: ReadonlySet<string> = new Set(),
   ): Vector3 {
     if (!this.enabled) return desired.clone();
-    if (!this.collides(desired, actorHeight)) return desired.clone();
+    if (!this.collides(desired, ignoredColliderLabels)) return desired.clone();
 
     const xOnly = new Vector3(desired.x, desired.y, previous.z);
-    if (!this.collides(xOnly, actorHeight)) return xOnly;
+    if (!this.collides(xOnly, ignoredColliderLabels)) return xOnly;
 
     const zOnly = new Vector3(previous.x, desired.y, desired.z);
-    if (!this.collides(zOnly, actorHeight)) return zOnly;
+    if (!this.collides(zOnly, ignoredColliderLabels)) return zOnly;
 
     return previous.clone();
   }
 
-  isBlocked(position: Vector3, actorHeight: number): boolean {
-    return this.enabled && this.collides(position, actorHeight);
+  isBlocked(
+    position: Vector3,
+    ignoredColliderLabels: ReadonlySet<string> = new Set(),
+  ): boolean {
+    return this.enabled && this.collides(position, ignoredColliderLabels);
   }
 
-  private collides(position: Vector3, actorHeight: number): boolean {
+  private collides(
+    position: Vector3,
+    ignoredColliderLabels: ReadonlySet<string>,
+  ): boolean {
     return this.colliders.some(collider => {
-      if (
-        collider.interaction === 'traversable' &&
-        actorHeight >= (collider.clearanceHeight ?? 0.65)
-      ) {
-        return false;
-      }
+      if (ignoredColliderLabels.has(collider.label)) return false;
 
       if (collider.kind === 'circle') {
         const dx = position.x - collider.centerX;

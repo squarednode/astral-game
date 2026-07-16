@@ -297,3 +297,64 @@ git add .
 git commit -m "feat: add first outdoor zone and traversal collisions"
 git push
 ```
+
+##### 0.5.0.2 — Traversal Surface System
+This update replaces the simple jump-clearance behavior for logs with reusable
+traversal surfaces.
+New file
+`src/game/world/TraversalSurfaceSystem.ts`
+Modified files
+`src/main.ts`
+`src/game/world/WorldTypes.ts`
+`src/game/world/WorldCollisionSystem.ts`
+`src/game/world/OutdoorZoneBuilder.ts`
+The package includes the complete matching 0.5.0.1 source set.
+Traversal behavior
+Each traversal surface now owns:
+Entry A
+Entry B
+Safe ground landing at each end
+Constrained movement axis
+Surface height
+Entry radius
+Associated collision object
+Current traversal surfaces:
+Entrance fallen-log vault
+Western stream log crossing
+Behavior changes
+The player must jump near a defined entry anchor to enter a traversal.
+Once on a traversal surface, movement is constrained along its valid axis.
+The player can move forward or backward along the object.
+Sideways movement cannot dump the player into water.
+Passing either end places the player at a defined safe landing point.
+The player is explicitly returned to ground height after exiting.
+Jumping into the middle of a traversal object does not bypass its collision.
+Developer teleporting cancels any active traversal state.
+Developer testing
+Press `P`, then enable `Traversal Highlight`.
+Blue anchor markers show the valid entry and exit locations.
+Validate
+```bash
+npm run build
+npm run dev
+```
+Test:
+Approach the entrance log while grounded; confirm it blocks movement.
+Jump near either blue entry anchor.
+Move across the log and confirm lateral movement is constrained.
+Exit either side and confirm player height returns to zero.
+Reverse direction while on the log and exit from the original side.
+Repeat on the stream log.
+Confirm no exit position lands in the stream.
+Attempt to jump into the middle of the stream log; confirm it does not
+bypass the defined entry points.
+Teleport while on a traversal surface and confirm the player is reset.
+Confirm bridge movement, normal world collision, combat, loot, and Party
+Management still work.
+Enemy-body collision is intentionally deferred to the enemy territory update.
+Suggested commit:
+```bash
+git add .
+git commit -m "feat: add anchored traversal surfaces for logs"
+git push
+```

@@ -9,6 +9,7 @@ import {
 } from '@babylonjs/core';
 import type {
   OutdoorZone,
+  TraversalSurface,
   WorldCollider,
   WorldLandmark,
 } from './WorldTypes';
@@ -28,6 +29,7 @@ export function buildOutdoorZone(
 ): OutdoorZone {
   const { scene, shadows, material } = options;
   const colliders: WorldCollider[] = [];
+  const traversalSurfaces: TraversalSurface[] = [];
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
 
@@ -231,6 +233,55 @@ export function buildOutdoorZone(
     if (traversable) traversalHighlights.push(log);
   };
 
+  const addTraversalSurface = (
+    id: string,
+    label: string,
+    colliderLabel: string,
+    start: Vector3,
+    end: Vector3,
+    startLanding: Vector3,
+    endLanding: Vector3,
+    surfaceHeight: number,
+    entryRadius = 1.15,
+    width = 1.05,
+    minimumEntryHeight = 0.28,
+  ): void => {
+    traversalSurfaces.push({
+      id,
+      label,
+      colliderLabel,
+      start,
+      end,
+      startLanding,
+      endLanding,
+      surfaceHeight,
+      entryRadius,
+      width,
+      minimumEntryHeight,
+    });
+
+    // Entry markers are only visible when traversal highlighting is enabled.
+    for (const [suffix, point] of [
+      ['start', start],
+      ['end', end],
+    ] as const) {
+      const marker = MeshBuilder.CreateCylinder(
+        `${id}-${suffix}-anchor`,
+        { diameter: 0.45, height: 0.06, tessellation: 24 },
+        scene,
+      );
+      marker.position.copyFrom(point);
+      marker.position.y = 0.08;
+      marker.material = material(
+        'traversal-anchor',
+        new Color3(0.15, 0.72, 1),
+        0.55,
+      );
+      marker.visibility = 0;
+      traversalHighlights.push(marker);
+    }
+  };
+
   const addBridge = (
     name: string,
     x: number,
@@ -307,9 +358,36 @@ export function buildOutdoorZone(
 
   addBridge('old-bridge', 5, 2, 4.6, 5.2);
   addLog('stream-log-crossing', -11, 2, 5.5, Math.PI / 2, true);
+  addTraversalSurface(
+    'stream-log-surface',
+    'Stream Log Crossing',
+    'stream-log-crossing',
+    new Vector3(-11, 0.58, -0.85),
+    new Vector3(-11, 0.58, 4.85),
+    new Vector3(-11, 0, -1.55),
+    new Vector3(-11, 0, 5.55),
+    0.58,
+    1.25,
+    1.05,
+    0.28,
+  );
 
-  // Entrance traversal lesson: jump or go around.
+  // Entrance traversal lesson: jump or go around. The traversal direction is
+  // perpendicular to the visual log because this object is vaulted across.
   addLog('entry-fallen-log', 0, -12.5, 6.2, 0, true);
+  addTraversalSurface(
+    'entry-log-surface',
+    'Entrance Fallen Log',
+    'entry-fallen-log',
+    new Vector3(0, 0.58, -13.45),
+    new Vector3(0, 0.58, -11.55),
+    new Vector3(0, 0, -14.2),
+    new Vector3(0, 0, -10.8),
+    0.58,
+    1.2,
+    1.15,
+    0.28,
+  );
 
   // A low-rock shortcut.
   addRock('shortcut-rock-a', -7.4, 10.8, 1.0, true);
@@ -415,9 +493,15 @@ export function buildOutdoorZone(
   return {
     groundName: ground.name,
     colliders,
+    traversalSurfaces,
     landmarks,
     setTraversalHighlightVisible(visible: boolean): void {
       traversalHighlights.forEach(mesh => {
+        if (mesh.name.endsWith('-anchor')) {
+          mesh.visibility = visible ? 1 : 0;
+          return;
+        }
+
         if (!mesh.material) return;
         const materialInstance = mesh.material as StandardMaterial;
         materialInstance.emissiveColor = visible

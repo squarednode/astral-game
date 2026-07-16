@@ -35,6 +35,7 @@ import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildOutdoorZone } from './game/world/OutdoorZoneBuilder';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
+import { TraversalSurfaceSystem } from './game/world/TraversalSurfaceSystem';
 import type {
   GearFamily,
   GearSlot,
@@ -138,6 +139,9 @@ const outdoorZone = buildOutdoorZone({
 });
 const ground = scene.getMeshByName(outdoorZone.groundName)!;
 const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
+const traversalSurfaces = new TraversalSurfaceSystem(
+  outdoorZone.traversalSurfaces,
+);
 
 const defs: CharacterDef[] = [
   { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
@@ -721,6 +725,7 @@ const developerActions: DeveloperActions = {
     );
     if (!landmark) return;
 
+    traversalSurfaces.reset();
     playerRoot.position.copyFrom(landmark.position);
     movement.setPointerWorld(landmark.position);
     pointerWorld.copyFrom(landmark.position);
@@ -853,11 +858,19 @@ scene.onBeforeRenderObservable.add(() => {
 
   const positionBeforeMovement = playerRoot.position.clone();
   movement.update(dt);
-  const resolvedPosition = worldCollision.resolvePosition(
+
+  const traversalResolution = traversalSurfaces.update(
     positionBeforeMovement,
     playerRoot.position,
-    playerRoot.position.y,
+    dt,
   );
+
+  const resolvedPosition = worldCollision.resolvePosition(
+    positionBeforeMovement,
+    traversalResolution.position,
+    traversalResolution.ignoredColliderLabels,
+  );
+
   playerRoot.position.copyFrom(resolvedPosition);
 
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
