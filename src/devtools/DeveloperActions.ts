@@ -6,6 +6,9 @@ export interface DeveloperActions {
   startNextWave(): void;
   spawnLoot(rarity: 'common' | 'magic' | 'rare' | 'legendary'): void;
   clearInventory(): void;
+  teleportToLandmark(landmarkId: string): void;
+  setWorldCollision(enabled: boolean): void;
+  setTraversalHighlightsVisible(visible: boolean): void;
   getStatus(): {
     wave: number;
     enemies: number;

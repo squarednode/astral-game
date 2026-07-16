@@ -15,6 +15,8 @@ type ToggleKey = keyof Pick<
   | 'enemyTelegraphsEnabled'
   | 'movementDebugEnabled'
   | 'noCooldowns'
+  | 'worldCollisionEnabled'
+  | 'traversalHighlightsVisible'
 >;
 
 export class DeveloperConsole {
@@ -31,7 +33,7 @@ export class DeveloperConsole {
       <div class="dev-header">
         <div>
           <strong>Developer Tools</strong>
-          <small>F1 / Escape to close</small>
+          <small>P / Escape to close</small>
         </div>
         <button data-action="close">×</button>
       </div>
@@ -83,10 +85,24 @@ export class DeveloperConsole {
       </section>
 
       <section>
-        <h3>World & Debug</h3>
+        <h3>World</h3>
         <div class="dev-grid">
-          <button data-toggle="wavesEnabled">Auto Waves</button>
-          <button data-action="next-wave">Next Wave</button>
+          <button data-action="teleport-entrance">Entrance</button>
+          <button data-action="teleport-stream">Stream</button>
+          <button data-action="teleport-camp">NPC Camp</button>
+          <button data-action="teleport-bridge">Bridge</button>
+          <button data-action="teleport-elite">Elite Arena</button>
+          <button data-action="teleport-exit">Exit</button>
+          <button data-toggle="worldCollisionEnabled">World Collision</button>
+          <button data-toggle="traversalHighlightsVisible">Traversal Highlight</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Debug & Survival</h3>
+        <div class="dev-grid">
+          <button data-toggle="wavesEnabled">Survival Waves</button>
+          <button data-action="next-wave">Spawn Survival Wave</button>
           <button data-toggle="movementDebugEnabled">Movement Debug</button>
         </div>
       </section>
@@ -103,6 +119,17 @@ export class DeveloperConsole {
       const toggle = target.dataset.toggle as ToggleKey | undefined;
       if (toggle) {
         this.state[toggle] = !this.state[toggle];
+
+        if (toggle === 'worldCollisionEnabled') {
+          this.actions.setWorldCollision(this.state.worldCollisionEnabled);
+        }
+
+        if (toggle === 'traversalHighlightsVisible') {
+          this.actions.setTraversalHighlightsVisible(
+            this.state.traversalHighlightsVisible,
+          );
+        }
+
         this.refresh();
         return;
       }
@@ -120,6 +147,24 @@ export class DeveloperConsole {
         case 'loot-rare': this.actions.spawnLoot('rare'); break;
         case 'loot-legendary': this.actions.spawnLoot('legendary'); break;
         case 'clear-loot': this.actions.clearInventory(); break;
+        case 'teleport-entrance':
+          this.actions.teleportToLandmark('entrance');
+          break;
+        case 'teleport-stream':
+          this.actions.teleportToLandmark('stream');
+          break;
+        case 'teleport-camp':
+          this.actions.teleportToLandmark('npc-camp');
+          break;
+        case 'teleport-bridge':
+          this.actions.teleportToLandmark('bridge');
+          break;
+        case 'teleport-elite':
+          this.actions.teleportToLandmark('elite-arena');
+          break;
+        case 'teleport-exit':
+          this.actions.teleportToLandmark('exit');
+          break;
       }
 
       this.refresh();

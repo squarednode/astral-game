@@ -12,6 +12,8 @@ export interface DeveloperState {
   enemyTelegraphsEnabled: boolean;
   movementDebugEnabled: boolean;
   noCooldowns: boolean;
+  worldCollisionEnabled: boolean;
+  traversalHighlightsVisible: boolean;
 }
 
 export const developerState: DeveloperState = {
@@ -19,7 +21,7 @@ export const developerState: DeveloperState = {
   godMode: false,
   enemyAiEnabled: true,
   enemyDamageEnabled: true,
-  wavesEnabled: true,
+  wavesEnabled: false,
   hitStopEnabled: true,
   damageNumbersEnabled: true,
   knockbackEnabled: true,
@@ -28,4 +30,6 @@ export const developerState: DeveloperState = {
   enemyTelegraphsEnabled: true,
   movementDebugEnabled: true,
   noCooldowns: false,
+  worldCollisionEnabled: true,
+  traversalHighlightsVisible: false,
 };

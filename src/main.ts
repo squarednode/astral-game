@@ -33,6 +33,8 @@ import { DeveloperConsole } from './devtools/DeveloperConsole';
 import { developerState } from './devtools/DeveloperState';
 import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
+import { buildOutdoorZone } from './game/world/OutdoorZoneBuilder';
+import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
 import type {
   GearFamily,
   GearSlot,
@@ -129,21 +131,13 @@ function mat(name: string, color: Color3, emissive = 0): StandardMaterial {
   return m;
 }
 
-const ground = MeshBuilder.CreateGround('ground', { width: 34, height: 28, subdivisions: 2 }, scene);
-ground.material = mat('ground', new Color3(0.09, 0.12, 0.16));
-ground.receiveShadows = true;
-
-for (let i = 0; i < 34; i++) {
-  const p = MeshBuilder.CreateBox(`ruin-${i}`, { width: 0.8 + Math.random() * 1.7, depth: 0.8 + Math.random() * 1.7, height: 0.5 + Math.random() * 2.2 }, scene);
-  const edge = i % 4;
-  if (edge === 0) p.position.set(-15 + Math.random() * 30, p.scaling.y / 2, -12.7);
-  if (edge === 1) p.position.set(-15 + Math.random() * 30, p.scaling.y / 2, 12.7);
-  if (edge === 2) p.position.set(-16.2, p.scaling.y / 2, -11 + Math.random() * 22);
-  if (edge === 3) p.position.set(16.2, p.scaling.y / 2, -11 + Math.random() * 22);
-  p.material = mat('ruin', new Color3(0.16, 0.19, 0.24));
-  p.receiveShadows = true;
-  shadows.addShadowCaster(p);
-}
+const outdoorZone = buildOutdoorZone({
+  scene,
+  shadows,
+  material: mat,
+});
+const ground = scene.getMeshByName(outdoorZone.groundName)!;
+const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
 
 const defs: CharacterDef[] = [
   { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
@@ -161,6 +155,7 @@ let activeIndex = 0;
 let active = party[0];
 
 const playerRoot = new TransformNode('playerRoot', scene);
+playerRoot.position.set(0, 0, -22);
 const playerBody = MeshBuilder.CreateCapsule('player', { height: 2.0, radius: 0.55 }, scene);
 playerBody.parent = playerRoot;
 playerBody.position.y = 1;
@@ -720,6 +715,27 @@ const developerActions: DeveloperActions = {
     feed('Developer: inventory cleared.');
   },
 
+  teleportToLandmark: (landmarkId: string) => {
+    const landmark = outdoorZone.landmarks.find(
+      candidate => candidate.id === landmarkId,
+    );
+    if (!landmark) return;
+
+    playerRoot.position.copyFrom(landmark.position);
+    movement.setPointerWorld(landmark.position);
+    pointerWorld.copyFrom(landmark.position);
+    feed(`Developer: teleported to ${landmark.label}.`);
+  },
+
+  setWorldCollision: (enabled: boolean) => {
+    worldCollision.enabled = enabled;
+    feed(`Developer: world collision ${enabled ? 'enabled' : 'disabled'}.`);
+  },
+
+  setTraversalHighlightsVisible: (visible: boolean) => {
+    outdoorZone.setTraversalHighlightVisible(visible);
+  },
+
   getStatus: () => ({
     wave,
     enemies: enemies.length,
@@ -835,7 +851,15 @@ scene.onBeforeRenderObservable.add(() => {
   // the browser coalesces pointer-move events or the cursor moves across VFX.
   if (input.isPointerHeld('left')) updatePointerWorldFromCursor();
 
+  const positionBeforeMovement = playerRoot.position.clone();
   movement.update(dt);
+  const resolvedPosition = worldCollision.resolvePosition(
+    positionBeforeMovement,
+    playerRoot.position,
+    playerRoot.position.y,
+  );
+  playerRoot.position.copyFrom(resolvedPosition);
+
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
   playerCamera.update(dt);
@@ -872,6 +896,10 @@ scene.onBeforeRenderObservable.add(() => {
   combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
   combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
   movementDebug.setVisible(developerState.movementDebugEnabled);
+  worldCollision.enabled = developerState.worldCollisionEnabled;
+  outdoorZone.setTraversalHighlightVisible(
+    developerState.traversalHighlightsVisible,
+  );
 
   enemies.forEach(e => {
     combat.updateKnockback(e, dt);

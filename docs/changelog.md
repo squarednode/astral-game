@@ -228,3 +228,72 @@ git add .
 git commit -m "fix: polish item actions and restore developer tools"
 git push
 ```
+
+##### 0.5.0.1 — Outdoor Zone Foundation
+This update replaces the small combat arena with the first handcrafted outdoor
+prototype zone.
+New files
+`src/game/world/WorldTypes.ts`
+`src/game/world/WorldCollisionSystem.ts`
+`src/game/world/OutdoorZoneBuilder.ts`
+Modified files
+`src/main.ts`
+`src/game/config/GameBalance.ts`
+`src/devtools/DeveloperActions.ts`
+`src/devtools/DeveloperConsole.ts`
+`src/devtools/DeveloperState.ts`
+The package includes the complete matching 0.4.2 source set.
+World content
+80 × 56 outdoor play space
+Primary route and two alternate routes
+Primitive trees, bushes, rocks, logs, stream, bridge, cliffs, ruins, wagon,
+and watchtower landmark
+Decorative and soft vegetation with no collision
+Tree-trunk-only collision
+Solid rocks, cliffs, ruins, wagon, and tower
+Jumpable fallen logs and low rocks
+Stream boundary with:
+Bridge crossing
+Jumpable log crossing
+Natural world boundaries instead of invisible walls
+Survival waves disabled by default
+Environment interaction classes
+Decorative: no collision
+Soft: no collision
+Traversable: blocks while grounded; can be crossed while jumping
+Solid: always blocks movement
+Developer tools
+Press `P`.
+New world controls:
+Teleport to Entrance
+Teleport to Stream
+Teleport to NPC Camp
+Teleport to Bridge
+Teleport to Elite Arena
+Teleport to Exit
+Toggle World Collision
+Toggle Traversal Highlight
+Validate
+```bash
+npm run build
+npm run dev
+```
+Test:
+Confirm the game begins at the zone entrance.
+Walk through small and tall bushes.
+Confirm tree trunks and large rocks block movement.
+Walk around the entrance fallen log.
+Jump over the entrance fallen log.
+Cross the stream by the bridge.
+Cross the stream using the western log while jumping.
+Explore both alternate routes.
+Confirm no enemies spawn automatically.
+Use `P` to test every world teleport.
+Toggle collision and traversal highlighting.
+Confirm Party Management, combat, loot, and developer spawning still work.
+Suggested commit:
+```bash
+git add .
+git commit -m "feat: add first outdoor zone and traversal collisions"
+git push
+```
