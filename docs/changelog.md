@@ -399,8 +399,72 @@ The traversal system no longer directly changes player height or jump state.
   geometry.
 - Blink resets vertical and traversal state at its final safe landing.
 
+## Astral 0.5.1.1 — Continuous Geometry Support
 
-###### Validate
+This update removes remembered traversal support. Logs, rocks, and slabs are
+queried from geometry every frame.
+
+### Core behavior
+
+Every frame the world system asks:
+
+- Is the player over a traversal footprint?
+- Is the player standing on it?
+- Is the player descending through its top height?
+- Is the surface guided or free?
+- Does the surface need a horizontal constraint?
+- Is the adjacent exit safe?
+
+The surface must be rediscovered every frame. The player can no longer acquire
+support once and then fall through it on the next frame.
+
+### Architecture
+
+`PlayerMovementController` continues to own:
+
+- Jump
+- Gravity
+- Grounded state
+- Vertical velocity
+- Landing
+- Support height
+
+`TraversalSurfaceSystem` is now a stateless geometry query:
+
+- No active surface
+- No entry state
+- No exit state
+- No traversal cooldowns
+- No vertical movement control
+
+### Guided surfaces
+
+The stream log remains guided:
+
+- Initial landing is only accepted near either endpoint.
+- Once supported, the player is projected onto the log axis each frame.
+- Walking beyond an endpoint removes support and starts a natural fall to the
+  bank.
+- Jumping removes support automatically because the player is airborne.
+
+### Free surfaces
+
+Broad logs, shortcut rocks, and slabs:
+
+- Can be landed on from accessible sides.
+- Continuously provide support while the player remains over the footprint.
+- Allow free movement across the top.
+- Release support when the player leaves a safe edge.
+- Block unsafe exits beside water or other hazards.
+
+### Modified files
+
+- `src/main.ts`
+- `src/game/world/TraversalSurfaceSystem.ts`
+
+
+
+### Validate
 ```bash
 npm run build
 npm run dev

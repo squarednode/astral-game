@@ -935,10 +935,9 @@ scene.onBeforeRenderObservable.add(() => {
 
   const movementPosition = playerRoot.position.clone();
 
-  const traversalResolution = traversalSurfaces.update(
+  const traversalResolution = traversalSurfaces.querySupport(
     positionBeforeMovement,
     movementPosition,
-    dt,
     movement.isGrounded(),
     movement.getVerticalVelocity(),
     movement.getSupportHeight(),

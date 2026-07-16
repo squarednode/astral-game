@@ -19,260 +19,238 @@ export interface SurfaceResolution {
   position: Vector3;
   supportHeight: number;
   ignoredColliderLabels: ReadonlySet<string>;
-  activeSurfaceId: string | null;
-  activeMode: SurfaceMovementMode;
-  enteredSurface: boolean;
-  exitedSurface: boolean;
+  surfaceId: string | null;
+  mode: SurfaceMovementMode;
 }
 
-interface GuidedTraversalEntry {
-  surface: GuidedTraversalSurface;
+interface GuidedProjection {
   progress: number;
-}
-
-interface FreeTraversalEntry {
-  surface: FreeTraversalSurface;
-}
-
-type TraversalEntry =
-  | GuidedTraversalEntry
-  | FreeTraversalEntry;
-
-function isGuidedEntry(
-  entry: TraversalEntry,
-): entry is GuidedTraversalEntry {
-  return entry.surface.mode === 'guided';
+  clampedProgress: number;
+  lateralDistance: number;
+  closestPoint: Vector3;
 }
 
 export class TraversalSurfaceSystem {
   enabled = true;
-
-  private activeSurface: TraversalSurface | null = null;
-  private guidedProgress = 0;
-  private entryCooldown = 0;
 
   constructor(
     private readonly surfaces: ReadonlyArray<TraversalSurface>,
   ) {}
 
   reset(): void {
-    this.activeSurface = null;
-    this.guidedProgress = 0;
-    this.entryCooldown = 0.15;
+    // Continuous support has no active traversal state to clear.
   }
 
   releaseForBlink(): void {
-    this.reset();
-    this.entryCooldown = 0.25;
-  }
-
-  getActiveSurfaceId(): string | null {
-    return this.activeSurface?.id ?? null;
-  }
-
-  getActiveMode(): SurfaceMovementMode {
-    return this.activeSurface?.mode ?? 'ground';
+    // Continuous support will be recalculated from Blink's destination.
   }
 
   /**
-   * Resolves only horizontal guidance and support metadata.
+   * Performs a stateless geometry query.
    *
-   * It does not change jump velocity, grounded state, or vertical position.
-   * PlayerMovementController remains the sole owner of vertical physics.
+   * The same surface must be rediscovered every frame. This keeps support
+   * stable while standing on geometry and naturally releases it when the
+   * player moves or jumps away.
    */
-  update(
+  querySupport(
     previous: Vector3,
     desired: Vector3,
-    dt: number,
     grounded: boolean,
     verticalVelocity: number,
     currentSupportHeight: number,
     isLandingBlocked: LandingValidator,
   ): SurfaceResolution {
-    this.entryCooldown = Math.max(
-      0,
-      this.entryCooldown - dt,
-    );
-
     if (!this.enabled) {
       return this.groundResolution(desired);
     }
 
-    if (this.activeSurface?.mode === 'guided') {
-      return this.updateGuided(
-        this.activeSurface,
+    const candidates = this.surfaces
+      .map(surface => this.evaluateSurface(
+        surface,
         previous,
         desired,
         grounded,
-      );
-    }
+        verticalVelocity,
+        currentSupportHeight,
+        isLandingBlocked,
+      ))
+      .filter(
+        (candidate): candidate is SurfaceResolution =>
+          candidate !== null,
+      )
+      .sort((a, b) => b.supportHeight - a.supportHeight);
 
-    if (this.activeSurface?.mode === 'free') {
-      return this.updateFree(
-        this.activeSurface,
+    return candidates[0] ?? this.groundResolution(desired);
+  }
+
+  private evaluateSurface(
+    surface: TraversalSurface,
+    previous: Vector3,
+    desired: Vector3,
+    grounded: boolean,
+    verticalVelocity: number,
+    currentSupportHeight: number,
+    isLandingBlocked: LandingValidator,
+  ): SurfaceResolution | null {
+    if (surface.mode === 'guided') {
+      return this.evaluateGuided(
+        surface,
+        previous,
         desired,
         grounded,
-        isLandingBlocked,
+        verticalVelocity,
+        currentSupportHeight,
       );
     }
 
-    const entry = this.findLandingSurface(
+    return this.evaluateFree(
+      surface,
       previous,
       desired,
       grounded,
       verticalVelocity,
       currentSupportHeight,
+      isLandingBlocked,
     );
-
-    if (!entry) {
-      return this.groundResolution(desired);
-    }
-
-    if (isGuidedEntry(entry)) {
-      this.activeSurface = entry.surface;
-      this.guidedProgress = entry.progress;
-
-      const position = this.pointOnGuided(
-        entry.surface,
-        entry.progress,
-        desired.y,
-      );
-
-      return {
-        position,
-        supportHeight: entry.surface.surfaceHeight,
-        ignoredColliderLabels: new Set([
-          entry.surface.colliderLabel,
-        ]),
-        activeSurfaceId: entry.surface.id,
-        activeMode: 'guided',
-        enteredSurface: true,
-        exitedSurface: false,
-      };
-    }
-
-    this.activeSurface = entry.surface;
-
-    return {
-      position: this.clampToFree(
-        entry.surface,
-        desired,
-      ),
-      supportHeight: entry.surface.surfaceHeight,
-      ignoredColliderLabels: new Set([
-        entry.surface.colliderLabel,
-      ]),
-      activeSurfaceId: entry.surface.id,
-      activeMode: 'free',
-      enteredSurface: true,
-      exitedSurface: false,
-    };
   }
 
-  private updateGuided(
+  private evaluateGuided(
     surface: GuidedTraversalSurface,
     previous: Vector3,
     desired: Vector3,
     grounded: boolean,
-  ): SurfaceResolution {
-    // Jumping releases the horizontal guide immediately. The movement
-    // controller continues the jump using the surface as its former support.
-    if (!grounded) {
-      this.activeSurface = null;
-      this.entryCooldown = 0.22;
-
-      return {
-        ...this.groundResolution(desired),
-        exitedSurface: true,
-      };
-    }
-
-    const axis = surface.end.subtract(surface.start);
-    axis.y = 0;
-    const length = axis.length();
-
-    if (length <= 0.001) {
-      this.reset();
-      return this.groundResolution(desired);
-    }
-
-    axis.scaleInPlace(1 / length);
-
-    const desiredDelta = desired.subtract(previous);
-    desiredDelta.y = 0;
-    const along = Vector3.Dot(desiredDelta, axis);
-
-    if (
-      this.guidedProgress <= 0.001 &&
-      along < -0.0001
-    ) {
-      return this.exitSurface(
-        surface.startLanding,
-      );
-    }
-
-    if (
-      this.guidedProgress >= 0.999 &&
-      along > 0.0001
-    ) {
-      return this.exitSurface(
-        surface.endLanding,
-      );
-    }
-
-    this.guidedProgress = Math.max(
-      0,
-      Math.min(
-        1,
-        this.guidedProgress + along / length,
-      ),
+    verticalVelocity: number,
+    currentSupportHeight: number,
+  ): SurfaceResolution | null {
+    const projection = this.projectOntoGuided(
+      surface,
+      desired,
     );
 
+    const standingOnSurface =
+      grounded &&
+      Math.abs(
+        currentSupportHeight - surface.surfaceHeight,
+      ) <= 0.08 &&
+      projection.progress >= -0.08 &&
+      projection.progress <= 1.08 &&
+      projection.lateralDistance <=
+        Math.max(0.62, surface.width * 0.7);
+
+    const descendingOntoEndpoint =
+      !grounded &&
+      verticalVelocity <= 0 &&
+      this.crossesSurfaceHeight(
+        previous,
+        desired,
+        surface.surfaceHeight,
+      ) &&
+      (
+        this.planarDistance(
+          desired,
+          surface.start,
+        ) <= surface.entryRadius ||
+        this.planarDistance(
+          desired,
+          surface.end,
+        ) <= surface.entryRadius
+      );
+
+    if (!standingOnSurface && !descendingOntoEndpoint) {
+      return null;
+    }
+
+    const progress = standingOnSurface
+      ? projection.clampedProgress
+      : this.planarDistance(
+          desired,
+          surface.start,
+        ) <= this.planarDistance(
+          desired,
+          surface.end,
+        )
+        ? 0
+        : 1;
+
+    const position = Vector3.Lerp(
+      surface.start,
+      surface.end,
+      progress,
+    );
+    position.y = desired.y;
+
     return {
-      position: this.pointOnGuided(
-        surface,
-        this.guidedProgress,
-        desired.y,
-      ),
+      position,
       supportHeight: surface.surfaceHeight,
       ignoredColliderLabels: new Set([
         surface.colliderLabel,
       ]),
-      activeSurfaceId: surface.id,
-      activeMode: 'guided',
-      enteredSurface: false,
-      exitedSurface: false,
+      surfaceId: surface.id,
+      mode: 'guided',
     };
   }
 
-  private updateFree(
+  private evaluateFree(
     surface: FreeTraversalSurface,
+    previous: Vector3,
     desired: Vector3,
     grounded: boolean,
+    verticalVelocity: number,
+    currentSupportHeight: number,
     isLandingBlocked: LandingValidator,
-  ): SurfaceResolution {
-    if (!grounded) {
-      this.activeSurface = null;
-      this.entryCooldown = 0.22;
+  ): SurfaceResolution | null {
+    const insideFootprint = this.isInsideFree(
+      surface,
+      desired,
+      0,
+    );
+
+    const standingOnSurface =
+      grounded &&
+      Math.abs(
+        currentSupportHeight - surface.surfaceHeight,
+      ) <= 0.08 &&
+      insideFootprint;
+
+    const descendingOntoSurface =
+      !grounded &&
+      verticalVelocity <= 0 &&
+      this.crossesSurfaceHeight(
+        previous,
+        desired,
+        surface.surfaceHeight,
+      ) &&
+      this.isInsideFree(
+        surface,
+        desired,
+        surface.entryPadding,
+      );
+
+    if (standingOnSurface || descendingOntoSurface) {
+      const position = desired.clone();
 
       return {
-        ...this.groundResolution(desired),
-        exitedSurface: true,
-      };
-    }
-
-    if (this.isInsideFree(surface, desired, 0)) {
-      return {
-        position: desired.clone(),
+        position,
         supportHeight: surface.surfaceHeight,
         ignoredColliderLabels: new Set([
           surface.colliderLabel,
         ]),
-        activeSurfaceId: surface.id,
-        activeMode: 'free',
-        enteredSurface: false,
-        exitedSurface: false,
+        surfaceId: surface.id,
+        mode: 'free',
       };
+    }
+
+    // A grounded player leaving a free surface should only remain constrained
+    // when the adjacent landing is unsafe, such as water beside a slab.
+    const wasStandingOnSurface =
+      grounded &&
+      Math.abs(
+        currentSupportHeight - surface.surfaceHeight,
+      ) <= 0.08 &&
+      this.isInsideFree(surface, previous, 0);
+
+    if (!wasStandingOnSurface || insideFootprint) {
+      return null;
     }
 
     const landing = this.createFreeLanding(
@@ -284,145 +262,76 @@ export class TraversalSurfaceSystem {
     ]);
 
     if (!isLandingBlocked(landing, ignored)) {
-      this.activeSurface = null;
-      this.entryCooldown = 0.2;
+      return null;
+    }
 
+    return {
+      position: this.clampToFree(
+        surface,
+        desired,
+      ),
+      supportHeight: surface.surfaceHeight,
+      ignoredColliderLabels: ignored,
+      surfaceId: surface.id,
+      mode: 'free',
+    };
+  }
+
+  private crossesSurfaceHeight(
+    previous: Vector3,
+    desired: Vector3,
+    surfaceHeight: number,
+  ): boolean {
+    const toleranceAbove = 0.22;
+    const toleranceBelow = 0.16;
+
+    return (
+      previous.y >= surfaceHeight - toleranceBelow &&
+      desired.y <= surfaceHeight + toleranceAbove
+    );
+  }
+
+  private projectOntoGuided(
+    surface: GuidedTraversalSurface,
+    position: Vector3,
+  ): GuidedProjection {
+    const axis = surface.end.subtract(surface.start);
+    axis.y = 0;
+    const lengthSquared = axis.lengthSquared();
+
+    if (lengthSquared <= 0.0001) {
       return {
-        position: landing,
-        supportHeight: 0,
-        ignoredColliderLabels: new Set(),
-        activeSurfaceId: null,
-        activeMode: 'ground',
-        enteredSurface: false,
-        exitedSurface: true,
+        progress: 0,
+        clampedProgress: 0,
+        lateralDistance: Number.POSITIVE_INFINITY,
+        closestPoint: surface.start.clone(),
       };
     }
 
-    return {
-      position: this.clampToFree(surface, desired),
-      supportHeight: surface.surfaceHeight,
-      ignoredColliderLabels: ignored,
-      activeSurfaceId: surface.id,
-      activeMode: 'free',
-      enteredSurface: false,
-      exitedSurface: false,
-    };
-  }
+    const relative = position.subtract(surface.start);
+    relative.y = 0;
 
-  private findLandingSurface(
-    previous: Vector3,
-    desired: Vector3,
-    grounded: boolean,
-    verticalVelocity: number,
-    currentSupportHeight: number,
-  ): TraversalEntry | null {
-    if (this.entryCooldown > 0) return null;
-
-    // Surfaces are acquired while descending onto them. This prevents the
-    // support system from grabbing the player during the upward half of a jump.
-    if (grounded || verticalVelocity > 0) return null;
-
-    for (const surface of this.surfaces) {
-      const descendingThroughSurface =
-        previous.y >=
-          surface.surfaceHeight - 0.08 &&
-        desired.y <=
-          surface.surfaceHeight + 0.3 &&
-        surface.surfaceHeight >
-          currentSupportHeight + 0.04;
-
-      if (!descendingThroughSurface) continue;
-
-      if (surface.mode === 'guided') {
-        const distanceToStart = this.planarDistance(
-          desired,
-          surface.start,
-        );
-        const distanceToEnd = this.planarDistance(
-          desired,
-          surface.end,
-        );
-
-        // Guided surfaces remain endpoint-only. This is appropriate for a
-        // narrow log over water, beam, or pipe where side entry is unsafe.
-        if (distanceToStart <= surface.entryRadius) {
-          return {
-            surface,
-            progress: 0,
-          };
-        }
-
-        if (distanceToEnd <= surface.entryRadius) {
-          return {
-            surface,
-            progress: 1,
-          };
-        }
-
-        continue;
-      }
-
-      if (
-        this.isInsideFree(
-          surface,
-          desired,
-          surface.entryPadding,
-        )
-      ) {
-        return { surface };
-      }
-    }
-
-    return null;
-  }
-
-  private exitSurface(
-    landing: Vector3,
-  ): SurfaceResolution {
-    this.activeSurface = null;
-    this.guidedProgress = 0;
-    this.entryCooldown = 0.2;
-
-    const position = landing.clone();
-    position.y = 0;
-
-    return {
-      position,
-      supportHeight: 0,
-      ignoredColliderLabels: new Set(),
-      activeSurfaceId: null,
-      activeMode: 'ground',
-      enteredSurface: false,
-      exitedSurface: true,
-    };
-  }
-
-  private groundResolution(
-    desired: Vector3,
-  ): SurfaceResolution {
-    return {
-      position: desired.clone(),
-      supportHeight: 0,
-      ignoredColliderLabels: new Set(),
-      activeSurfaceId: null,
-      activeMode: 'ground',
-      enteredSurface: false,
-      exitedSurface: false,
-    };
-  }
-
-  private pointOnGuided(
-    surface: GuidedTraversalSurface,
-    progress: number,
-    y: number,
-  ): Vector3 {
-    const point = Vector3.Lerp(
+    const progress =
+      Vector3.Dot(relative, axis) / lengthSquared;
+    const clampedProgress = Math.max(
+      0,
+      Math.min(1, progress),
+    );
+    const closestPoint = Vector3.Lerp(
       surface.start,
       surface.end,
-      progress,
+      clampedProgress,
     );
-    point.y = y;
-    return point;
+
+    return {
+      progress,
+      clampedProgress,
+      lateralDistance: this.planarDistance(
+        position,
+        closestPoint,
+      ),
+      closestPoint,
+    };
   }
 
   private clampToFree(
@@ -567,6 +476,18 @@ export class TraversalSurfaceSystem {
       ) <=
       surface.radius + padding
     );
+  }
+
+  private groundResolution(
+    desired: Vector3,
+  ): SurfaceResolution {
+    return {
+      position: desired.clone(),
+      supportHeight: 0,
+      ignoredColliderLabels: new Set(),
+      surfaceId: null,
+      mode: 'ground',
+    };
   }
 
   private planarDistance(
