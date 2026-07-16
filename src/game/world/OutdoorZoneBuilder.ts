@@ -233,7 +233,7 @@ export function buildOutdoorZone(
     if (traversable) traversalHighlights.push(log);
   };
 
-  const addTraversalSurface = (
+  const addGuidedTraversalSurface = (
     id: string,
     label: string,
     colliderLabel: string,
@@ -247,6 +247,7 @@ export function buildOutdoorZone(
     minimumEntryHeight = 0.28,
   ): void => {
     traversalSurfaces.push({
+      mode: 'guided',
       id,
       label,
       colliderLabel,
@@ -280,6 +281,98 @@ export function buildOutdoorZone(
       marker.visibility = 0;
       traversalHighlights.push(marker);
     }
+  };
+
+  const addFreeBoxTraversalSurface = (
+    id: string,
+    label: string,
+    colliderLabel: string,
+    center: Vector3,
+    halfWidth: number,
+    halfDepth: number,
+    surfaceHeight: number,
+    minimumEntryHeight = 0.28,
+    entryPadding = 0.55,
+    exitDistance = 0.75,
+  ): void => {
+    traversalSurfaces.push({
+      mode: 'free',
+      shape: 'box',
+      id,
+      label,
+      colliderLabel,
+      center,
+      halfWidth,
+      halfDepth,
+      surfaceHeight,
+      minimumEntryHeight,
+      entryPadding,
+      exitDistance,
+    });
+
+    const debug = MeshBuilder.CreateBox(
+      `${id}-free-traversal-debug`,
+      {
+        width: halfWidth * 2,
+        depth: halfDepth * 2,
+        height: 0.05,
+      },
+      scene,
+    );
+    debug.position.copyFrom(center);
+    debug.position.y = surfaceHeight + 0.06;
+    debug.material = material(
+      'free-traversal-debug',
+      new Color3(0.2, 0.85, 0.45),
+      0.55,
+    );
+    debug.visibility = 0;
+    traversalHighlights.push(debug);
+  };
+
+  const addFreeCircleTraversalSurface = (
+    id: string,
+    label: string,
+    colliderLabel: string,
+    center: Vector3,
+    radius: number,
+    surfaceHeight: number,
+    minimumEntryHeight = 0.28,
+    entryPadding = 0.5,
+    exitDistance = 0.75,
+  ): void => {
+    traversalSurfaces.push({
+      mode: 'free',
+      shape: 'circle',
+      id,
+      label,
+      colliderLabel,
+      center,
+      radius,
+      surfaceHeight,
+      minimumEntryHeight,
+      entryPadding,
+      exitDistance,
+    });
+
+    const debug = MeshBuilder.CreateCylinder(
+      `${id}-free-traversal-debug`,
+      {
+        diameter: radius * 2,
+        height: 0.05,
+        tessellation: 36,
+      },
+      scene,
+    );
+    debug.position.copyFrom(center);
+    debug.position.y = surfaceHeight + 0.06;
+    debug.material = material(
+      'free-traversal-debug',
+      new Color3(0.2, 0.85, 0.45),
+      0.55,
+    );
+    debug.visibility = 0;
+    traversalHighlights.push(debug);
   };
 
   const addBridge = (
@@ -358,7 +451,7 @@ export function buildOutdoorZone(
 
   addBridge('old-bridge', 5, 2, 4.6, 5.2);
   addLog('stream-log-crossing', -11, 2, 5.5, Math.PI / 2, true);
-  addTraversalSurface(
+  addGuidedTraversalSurface(
     'stream-log-surface',
     'Stream Log Crossing',
     'stream-log-crossing',
@@ -375,23 +468,78 @@ export function buildOutdoorZone(
   // Entrance traversal lesson: jump or go around. The traversal direction is
   // perpendicular to the visual log because this object is vaulted across.
   addLog('entry-fallen-log', 0, -12.5, 6.2, 0, true);
-  addTraversalSurface(
+  addFreeBoxTraversalSurface(
     'entry-log-surface',
     'Entrance Fallen Log',
     'entry-fallen-log',
-    new Vector3(0, 0.58, -13.45),
-    new Vector3(0, 0.58, -11.55),
-    new Vector3(0, 0, -14.2),
-    new Vector3(0, 0, -10.8),
+    new Vector3(0, 0.58, -12.5),
+    3.1,
+    0.52,
     0.58,
-    1.2,
-    1.15,
     0.28,
+    0.62,
+    0.8,
   );
 
-  // A low-rock shortcut.
+  // Low-rock shortcut. These are free traversal surfaces: the player may
+  // enter from any accessible side, move freely on top, and leave from any
+  // edge with safe ground beside it.
   addRock('shortcut-rock-a', -7.4, 10.8, 1.0, true);
+  addFreeCircleTraversalSurface(
+    'shortcut-rock-a-surface',
+    'Shortcut Rock A',
+    'shortcut-rock-a',
+    new Vector3(-7.4, 0.78, 10.8),
+    0.78,
+    0.78,
+  );
+
   addRock('shortcut-rock-b', -6.0, 12.4, 0.9, true);
+  addFreeCircleTraversalSurface(
+    'shortcut-rock-b-surface',
+    'Shortcut Rock B',
+    'shortcut-rock-b',
+    new Vector3(-6.0, 0.7, 12.4),
+    0.7,
+    0.7,
+  );
+
+  // Broad slab test object for free traversal.
+  const slabRock = MeshBuilder.CreateBox(
+    'slab-rock',
+    { width: 4.4, depth: 3.2, height: 0.9 },
+    scene,
+  );
+  slabRock.position.set(11, 0.45, -7);
+  slabRock.rotation.y = 0;
+  slabRock.material = material(
+    'slab-rock',
+    new Color3(0.29, 0.32, 0.29),
+  );
+  slabRock.receiveShadows = true;
+  shadows.addShadowCaster(slabRock);
+  addBoxCollider(
+    'slab-rock',
+    11,
+    -7,
+    4.4,
+    3.2,
+    'traversable',
+    0.9,
+  );
+  addFreeBoxTraversalSurface(
+    'slab-rock-surface',
+    'Slab Rock',
+    'slab-rock',
+    new Vector3(11, 0.9, -7),
+    2.2,
+    1.6,
+    0.9,
+    0.3,
+    0.65,
+    0.85,
+  );
+  traversalHighlights.push(slabRock);
 
   // Major landmark: primitive broken watchtower.
   const towerBase = MeshBuilder.CreateCylinder(
@@ -497,8 +645,11 @@ export function buildOutdoorZone(
     landmarks,
     setTraversalHighlightVisible(visible: boolean): void {
       traversalHighlights.forEach(mesh => {
-        if (mesh.name.endsWith('-anchor')) {
-          mesh.visibility = visible ? 1 : 0;
+        if (
+          mesh.name.endsWith('-anchor') ||
+          mesh.name.endsWith('-free-traversal-debug')
+        ) {
+          mesh.visibility = visible ? 0.72 : 0;
           return;
         }
 

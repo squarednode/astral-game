@@ -863,6 +863,11 @@ scene.onBeforeRenderObservable.add(() => {
     positionBeforeMovement,
     playerRoot.position,
     dt,
+    (landingPosition, ignoredColliderLabels) =>
+      worldCollision.isBlocked(
+        landingPosition,
+        ignoredColliderLabels,
+      ),
   );
 
   const resolvedPosition = worldCollision.resolvePosition(

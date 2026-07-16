@@ -358,3 +358,46 @@ git add .
 git commit -m "feat: add anchored traversal surfaces for logs"
 git push
 ```
+
+##### 0.5.0.3 — Guided and Free Traversal Surfaces
+This update generalizes traversal into two deliberate modes.
+Traversal modes
+Guided
+Used for narrow or hazardous crossings:
+Stream logs
+Beams
+Pipes
+Narrow bridges later
+Behavior:
+Entry only at defined anchors
+Movement constrained along the traversal axis
+Exit only at approved landing points
+Free
+Used for broad objects:
+Slab rocks
+Low platforms
+Wide logs in safe areas
+Ruined floors later
+Behavior:
+Entry from any accessible edge while jumping
+Free movement across the top surface
+Exit from any edge with valid ground beside it
+Unsafe edges act as boundaries
+Player height returns to ground level after exit
+Current examples
+Western stream log: guided
+Entrance path log: free
+Two shortcut rocks: free circular surfaces
+New east-route slab rock: free rectangular surface
+New and modified files
+Modified:
+`src/game/world/WorldTypes.ts`
+`src/game/world/TraversalSurfaceSystem.ts`
+`src/game/world/OutdoorZoneBuilder.ts`
+`src/main.ts`
+The package includes the complete matching 0.5.0.2 source set.
+Developer visualization
+Press `P` and enable `Traversal Highlight`.
+Blue anchor markers identify guided entry and exit points.
+Green overlays identify free traversal footprints.
+Validate

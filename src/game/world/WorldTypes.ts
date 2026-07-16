@@ -30,19 +30,50 @@ export interface BoxWorldCollider {
 
 export type WorldCollider = CircleWorldCollider | BoxWorldCollider;
 
-export interface TraversalSurface {
+interface TraversalSurfaceBase {
   id: string;
   label: string;
   colliderLabel: string;
+  surfaceHeight: number;
+  minimumEntryHeight: number;
+}
+
+export interface GuidedTraversalSurface extends TraversalSurfaceBase {
+  mode: 'guided';
   start: Vector3;
   end: Vector3;
   startLanding: Vector3;
   endLanding: Vector3;
-  surfaceHeight: number;
   entryRadius: number;
   width: number;
-  minimumEntryHeight: number;
 }
+
+export interface FreeBoxTraversalSurface extends TraversalSurfaceBase {
+  mode: 'free';
+  shape: 'box';
+  center: Vector3;
+  halfWidth: number;
+  halfDepth: number;
+  entryPadding: number;
+  exitDistance: number;
+}
+
+export interface FreeCircleTraversalSurface extends TraversalSurfaceBase {
+  mode: 'free';
+  shape: 'circle';
+  center: Vector3;
+  radius: number;
+  entryPadding: number;
+  exitDistance: number;
+}
+
+export type FreeTraversalSurface =
+  | FreeBoxTraversalSurface
+  | FreeCircleTraversalSurface;
+
+export type TraversalSurface =
+  | GuidedTraversalSurface
+  | FreeTraversalSurface;
 
 export interface WorldLandmark {
   id: string;
