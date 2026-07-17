@@ -25,6 +25,28 @@ export interface EngineEventMap {
   'framework.validation': {
     value: number;
   };
+  'state.entered': {
+    machineId: string;
+    state: string;
+    from: string | null;
+  };
+  'state.exited': {
+    machineId: string;
+    state: string;
+    to: string;
+  };
+  'state.changed': {
+    machineId: string;
+    from: string | null;
+    to: string;
+    reason?: string;
+  };
+  'state.transitionRejected': {
+    machineId: string;
+    from: string | null;
+    to: string;
+    rejectedBy: string;
+  };
 }
 
 export type EngineEventName = keyof EngineEventMap;

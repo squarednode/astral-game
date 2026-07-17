@@ -2316,6 +2316,193 @@ validated without changing gameplay outcomes.
 12. Retest the movement validation course for regressions.
 Tested valid build:
 
+# Astral 0.5.4.4 — State Machine Foundation
+
+This milestone adds a generic deterministic state machine under the engine
+layer and validates it with one isolated visual test. Existing player,
+movement, combat, enemy, and world behavior remain unchanged.
+
+## New engine package
+
+```text
+src/engine/state/
+  State.ts
+  StateMachine.ts
+  StateTypes.ts
+  index.ts
+```
+
+## Core model
+
+A state machine owns:
+
+- A stable machine ID
+- A typed context object
+- Registered states
+- Current and previous state
+- Time in the current state
+- Deferred transition requests
+- Transition and rejection diagnostics
+
+Each state may define:
+
+```text
+canEnter
+canExit
+enter
+update
+exit
+```
+
+All callbacks are optional except the state ID.
+
+## Deterministic transition behavior
+
+Transitions requested during a state's `update` callback are queued until that
+callback finishes.
+
+```text
+Current state update
+        ↓
+Transition requested
+        ↓
+Update completes
+        ↓
+Exit current state
+        ↓
+Enter next state
+```
+
+This prevents recursive state changes and guarantees that one state owns each
+update tick.
+
+Only one pending transition is retained during a tick. A later request in the
+same update replaces an earlier request, keeping the result deterministic.
+
+## Transition validation
+
+A transition is rejected when:
+
+- The destination state does not exist
+- The machine is already in the requested state
+- The current state's `canExit` returns false
+- The destination state's `canEnter` returns false
+
+Rejected transitions do not call `exit`, `enter`, or `changed` callbacks.
+
+## State events
+
+The existing event bus now includes:
+
+```text
+state.entered
+state.exited
+state.changed
+state.transitionRejected
+```
+
+The validation machine publishes these events through normal queued event
+dispatch. No state implementation depends directly on UI or debugging code.
+
+## Validation machine
+
+An isolated machine named:
+
+```text
+framework-validation
+```
+
+cycles between:
+
+```text
+waiting
+   ↓
+pulse
+   ↓
+waiting
+```
+
+A small cube near the initial player position visualizes the cycle:
+
+- `waiting`: blue, normal scale
+- `pulse`: magenta, expands and rotates
+
+The machine changes state approximately every:
+
+```text
+waiting: 1.6 seconds
+pulse:   0.7 seconds
+```
+
+This validates:
+
+- State registration
+- Initial state entry
+- Update callbacks
+- Deferred transition requests
+- Exit callbacks
+- Enter callbacks
+- Context access
+- Event publication
+- Repeated cycling
+
+The validation machine is intentionally independent from movement and combat.
+
+## Framework HUD
+
+The existing engine framework panel now includes:
+
+```text
+State Machine
+  ID
+  Current
+  Previous
+  Time
+  Transitions
+  Rejected
+```
+
+Expected normal behavior:
+
+- `Current` alternates between `waiting` and `pulse`
+- `Previous` shows the last state
+- `Time` resets after each transition
+- `Transitions` steadily increases
+- `Rejected` remains `0`
+- Event bus `Errors` remains `0`
+
+## Intentional exclusions
+
+This milestone does not yet:
+
+- Convert player movement to states
+- Convert enemy AI to states
+- Convert elevators or platforms to states
+- Add hierarchical states
+- Add parallel state regions
+- Add serialized state definitions
+- Add a global state-machine registry
+- Add automatic entity-to-machine ownership
+
+Those should be introduced incrementally after the base machine is validated.
+
+## Validation checklist
+
+1. Start the game and confirm there is no startup error.
+2. Find the small validation cube near the initial player location.
+3. Confirm it alternates between blue waiting and magenta pulse behavior.
+4. Confirm the framework HUD alternates between `waiting` and `pulse`.
+5. Confirm `Time` resets after every transition.
+6. Confirm `Transitions` increases continuously.
+7. Confirm `Rejected` remains `0`.
+8. Confirm event bus `Errors` remains `0`.
+9. Confirm event queue returns to `0` after dispatch.
+10. Confirm movement and collision remain unchanged.
+11. Confirm combat, enemy death, and entity lifecycle remain unchanged.
+12. Open the developer console and confirm the validation machine continues to
+    cycle without affecting gameplay.
+
+
 ### Validate
 ```bash
 npm run build

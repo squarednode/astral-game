@@ -21,6 +21,7 @@ import {
 } from '@babylonjs/core';
 import { InputManager } from './engine/input/InputManager';
 import { EventBus } from './engine/events';
+import { StateMachine } from './engine/state';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
@@ -179,6 +180,116 @@ if (validationEventValue !== 42) {
   throw new Error('Event bus foundation validation failed.');
 }
 events.resetDiagnostics();
+
+type ValidationStateId = 'waiting' | 'pulse';
+interface ValidationStateContext {
+  mesh: Mesh;
+  waitingDuration: number;
+  pulseDuration: number;
+}
+
+const stateValidationMesh = MeshBuilder.CreateBox(
+  'state-validation-cube',
+  { size: 1.1 },
+  scene,
+);
+stateValidationMesh.position.set(-6.5, 0.55, -21.5);
+stateValidationMesh.material = mat(
+  'state-validation-waiting',
+  new Color3(0.22, 0.56, 0.78),
+  0.12,
+);
+shadows.addShadowCaster(stateValidationMesh);
+
+const stateValidationContext: ValidationStateContext = {
+  mesh: stateValidationMesh,
+  waitingDuration: 1.6,
+  pulseDuration: 0.7,
+};
+
+const validationStateMachine = new StateMachine<
+  ValidationStateContext,
+  ValidationStateId
+>(
+  'framework-validation',
+  stateValidationContext,
+  {
+    onEntered: (state, from) => {
+      events.emit('state.entered', {
+        machineId: 'framework-validation',
+        state,
+        from,
+      });
+    },
+    onExited: (state, to) => {
+      events.emit('state.exited', {
+        machineId: 'framework-validation',
+        state,
+        to,
+      });
+    },
+    onChanged: (from, to, reason) => {
+      events.emit('state.changed', {
+        machineId: 'framework-validation',
+        from,
+        to,
+        reason,
+      });
+    },
+    onRejected: result => {
+      events.emit('state.transitionRejected', {
+        machineId: 'framework-validation',
+        from: result.from,
+        to: result.to,
+        rejectedBy: result.rejectedBy ?? 'unknown',
+      });
+    },
+  },
+)
+  .addState({
+    id: 'waiting',
+    enter: context => {
+      context.mesh.scaling.setAll(1);
+      context.mesh.material = mat(
+        'state-validation-waiting',
+        new Color3(0.22, 0.56, 0.78),
+        0.12,
+      );
+    },
+    update: (context, machine) => {
+      if (machine.getTimeInState() >= context.waitingDuration) {
+        machine.request('pulse', 'waiting-complete');
+      }
+    },
+  })
+  .addState({
+    id: 'pulse',
+    enter: context => {
+      context.mesh.material = mat(
+        'state-validation-pulse',
+        new Color3(0.82, 0.38, 0.72),
+        0.3,
+      );
+    },
+    update: (context, machine) => {
+      const progress = Math.min(
+        1,
+        machine.getTimeInState() / context.pulseDuration,
+      );
+      const scale = 1 + Math.sin(progress * Math.PI) * 0.45;
+      context.mesh.scaling.setAll(scale);
+      context.mesh.rotation.y += 0.035;
+
+      if (machine.getTimeInState() >= context.pulseDuration) {
+        machine.request('waiting', 'pulse-complete');
+      }
+    },
+    exit: context => {
+      context.mesh.scaling.setAll(1);
+    },
+  });
+
+validationStateMachine.start('waiting', 'validation-start');
 
 const entities = new EntityRegistry();
 
@@ -1167,6 +1278,7 @@ scene.onBeforeRenderObservable.add(() => {
   last = now;
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);
+  validationStateMachine.update(realDt);
   if (input.consumePressed('toggleDeveloperConsole')) {
     developerConsole.toggle();
   }
@@ -1480,6 +1592,13 @@ scene.onBeforeRenderObservable.add(() => {
       `  Subscribers ${eventStats.subscribers}`,
       `  Errors      ${eventStats.errors}`,
       `  Last        ${eventStats.lastEventType ?? 'none'}`,
+      'State Machine',
+      `  ID          ${validationStateMachine.id}`,
+      `  Current     ${validationStateMachine.getCurrentStateId() ?? 'none'}`,
+      `  Previous    ${validationStateMachine.getPreviousStateId() ?? 'none'}`,
+      `  Time        ${validationStateMachine.getTimeInState().toFixed(2)}s`,
+      `  Transitions ${validationStateMachine.snapshot().transitionCount}`,
+      `  Rejected    ${validationStateMachine.snapshot().rejectedTransitionCount}`,
     ].join('\n');
   }
 
@@ -1501,6 +1620,7 @@ window.addEventListener('beforeunload', () => {
   events.clearQueue();
   events.clearSubscriptions();
   entities.clear();
+  stateValidationMesh.dispose();
   developerHud.remove();
   waterStatus.remove();
 });
