@@ -2314,7 +2314,7 @@ validated without changing gameplay outcomes.
 10. Confirm event `Errors` remains zero.
 11. Confirm `Queued` returns to zero at frame boundaries.
 12. Retest the movement validation course for regressions.
-
+Tested valid build:
 
 ### Validate
 ```bash
