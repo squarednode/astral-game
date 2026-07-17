@@ -92,7 +92,46 @@ export class TraversalSurfaceSystem {
       )
       .sort((a, b) => b.supportHeight - a.supportHeight);
 
-    return candidates[0] ?? this.groundResolution(desired);
+    if (candidates[0]) {
+      return candidates[0];
+    }
+
+    // A free surface must not block the actor with its own collider when the
+    // actor leaves an edge. Ignore that collider for the release frame and
+    // lower support normally so gravity can take over.
+    const releasingSurface = this.surfaces.find(surface => {
+      if (surface.mode !== 'free') return false;
+
+      const priorHeight = this.sampleHeight(
+        surface,
+        previous.x,
+        previous.z,
+      );
+
+      return (
+        grounded &&
+        Math.abs(
+          currentSupportHeight - priorHeight,
+        ) <= GameBalance.movement.groundSnapDistance &&
+        this.isInsideFree(surface, previous, 0) &&
+        !this.isInsideFree(surface, desired, 0)
+      );
+    });
+
+    if (releasingSurface) {
+      return {
+        position: desired.clone(),
+        supportHeight: 0,
+        ignoredColliderLabels: new Set([
+          releasingSurface.colliderLabel,
+        ]),
+        surfaceId: null,
+        mode: 'ground',
+        surfaceDelta: Vector3.Zero(),
+      };
+    }
+
+    return this.groundResolution(desired);
   }
 
   private evaluateSurface(

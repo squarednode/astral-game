@@ -875,6 +875,66 @@ Debug colors:
     and Blink landing rules.
 13. Enable World Volumes and confirm all debug footprints match their pads.
 
+# Astral 0.5.2.2 — Surface and Volume Precedence Fix
+
+This patch addresses the two remaining river-crossing issues found during
+0.5.2 validation.
+
+## Fix 1: River log releases at both ends
+
+The log was no longer using guided traversal, but its physical collider could
+still block the player during the exact frame that support changed from the
+log to ground.
+
+Free surfaces now:
+
+- Detect when the actor leaves their footprint
+- Return ground support immediately
+- Ignore their own collider for that release frame
+- Allow gravity to take over naturally
+
+This applies consistently to:
+
+- Logs
+- Small beams
+- Rocks
+- Slabs
+- Similar raised free surfaces
+
+No edge safety or retention is provided by the surface system. Any intentional
+restriction must be authored through a world volume.
+
+## Fix 2: Bridge overrides water
+
+The bridge visuals did not have a matching support surface, so the player
+remained at ground support height while crossing it. The water system correctly
+interpreted that as entering the river.
+
+The old bridge now has a free box support surface:
+
+- Support height: `0.22`
+- Full bridge footprint
+- Walk-on step height
+- Water volumes ignored while supported
+- Water activates normally after walking or jumping off
+
+The water system now explicitly follows this precedence:
+
+```text
+Resolved raised support
+    overrides
+Water volume beneath it
+```
+
+This rule applies to bridges, logs, rocks, platforms, docks, and future moving
+surfaces without requiring per-volume exclusions.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/game/world/WorldVolumeSystem.ts`
+
 
 ### Validate
 ```bash

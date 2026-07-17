@@ -64,8 +64,12 @@ export class WorldVolumeSystem {
       drowned: false,
     };
 
+    // Any resolved raised support wins over water beneath it. This keeps
+    // bridges, logs, rocks, and platforms dry without adding exclusions to
+    // individual water volumes.
     const mayEnterWater =
-      supportHeight <= 0.08 && position.y <= 0.22;
+      supportHeight <= 0.08 &&
+      position.y <= supportHeight + 0.22;
     const nextActiveIds = new Set<string>();
 
     for (const volume of this.volumes) {

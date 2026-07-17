@@ -592,6 +592,18 @@ export function buildOutdoorZone(
   );
 
   addBridge('old-bridge', 5, 2, 4.6, 5.2);
+  addFreeBoxTraversalSurface(
+    'old-bridge-surface',
+    'Old Bridge',
+    'old-bridge',
+    new Vector3(5, 0.22, 2),
+    2.3,
+    2.6,
+    0.22,
+    0.18,
+    0.45,
+  );
+
   addLog('stream-log-crossing', -11, 2, 5.5, Math.PI / 2, true);
   addFreeBoxTraversalSurface(
     'stream-log-surface',
