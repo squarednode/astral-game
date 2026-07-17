@@ -935,6 +935,152 @@ surfaces without requiring per-volume exclusions.
 - `src/game/world/OutdoorZoneBuilder.ts`
 - `src/game/world/WorldVolumeSystem.ts`
 
+# Astral 0.5.3 — Movement Validation Course
+
+This milestone adds a developer-only regression course containing twelve
+movement and world-system tests. The course is intentionally separate from the
+playable zone so it can remain stable while world content changes.
+
+## Access
+
+Press `P`, then choose **Movement Course** under World.
+
+The teleport places the player immediately before Station 1. The course runs
+north in numerical order. Enable **Surface Highlight** and **World Volumes** to
+inspect the underlying support and volume geometry.
+
+## The 12 validation stations
+
+1. **Small step**
+   - Height: `0.22`
+   - Must be entered without jumping
+   - Confirms the universal step-height limit
+
+2. **Jump-only ledge**
+   - Height: `0.58`
+   - Must reject walk-on entry
+   - Must accept a descending jump
+
+3. **Stairs**
+   - Six visual treads
+   - `0.18` rise per tread
+   - Uses sampled support height rather than six unique movement states
+
+4. **Hill**
+   - Continuous `sampleHeight(x, z)` support
+   - Tests ascent, cresting, descent, and slope acceptance
+
+5. **Narrow beam**
+   - Standard free surface
+   - No guided behavior
+   - No edge retention
+
+6. **Bridge with side volumes**
+   - Raised support surface
+   - Constraint volumes along both side rails
+   - Both ends remain open
+
+7. **Shallow water**
+   - Ground-contact-only modifier
+   - Movement reduced to 65%
+   - No drowning timer
+
+8. **Deep water**
+   - Movement reduced to 25%
+   - Jump and dodge disabled
+   - Five-second drowning timer
+   - Retreat allowed only toward the entry bank
+   - Side bypass allows the full course to continue
+
+9. **Horizontal moving platform**
+   - Oscillates four units left and right
+   - Updates visual mesh, collider, and support footprint together
+   - Supported player inherits horizontal `frameDelta`
+
+10. **Elevator**
+    - Oscillates between approximately `0.4` and `2.8` support height
+    - Carries a grounded player upward and downward
+    - Walking or jumping off releases support normally
+
+11. **Conveyor**
+    - Walkable low support surface
+    - Force volume moves the player forward at `2.4` units/second
+    - Player input remains active against or with the conveyor
+
+12. **Crosswind force volume**
+    - Applies a sideways force of `3.2` units/second
+    - Reduces voluntary movement to 85%
+    - Validates reusable environmental push behavior
+
+## Engine changes
+
+### Dynamic surfaces
+
+`OutdoorZone.update(dt)` now advances authored dynamic surfaces before movement
+resolution. Dynamic surfaces update:
+
+- Mesh position
+- Collider position
+- Support footprint or height
+- Per-frame surface delta
+
+The surface system applies horizontal platform delta to a supported actor.
+Vertical movement is resolved through the sampled support height.
+
+### Descending support following
+
+`PlayerMovementController.setSupportHeight()` now accepts a
+`followDescendingSupport` flag. Elevators use it to carry a grounded player
+downward. Normal loss of support still starts a fall.
+
+### Force volumes
+
+A reusable `force` world-volume type was added with:
+
+- X velocity
+- Z velocity
+- Optional movement-speed multiplier
+- Optional jump or dodge restrictions
+
+This supports conveyors, wind, currents, fans, push fields, and similar future
+world mechanics.
+
+### Ground-contact modifiers
+
+Modifier volumes may now set `groundContactOnly`. This prevents shallow water,
+mud, and similar ground effects from influencing actors supported on bridges,
+logs, platforms, or other raised geometry.
+
+## Modified files
+
+- `src/main.ts`
+- `src/devtools/DeveloperConsole.ts`
+- `src/game/config/GameBalance.ts`
+- `src/game/movement/PlayerMovementController.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/WorldTypes.ts`
+- `src/game/world/WorldVolumeSystem.ts`
+- `src/game/world/WorldVolumeTypes.ts`
+
+## Validation checklist
+
+Run the full course from Station 1 through Station 12 with both WASD and click
+movement where practical. Pay particular attention to:
+
+- Walking onto the `0.22` step without jumping
+- Being blocked by the `0.58` ledge until jumping
+- Smooth support changes on stairs and the hill
+- Falling freely from the beam
+- Bridge side constraints and open ends
+- Raised supports ignoring ground-contact water modifiers
+- Deep-water retreat and drowning recovery
+- Standing still on the horizontal platform
+- Walking while the horizontal platform moves
+- Jumping from and landing on the moving platform
+- Riding the elevator through a complete up/down cycle
+- Walking against the conveyor and crosswind
+
 
 ### Validate
 ```bash

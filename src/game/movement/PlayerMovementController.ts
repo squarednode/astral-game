@@ -110,7 +110,10 @@ export class PlayerMovementController {
    * Lowering the support starts a natural fall instead of snapping downward.
    * Airborne actors only receive the new landing height.
    */
-  setSupportHeight(height: number): void {
+  setSupportHeight(
+    height: number,
+    followDescendingSupport = false,
+  ): void {
     const nextHeight = Math.max(0, height);
     const priorHeight = this.supportHeight;
     this.supportHeight = nextHeight;
@@ -118,6 +121,11 @@ export class PlayerMovementController {
     if (!this.grounded) return;
 
     if (nextHeight < priorHeight - 0.04) {
+      if (followDescendingSupport) {
+        this.actor.position.y = nextHeight;
+        return;
+      }
+
       this.grounded = false;
       this.verticalVelocity = 0;
       return;

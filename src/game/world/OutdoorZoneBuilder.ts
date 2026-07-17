@@ -34,10 +34,11 @@ export function buildOutdoorZone(
   const worldVolumes: WorldVolume[] = [];
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
+  const dynamicUpdates: Array<(dt: number) => void> = [];
 
   const ground = MeshBuilder.CreateGround(
     'outdoor-ground',
-    { width: 80, height: 56, subdivisions: 4 },
+    { width: 80, height: 260, subdivisions: 8 },
     scene,
   );
   ground.material = material('outdoor-ground', new Color3(0.12, 0.19, 0.13));
@@ -549,6 +550,7 @@ export function buildOutdoorZone(
         halfDepth: 0.85,
       },
       speedMultiplier: 0.65,
+      groundContactOnly: true,
       disableJump: false,
       disableDodge: false,
       maximumY: 0.22,
@@ -585,6 +587,7 @@ export function buildOutdoorZone(
         halfDepth: 0.85,
       },
       speedMultiplier: 0.65,
+      groundContactOnly: true,
       disableJump: false,
       disableDodge: false,
       maximumY: 0.22,
@@ -814,6 +817,468 @@ export function buildOutdoorZone(
   shadows.addShadowCaster(wagonBody);
   addBoxCollider('broken-wagon', 8, -16, 3.3, 1.8);
 
+  // -----------------------------------------------------------------------
+  // 0.5.3 movement validation course
+  // -----------------------------------------------------------------------
+  // This developer-only course lives beyond the main-zone north boundary.
+  // Each station validates one reusable movement or world-volume behavior.
+  const courseZ = 38;
+
+  const addCoursePad = (
+    name: string,
+    x: number,
+    z: number,
+    width: number,
+    depth: number,
+    color: Color3,
+    height = 0.06,
+  ): Mesh => {
+    const pad = MeshBuilder.CreateBox(
+      name,
+      { width, depth, height },
+      scene,
+    );
+    pad.position.set(x, height / 2, z);
+    pad.material = material(name, color, 0.08);
+    pad.receiveShadows = true;
+    return pad;
+  };
+
+  const addStationMarker = (
+    index: number,
+    x: number,
+    z: number,
+    color: Color3,
+  ): void => {
+    const marker = MeshBuilder.CreateCylinder(
+      `movement-course-marker-${index}`,
+      { diameter: 0.75, height: 0.08, tessellation: 20 },
+      scene,
+    );
+    marker.position.set(x - 4.2, 0.05, z);
+    marker.material = material(
+      `movement-course-marker-${index}`,
+      color,
+      0.28,
+    );
+  };
+
+  // 1. Small step — exactly at universal step height.
+  addStationMarker(1, 0, courseZ, new Color3(0.34, 0.72, 0.34));
+  const step = MeshBuilder.CreateBox(
+    'course-small-step',
+    { width: 5, depth: 3.5, height: 0.22 },
+    scene,
+  );
+  step.position.set(0, 0.11, courseZ);
+  step.material = material('course-small-step', new Color3(0.28, 0.5, 0.25));
+  addBoxCollider('course-small-step', 0, courseZ, 5, 3.5, 'traversable', 0.22);
+  addFreeBoxTraversalSurface(
+    'course-small-step-surface',
+    'Course Small Step',
+    'course-small-step',
+    new Vector3(0, 0.22, courseZ),
+    2.5,
+    1.75,
+    0.22,
+    0.2,
+    0.45,
+  );
+
+  // 2. Jump-only ledge — same proven height as the entry log.
+  addStationMarker(2, 0, courseZ + 6, new Color3(0.4, 0.7, 0.82));
+  const ledge = MeshBuilder.CreateBox(
+    'course-jump-ledge',
+    { width: 5, depth: 3.5, height: 0.58 },
+    scene,
+  );
+  ledge.position.set(0, 0.29, courseZ + 6);
+  ledge.material = material('course-jump-ledge', new Color3(0.22, 0.45, 0.58));
+  addBoxCollider('course-jump-ledge', 0, courseZ + 6, 5, 3.5, 'traversable', 0.58);
+  addFreeBoxTraversalSurface(
+    'course-jump-ledge-surface',
+    'Course Jump Ledge',
+    'course-jump-ledge',
+    new Vector3(0, 0.58, courseZ + 6),
+    2.5,
+    1.75,
+    0.58,
+    0.5,
+    0.6,
+  );
+
+  // 3. Stairs — visual treads with sampled height support.
+  const stairsZ = courseZ + 13;
+  addStationMarker(3, 0, stairsZ, new Color3(0.76, 0.68, 0.38));
+  const stairCount = 6;
+  const stairDepth = 0.85;
+  const stairRise = 0.18;
+  for (let index = 0; index < stairCount; index++) {
+    const height = stairRise * (index + 1);
+    const tread = MeshBuilder.CreateBox(
+      `course-stair-${index}`,
+      { width: 5, depth: stairDepth, height },
+      scene,
+    );
+    tread.position.set(
+      0,
+      height / 2,
+      stairsZ - (stairCount * stairDepth) / 2 + (index + 0.5) * stairDepth,
+    );
+    tread.material = material('course-stairs', new Color3(0.46, 0.39, 0.22));
+  }
+  traversalSurfaces.push({
+    mode: 'free',
+    shape: 'box',
+    id: 'course-stairs-surface',
+    label: 'Course Stairs',
+    colliderLabel: 'course-stairs',
+    center: new Vector3(0, stairRise * stairCount, stairsZ),
+    halfWidth: 2.5,
+    halfDepth: stairCount * stairDepth / 2,
+    surfaceHeight: stairRise * stairCount,
+    entryPadding: 0.28,
+    exitDistance: 0.5,
+    slopeDegrees: 12,
+    sampleHeight: (_x: number, z: number) => {
+      const local = z - (stairsZ - stairCount * stairDepth / 2);
+      const stepIndex = Math.max(
+        0,
+        Math.min(stairCount - 1, Math.floor(local / stairDepth)),
+      );
+      return stairRise * (stepIndex + 1);
+    },
+  });
+
+  // 4. Hill — continuous sampled height across authored visual terraces.
+  const hillZ = courseZ + 22;
+  addStationMarker(4, 0, hillZ, new Color3(0.42, 0.72, 0.3));
+  const hillHalfDepth = 3.5;
+  for (let index = 0; index < 7; index++) {
+    const localZ = -hillHalfDepth + (index + 0.5);
+    const normalized = Math.abs(localZ) / hillHalfDepth;
+    const height = Math.max(0.12, 1.5 * (1 - normalized * normalized));
+    const terrace = MeshBuilder.CreateBox(
+      `course-hill-terrace-${index}`,
+      { width: 6, depth: 1.05, height },
+      scene,
+    );
+    terrace.position.set(0, height / 2, hillZ + localZ);
+    terrace.material = material('course-hill', new Color3(0.22, 0.44, 0.18));
+  }
+  traversalSurfaces.push({
+    mode: 'free',
+    shape: 'box',
+    id: 'course-hill-surface',
+    label: 'Course Hill',
+    colliderLabel: 'course-hill',
+    center: new Vector3(0, 1.5, hillZ),
+    halfWidth: 3,
+    halfDepth: hillHalfDepth,
+    surfaceHeight: 1.5,
+    entryPadding: 0.35,
+    exitDistance: 0.55,
+    slopeDegrees: 24,
+    sampleHeight: (_x: number, z: number) => {
+      const normalized = Math.min(1, Math.abs(z - hillZ) / hillHalfDepth);
+      return 1.5 * (1 - normalized * normalized);
+    },
+  });
+
+  // 5. Narrow beam — intentionally no guided behavior or edge retention.
+  const beamZ = courseZ + 31;
+  addStationMarker(5, 0, beamZ, new Color3(0.65, 0.43, 0.2));
+  const beam = MeshBuilder.CreateBox(
+    'course-narrow-beam',
+    { width: 1, depth: 6.2, height: 0.58 },
+    scene,
+  );
+  beam.position.set(0, 0.29, beamZ);
+  beam.material = material('course-narrow-beam', new Color3(0.34, 0.2, 0.08));
+  addBoxCollider('course-narrow-beam', 0, beamZ, 1, 6.2, 'traversable', 0.58);
+  addFreeBoxTraversalSurface(
+    'course-narrow-beam-surface',
+    'Course Narrow Beam',
+    'course-narrow-beam',
+    new Vector3(0, 0.58, beamZ),
+    0.5,
+    3.1,
+    0.58,
+    0.4,
+    0.6,
+  );
+
+  // 6. Bridge — free support with side constraint volumes and open ends.
+  const courseBridgeZ = courseZ + 40;
+  addStationMarker(6, 0, courseBridgeZ, new Color3(0.55, 0.48, 0.28));
+  addBridge('course-bridge', 0, courseBridgeZ, 5, 7);
+  addFreeBoxTraversalSurface(
+    'course-bridge-surface',
+    'Course Bridge',
+    'course-bridge',
+    new Vector3(0, 0.22, courseBridgeZ),
+    2.5,
+    3.5,
+    0.22,
+    0.18,
+    0.45,
+  );
+  worldVolumes.push(
+    {
+      id: 'course-bridge-west-constraint',
+      label: 'Course Bridge West Rail',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: -2.7, centerZ: courseBridgeZ,
+        halfWidth: 0.25, halfDepth: 3.2,
+      },
+      minimumY: 0.1,
+      maximumY: 0.9,
+    },
+    {
+      id: 'course-bridge-east-constraint',
+      label: 'Course Bridge East Rail',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: 2.7, centerZ: courseBridgeZ,
+        halfWidth: 0.25, halfDepth: 3.2,
+      },
+      minimumY: 0.1,
+      maximumY: 0.9,
+    },
+  );
+
+  // 7. Shallow water — movement modifier only.
+  const shallowZ = courseZ + 49;
+  addStationMarker(7, 0, shallowZ, new Color3(0.15, 0.55, 0.85));
+  addCoursePad(
+    'course-shallow-water-visual',
+    0,
+    shallowZ,
+    7,
+    5,
+    new Color3(0.08, 0.34, 0.56),
+    0.04,
+  ).visibility = 0.82;
+  worldVolumes.push({
+    id: 'course-shallow-water',
+    label: 'Course Shallow Water',
+    kind: 'modifier',
+    footprint: {
+      shape: 'box', centerX: 0, centerZ: shallowZ,
+      halfWidth: 3.5, halfDepth: 2.5,
+    },
+    speedMultiplier: 0.65,
+      groundContactOnly: true,
+    maximumY: 0.22,
+  });
+
+  // 8. Deep water — enter, retreat to the original bank, then use the side
+  // bypass to continue through the course.
+  const deepZ = courseZ + 57;
+  addStationMarker(8, 0, deepZ, new Color3(0.06, 0.28, 0.55));
+  addCoursePad(
+    'course-deep-water-visual',
+    0,
+    deepZ,
+    7,
+    4,
+    new Color3(0.04, 0.2, 0.42),
+    0.05,
+  ).visibility = 0.9;
+  worldVolumes.push({
+    id: 'course-deep-water',
+    label: 'Course Deep Water',
+    kind: 'water-hazard',
+    footprint: {
+      shape: 'box', centerX: 0, centerZ: deepZ,
+      halfWidth: 3.5, halfDepth: 2,
+    },
+    speedMultiplier: 0.25,
+    drownSeconds: 5,
+    disableJump: true,
+    disableDodge: true,
+    bankAxis: 'z',
+    bankCenter: deepZ,
+    recoveryPadding: 0.28,
+    maximumY: 0.22,
+  });
+  addPath('course-deep-water-bypass', 5.2, deepZ, 2.2, 7);
+
+  // 9. Horizontal moving platform — carries a supported actor using frameDelta.
+  const movingZ = courseZ + 66;
+  addStationMarker(9, 0, movingZ, new Color3(0.72, 0.3, 0.72));
+  const movingPlatform = MeshBuilder.CreateBox(
+    'course-moving-platform',
+    { width: 4, depth: 4, height: 0.5 },
+    scene,
+  );
+  movingPlatform.position.set(0, 0.25, movingZ);
+  movingPlatform.material = material(
+    'course-moving-platform',
+    new Color3(0.45, 0.18, 0.48),
+    0.12,
+  );
+  const movingCollider: WorldCollider = {
+    kind: 'box',
+    label: 'course-moving-platform',
+    centerX: 0,
+    centerZ: movingZ,
+    halfWidth: 2,
+    halfDepth: 2,
+    interaction: 'traversable',
+    clearanceHeight: 0.5,
+  };
+  colliders.push(movingCollider);
+  const movingSurface: TraversalSurface = {
+    mode: 'free',
+    shape: 'box',
+    id: 'course-moving-platform-surface',
+    label: 'Course Moving Platform',
+    colliderLabel: 'course-moving-platform',
+    center: new Vector3(0, 0.5, movingZ),
+    halfWidth: 2,
+    halfDepth: 2,
+    surfaceHeight: 0.5,
+    entryPadding: 0.45,
+    exitDistance: 0.6,
+    frameDelta: Vector3.Zero(),
+  };
+  traversalSurfaces.push(movingSurface);
+  let movingTime = 0;
+  let movingPriorX = 0;
+  dynamicUpdates.push((dt: number) => {
+    movingTime += dt;
+    const nextX = Math.sin(movingTime * 0.75) * 4;
+    movingSurface.frameDelta!.set(nextX - movingPriorX, 0, 0);
+    movingSurface.center.x = nextX;
+    movingPlatform.position.x = nextX;
+    if (movingCollider.kind === 'box') movingCollider.centerX = nextX;
+    movingPriorX = nextX;
+  });
+
+  // 10. Elevator — carries the actor both upward and downward while grounded.
+  const elevatorZ = courseZ + 75;
+  addStationMarker(10, 0, elevatorZ, new Color3(0.28, 0.65, 0.75));
+  const elevator = MeshBuilder.CreateBox(
+    'course-elevator',
+    { width: 4, depth: 4, height: 0.4 },
+    scene,
+  );
+  elevator.position.set(0, 0.2, elevatorZ);
+  elevator.material = material('course-elevator', new Color3(0.16, 0.42, 0.5), 0.12);
+  const elevatorCollider: WorldCollider = {
+    kind: 'box',
+    label: 'course-elevator',
+    centerX: 0,
+    centerZ: elevatorZ,
+    halfWidth: 2,
+    halfDepth: 2,
+    interaction: 'traversable',
+    clearanceHeight: 0.4,
+  };
+  colliders.push(elevatorCollider);
+  const elevatorSurface: TraversalSurface = {
+    mode: 'free',
+    shape: 'box',
+    id: 'course-elevator-surface',
+    label: 'Course Elevator',
+    colliderLabel: 'course-elevator',
+    center: new Vector3(0, 0.4, elevatorZ),
+    halfWidth: 2,
+    halfDepth: 2,
+    surfaceHeight: 0.4,
+    entryPadding: 0.42,
+    exitDistance: 0.6,
+    frameDelta: Vector3.Zero(),
+  };
+  traversalSurfaces.push(elevatorSurface);
+  let elevatorTime = -Math.PI / 2;
+  let elevatorPriorHeight = 0.4;
+  dynamicUpdates.push((dt: number) => {
+    elevatorTime += dt * 0.7;
+    const nextHeight = 1.6 + Math.sin(elevatorTime) * 1.2;
+    elevatorSurface.frameDelta!.set(0, nextHeight - elevatorPriorHeight, 0);
+    elevatorSurface.surfaceHeight = nextHeight;
+    elevatorSurface.center.y = nextHeight;
+    elevator.position.y = nextHeight - 0.2;
+    elevatorPriorHeight = nextHeight;
+  });
+
+  // 11. Conveyor — force volume moves the actor forward while input remains active.
+  const conveyorZ = courseZ + 84;
+  addStationMarker(11, 0, conveyorZ, new Color3(0.82, 0.5, 0.18));
+  addCoursePad(
+    'course-conveyor-visual',
+    0,
+    conveyorZ,
+    5,
+    7,
+    new Color3(0.48, 0.28, 0.08),
+    0.12,
+  );
+  addBoxCollider(
+    'course-conveyor-visual',
+    0,
+    conveyorZ,
+    5,
+    7,
+    'traversable',
+    0.12,
+  );
+  addFreeBoxTraversalSurface(
+    'course-conveyor-surface',
+    'Course Conveyor Surface',
+    'course-conveyor-visual',
+    new Vector3(0, 0.12, conveyorZ),
+    2.5,
+    3.5,
+    0.12,
+    0.18,
+    0.4,
+  );
+  worldVolumes.push({
+    id: 'course-conveyor-force',
+    label: 'Course Conveyor',
+    kind: 'force',
+    footprint: {
+      shape: 'box', centerX: 0, centerZ: conveyorZ,
+      halfWidth: 2.5, halfDepth: 3.5,
+    },
+    velocityX: 0,
+    velocityZ: 2.4,
+    speedMultiplier: 1,
+    maximumY: 0.8,
+  });
+
+  // 12. Force volume — crosswind pushes sideways, proving reusable forces.
+  const forceZ = courseZ + 94;
+  addStationMarker(12, 0, forceZ, new Color3(0.15, 0.85, 0.78));
+  addCoursePad(
+    'course-force-volume-visual',
+    0,
+    forceZ,
+    7,
+    7,
+    new Color3(0.08, 0.45, 0.42),
+    0.05,
+  );
+  worldVolumes.push({
+    id: 'course-crosswind-force',
+    label: 'Course Crosswind',
+    kind: 'force',
+    footprint: {
+      shape: 'box', centerX: 0, centerZ: forceZ,
+      halfWidth: 3.5, halfDepth: 3.5,
+    },
+    velocityX: 3.2,
+    velocityZ: 0,
+    speedMultiplier: 0.85,
+    maximumY: 1.2,
+  });
+
+  addLandmark('movement-course', 'Movement Validation Course', 0, courseZ - 5);
+
   // Future encounter landmarks.
   addLandmark('entrance', 'Entrance', 0, -22);
   addLandmark('fallen-log', 'Fallen Log', 0, -14);
@@ -829,6 +1294,9 @@ export function buildOutdoorZone(
     traversalSurfaces,
     worldVolumes,
     landmarks,
+    update(dt: number): void {
+      dynamicUpdates.forEach(update => update(dt));
+    },
     setTraversalHighlightVisible(visible: boolean): void {
       traversalHighlights.forEach(mesh => {
         if (

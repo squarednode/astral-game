@@ -59,6 +59,7 @@ export class WorldVolumeSystem {
       spawnRequests: [],
       constraintMessages: [],
       damageAmount: 0,
+      forceDelta: Vector3.Zero(),
       inDeepWater: false,
       drownRemaining: null,
       drowned: false,
@@ -75,6 +76,13 @@ export class WorldVolumeSystem {
     for (const volume of this.volumes) {
       if (!this.contains(volume, result.position)) continue;
       if (volume.kind === 'water-hazard' && !mayEnterWater) continue;
+      if (
+        volume.kind === 'modifier' &&
+        volume.groundContactOnly &&
+        supportHeight > 0.08
+      ) {
+        continue;
+      }
 
       const entering = !this.activeVolumeIds.has(volume.id);
       nextActiveIds.add(volume.id);
@@ -96,6 +104,18 @@ export class WorldVolumeSystem {
           break;
         case 'water-hazard':
           this.applyWaterHazard(volume, result, dt);
+          break;
+        case 'force':
+          result.speedMultiplier = Math.min(
+            result.speedMultiplier,
+            volume.speedMultiplier ?? 1,
+          );
+          result.disableJump ||= Boolean(volume.disableJump);
+          result.disableDodge ||= Boolean(volume.disableDodge);
+          result.forceDelta.x += volume.velocityX * dt;
+          result.forceDelta.z += volume.velocityZ * dt;
+          result.position.x += volume.velocityX * dt;
+          result.position.z += volume.velocityZ * dt;
           break;
         case 'constraint':
           // Constraint volumes reject entry. They are the reusable replacement
@@ -323,6 +343,7 @@ export class WorldVolumeSystem {
       case 'modifier': return new Color3(0.1, 0.55, 1);
       case 'hazard':
       case 'water-hazard': return new Color3(0.9, 0.15, 0.12);
+      case 'force': return new Color3(0.1, 0.9, 0.85);
       case 'constraint': return new Color3(1, 0.72, 0.12);
       case 'trigger': return new Color3(0.95, 0.85, 0.18);
       case 'spawn': return new Color3(0.68, 0.28, 0.95);

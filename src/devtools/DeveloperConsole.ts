@@ -91,6 +91,7 @@ export class DeveloperConsole {
           <button data-action="teleport-entrance">Entrance</button>
           <button data-action="teleport-stream">Stream</button>
           <button data-action="teleport-volume-tests">Volume Tests</button>
+          <button data-action="teleport-movement-course">Movement Course</button>
           <button data-action="teleport-camp">NPC Camp</button>
           <button data-action="teleport-bridge">Bridge</button>
           <button data-action="teleport-elite">Elite Arena</button>
@@ -164,6 +165,9 @@ export class DeveloperConsole {
           break;
         case 'teleport-volume-tests':
           this.actions.teleportToLandmark('volume-tests');
+          break;
+        case 'teleport-movement-course':
+          this.actions.teleportToLandmark('movement-course');
           break;
         case 'teleport-camp':
           this.actions.teleportToLandmark('npc-camp');

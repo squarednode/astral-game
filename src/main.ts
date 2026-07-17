@@ -984,6 +984,8 @@ scene.onBeforeRenderObservable.add(() => {
   // the browser coalesces pointer-move events or the cursor moves across VFX.
   if (input.isPointerHeld('left')) updatePointerWorldFromCursor();
 
+  outdoorZone.update(dt);
+
   const positionBeforeMovement = playerRoot.position.clone();
   movement.update(dt);
 
@@ -1016,6 +1018,7 @@ scene.onBeforeRenderObservable.add(() => {
 
   movement.setSupportHeight(
     traversalResolution.supportHeight,
+    Math.abs(traversalResolution.surfaceDelta.y) > 0.00001,
   );
   movement.reconcileSupportHeight();
 

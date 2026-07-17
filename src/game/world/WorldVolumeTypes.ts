@@ -23,6 +23,7 @@ export interface ModifierVolume extends WorldVolumeBase {
   speedMultiplier: number;
   disableJump?: boolean;
   disableDodge?: boolean;
+  groundContactOnly?: boolean;
 }
 
 export interface DamageHazardVolume extends WorldVolumeBase {
@@ -42,6 +43,15 @@ export interface WaterHazardVolume extends WorldVolumeBase {
   bankAxis: 'x' | 'z';
   bankCenter: number;
   recoveryPadding: number;
+}
+
+export interface ForceVolume extends WorldVolumeBase {
+  kind: 'force';
+  velocityX: number;
+  velocityZ: number;
+  speedMultiplier?: number;
+  disableJump?: boolean;
+  disableDodge?: boolean;
 }
 
 export interface ConstraintVolume extends WorldVolumeBase {
@@ -67,6 +77,7 @@ export type WorldVolume =
   | ModifierVolume
   | DamageHazardVolume
   | WaterHazardVolume
+  | ForceVolume
   | ConstraintVolume
   | TriggerVolume
   | SpawnVolume;
@@ -93,6 +104,7 @@ export interface WorldVolumeResult {
   spawnRequests: SpawnVolumeRequest[];
   constraintMessages: string[];
   damageAmount: number;
+  forceDelta: Vector3;
   inDeepWater: boolean;
   drownRemaining: number | null;
   drowned: boolean;

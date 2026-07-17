@@ -121,5 +121,6 @@ export interface OutdoorZone {
   traversalSurfaces: TraversalSurface[];
   worldVolumes: WorldVolume[];
   landmarks: WorldLandmark[];
+  update(dt: number): void;
   setTraversalHighlightVisible(visible: boolean): void;
 }

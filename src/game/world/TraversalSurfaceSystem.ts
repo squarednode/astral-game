@@ -244,12 +244,12 @@ export class TraversalSurfaceSystem {
     );
     const frameDelta =
       surface.frameDelta?.clone() ?? Vector3.Zero();
-    position.addInPlace(frameDelta);
+    position.x += frameDelta.x;
+    position.z += frameDelta.z;
 
     return {
       position,
-      supportHeight:
-        supportHeight + frameDelta.y,
+      supportHeight,
       ignoredColliderLabels: new Set([
         surface.colliderLabel,
       ]),
@@ -317,12 +317,13 @@ export class TraversalSurfaceSystem {
     if (standing || canStepOnto || canLandFromJump) {
       const frameDelta =
         surface.frameDelta?.clone() ?? Vector3.Zero();
-      const position = desired.add(frameDelta);
+      const position = desired.clone();
+      position.x += frameDelta.x;
+      position.z += frameDelta.z;
 
       return {
         position,
-        supportHeight:
-          supportHeight + frameDelta.y,
+        supportHeight,
         ignoredColliderLabels: new Set([
           surface.colliderLabel,
         ]),
