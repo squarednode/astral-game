@@ -2628,6 +2628,134 @@ README.md
 No movement, collision, support, combat, entity, or core state-machine files
 were changed.
 
+# Astral 0.5.4.6 — Standard Enemy State Validation
+
+This milestone migrates standard enemies to the generic state-machine
+framework while deliberately leaving elite enemies on the original behavior
+path for comparison.
+
+## Standard enemy states
+
+```text
+idle
+chase
+attack-windup
+recover
+dead
+```
+
+## Behavior flow
+
+### `idle`
+
+- Evaluates the player distance.
+- Requests `attack-windup` when the player is already in range and the attack
+  cooldown is ready.
+- Otherwise requests `chase`.
+
+### `chase`
+
+- Moves toward the player using the existing enemy speed.
+- Retains the existing frost slow multiplier.
+- Does not move while an attack telegraph owns the enemy.
+- Requests `attack-windup` when range and cooldown conditions are met.
+- Requests `dead` if health reaches zero.
+
+### `attack-windup`
+
+- Starts the existing standard-enemy telegraph.
+- Uses the existing attack range, damage, and hit protection.
+- Requests `recover` when the telegraphed strike resolves.
+- Cancels the telegraph when transitioning to `dead`.
+
+### `recover`
+
+- Holds for `0.35` seconds after an attack.
+- Requests `chase` when recovery completes.
+- Existing attack cooldown timing remains unchanged.
+
+### `dead`
+
+- Cancels any active telegraph.
+- Existing `killEnemy()` logic still owns loot, kill count, wave progression,
+  entity destruction, and VFX.
+
+## Elite comparison path
+
+Elite enemies remain on the pre-state-machine behavior loop.
+
+This provides a direct validation comparison:
+
+```text
+Standard enemies → generic state machine
+Elite enemies    → legacy branch
+```
+
+No elite tuning or combat values were changed.
+
+## Event integration
+
+Every standard enemy machine emits the existing generic events:
+
+```text
+state.entered
+state.exited
+state.changed
+state.transitionRejected
+```
+
+Machine IDs use the enemy entity ID:
+
+```text
+enemy-entity-#
+```
+
+## Developer diagnostics
+
+The framework HUD now includes:
+
+```text
+State Machine · Standard Enemies
+  Machines
+  Idle
+  Chase
+  Windup
+  Recover
+  Dead
+  Rejected
+  Elites      legacy behavior
+```
+
+The counts provide a live view of the current standard-enemy state
+distribution.
+
+## Retained systems
+
+The migration does not change:
+
+- Enemy entity registration
+- Enemy health component synchronization
+- Combat damage
+- Attack telegraphs
+- Attack range
+- Attack cooldowns
+- Frost slow behavior
+- Knockback
+- Loot
+- Wave progression
+- Elite AI
+- Player movement
+- Collision
+- Elevator state machine
+
+## Files modified
+
+```text
+src/main.ts
+src/game/world/OutdoorZoneBuilder.ts
+src/game/world/WorldTypes.ts
+README.md
+
 
 ### Validate
 ```bash

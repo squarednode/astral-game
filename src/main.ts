@@ -86,6 +86,18 @@ interface CharacterState extends CharacterDef {
   skillSlots: Partial<Record<AbilitySlot, SkillKey>>;
 }
 
+type StandardEnemyStateId =
+  | 'idle'
+  | 'chase'
+  | 'attack-windup'
+  | 'recover'
+  | 'dead';
+
+interface StandardEnemyStateContext {
+  enemy: Enemy;
+  recoverDuration: number;
+}
+
 interface Enemy {
   entityId: string;
   healthComponent: HealthComponent;
@@ -98,6 +110,10 @@ interface Enemy {
   attackCd: number;
   statuses: Partial<Record<Element, number>>;
   knockbackVelocity: Vector3;
+  stateMachine?: StateMachine<
+    StandardEnemyStateContext,
+    StandardEnemyStateId
+  >;
 }
 
 interface LootItem {
@@ -744,6 +760,206 @@ function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   return ring;
 }
 
+function createStandardEnemyStateMachine(
+  enemy: Enemy,
+): StateMachine<
+  StandardEnemyStateContext,
+  StandardEnemyStateId
+> {
+  const machineId = `enemy-${enemy.entityId}`;
+  const context: StandardEnemyStateContext = {
+    enemy,
+    recoverDuration: 0.35,
+  };
+
+  return new StateMachine<
+    StandardEnemyStateContext,
+    StandardEnemyStateId
+  >(
+    machineId,
+    context,
+    {
+      onEntered: (state, from) => {
+        events.emit('state.entered', {
+          machineId,
+          state,
+          from,
+        });
+      },
+      onExited: (state, to) => {
+        events.emit('state.exited', {
+          machineId,
+          state,
+          to,
+        });
+      },
+      onChanged: (from, to, reason) => {
+        events.emit('state.changed', {
+          machineId,
+          from,
+          to,
+          reason,
+        });
+      },
+      onRejected: result => {
+        events.emit('state.transitionRejected', {
+          machineId,
+          from: result.from,
+          to: result.to,
+          rejectedBy: result.rejectedBy ?? 'unknown',
+        });
+      },
+    },
+  )
+    .addState({
+      id: 'idle',
+      update: (stateContext, machine) => {
+        if (stateContext.enemy.hp <= 0) {
+          machine.request('dead', 'health-depleted');
+          return;
+        }
+
+        const distance = Vector3.Distance(
+          stateContext.enemy.mesh.position,
+          playerRoot.position,
+        );
+
+        if (
+          distance <= GameBalance.combat.enemyAttackRange &&
+          stateContext.enemy.attackCd <= 0
+        ) {
+          machine.request(
+            'attack-windup',
+            'player-in-attack-range',
+          );
+          return;
+        }
+
+        machine.request('chase', 'acquire-player');
+      },
+    })
+    .addState({
+      id: 'chase',
+      update: (stateContext, machine, dt) => {
+        const target = stateContext.enemy;
+
+        if (target.hp <= 0) {
+          machine.request('dead', 'health-depleted');
+          return;
+        }
+
+        const toPlayer = playerRoot.position.subtract(
+          target.mesh.position,
+        );
+        toPlayer.y = 0;
+        const distance = toPlayer.length();
+
+        if (
+          distance <= GameBalance.combat.enemyAttackRange &&
+          target.attackCd <= 0
+        ) {
+          machine.request(
+            'attack-windup',
+            'player-in-attack-range',
+          );
+          return;
+        }
+
+        if (
+          distance > 0.001 &&
+          !enemyTelegraphs.isBusy(target.mesh)
+        ) {
+          const slow =
+            (target.statuses.frost ?? 0) > 0 ? 0.58 : 1;
+          target.mesh.position.addInPlace(
+            toPlayer.normalize().scale(
+              target.speed * dt * slow,
+            ),
+          );
+        }
+      },
+    })
+    .addState({
+      id: 'attack-windup',
+      enter: stateContext => {
+        const target = stateContext.enemy;
+
+        enemyTelegraphs.begin(
+          target.mesh,
+          false,
+          () => {
+            if (
+              target.hp <= 0 ||
+              !enemies.includes(target)
+            ) {
+              return;
+            }
+
+            const strikeDistance = Vector3.Distance(
+              target.mesh.position,
+              playerRoot.position,
+            );
+
+            if (
+              strikeDistance <=
+              GameBalance.combat.enemyAttackRange + 0.35
+            ) {
+              hurtActive(target.damage);
+            }
+
+            target.attackCd = 1.55;
+
+            if (
+              target.stateMachine?.getCurrentStateId() ===
+              'attack-windup'
+            ) {
+              target.stateMachine.request(
+                'recover',
+                'attack-resolved',
+              );
+            }
+          },
+        );
+      },
+      update: (stateContext, machine) => {
+        if (stateContext.enemy.hp <= 0) {
+          machine.request('dead', 'health-depleted');
+        }
+      },
+      exit: (stateContext, _machine, to) => {
+        if (to === 'dead') {
+          enemyTelegraphs.cancel(
+            stateContext.enemy.mesh,
+          );
+        }
+      },
+    })
+    .addState({
+      id: 'recover',
+      update: (stateContext, machine) => {
+        if (stateContext.enemy.hp <= 0) {
+          machine.request('dead', 'health-depleted');
+          return;
+        }
+
+        if (
+          machine.getTimeInState() >=
+          stateContext.recoverDuration
+        ) {
+          machine.request('chase', 'recovery-complete');
+        }
+      },
+    })
+    .addState({
+      id: 'dead',
+      enter: stateContext => {
+        enemyTelegraphs.cancel(
+          stateContext.enemy.mesh,
+        );
+      },
+    });
+}
+
 function spawnEnemy(elite = false, spawnPosition?: Vector3): void {
   const angle = Math.random() * Math.PI * 2;
   const radius = 10 + Math.random() * 4;
@@ -800,7 +1016,7 @@ function spawnEnemy(elite = false, spawnPosition?: Vector3): void {
       { elite, spawnWave: wave },
     );
 
-  enemies.push({
+  const enemy: Enemy = {
     entityId: enemyEntity.id,
     healthComponent,
     mesh,
@@ -812,7 +1028,15 @@ function spawnEnemy(elite = false, spawnPosition?: Vector3): void {
     attackCd: Math.random(),
     statuses: {},
     knockbackVelocity: Vector3.Zero(),
-  });
+  };
+
+  if (!elite) {
+    enemy.stateMachine =
+      createStandardEnemyStateMachine(enemy);
+    enemy.stateMachine.start('idle', 'enemy-spawned');
+  }
+
+  enemies.push(enemy);
 }
 
 function startWave(): void {
@@ -1090,6 +1314,17 @@ function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
 }
 
 function killEnemy(enemy: Enemy): void {
+  if (
+    !enemy.elite &&
+    enemy.stateMachine &&
+    enemy.stateMachine.getCurrentStateId() !== 'dead'
+  ) {
+    enemy.stateMachine.request(
+      'dead',
+      'combat-death',
+    );
+  }
+
   enemyTelegraphs.cancel(enemy.mesh);
   kills++;
   events.emit('combat.enemyKilled', {
@@ -1573,19 +1808,56 @@ scene.onBeforeRenderObservable.add(() => {
 
   enemies.forEach(e => {
     combat.updateKnockback(e, dt);
-    Object.keys(e.statuses).forEach(k => e.statuses[k as Element] = Math.max(0, (e.statuses[k as Element] ?? 0) - dt));
-    const toPlayer = playerRoot.position.subtract(e.mesh.position); toPlayer.y = 0;
-    const dist = toPlayer.length();
+    Object.keys(e.statuses).forEach(k => {
+      e.statuses[k as Element] = Math.max(
+        0,
+        (e.statuses[k as Element] ?? 0) - dt,
+      );
+    });
     e.attackCd -= dt;
+
     if (!developerState.enemyAiEnabled) return;
 
+    if (!e.elite && e.stateMachine) {
+      e.stateMachine.update(dt);
+      return;
+    }
+
+    // Elite enemies remain on the original behavior path for A/B validation.
+    const toPlayer = playerRoot.position.subtract(
+      e.mesh.position,
+    );
+    toPlayer.y = 0;
+    const dist = toPlayer.length();
+
     if (dist > GameBalance.combat.enemyAttackRange) {
-      if (!enemyTelegraphs.isBusy(e.mesh)) e.mesh.position.addInPlace(toPlayer.normalize().scale(e.speed * dt * ((e.statuses.frost ?? 0) > 0 ? .58 : 1)));
-    } else if (e.attackCd <= 0 && !enemyTelegraphs.isBusy(e.mesh)) {
-      enemyTelegraphs.begin(e.mesh, e.elite, () => {
-        const strikeDistance = Vector3.Distance(e.mesh.position, playerRoot.position);
-        if (strikeDistance <= GameBalance.combat.enemyAttackRange + (e.elite ? 0.8 : 0.35)) hurtActive(e.damage);
-        e.attackCd = e.elite ? 1.15 : 1.55;
+      if (!enemyTelegraphs.isBusy(e.mesh)) {
+        e.mesh.position.addInPlace(
+          toPlayer.normalize().scale(
+            e.speed *
+              dt *
+              ((e.statuses.frost ?? 0) > 0
+                ? 0.58
+                : 1),
+          ),
+        );
+      }
+    } else if (
+      e.attackCd <= 0 &&
+      !enemyTelegraphs.isBusy(e.mesh)
+    ) {
+      enemyTelegraphs.begin(e.mesh, true, () => {
+        const strikeDistance = Vector3.Distance(
+          e.mesh.position,
+          playerRoot.position,
+        );
+        if (
+          strikeDistance <=
+          GameBalance.combat.enemyAttackRange + 0.8
+        ) {
+          hurtActive(e.damage);
+        }
+        e.attackCd = 1.15;
       });
     }
   });
@@ -1604,6 +1876,34 @@ scene.onBeforeRenderObservable.add(() => {
     const stats = entities.stats();
     const registeredEnemies = entities.withTag('enemy').length;
     const eventStats = events.stats();
+    const standardEnemyMachines = enemies
+      .filter(enemy => !enemy.elite && enemy.stateMachine)
+      .map(enemy => enemy.stateMachine!);
+    const standardEnemyStateCounts =
+      standardEnemyMachines.reduce<
+        Record<StandardEnemyStateId, number>
+      >(
+        (counts, machine) => {
+          const state = machine.getCurrentStateId();
+          if (state) counts[state] += 1;
+          return counts;
+        },
+        {
+          idle: 0,
+          chase: 0,
+          'attack-windup': 0,
+          recover: 0,
+          dead: 0,
+        },
+      );
+    const standardEnemyRejected =
+      standardEnemyMachines.reduce(
+        (sum, machine) =>
+          sum +
+          machine.snapshot().rejectedTransitionCount,
+        0,
+      );
+
     entityStatus.textContent = [
       'ENGINE FRAMEWORK',
       'Entities',
@@ -1636,6 +1936,15 @@ scene.onBeforeRenderObservable.add(() => {
       `  Time        ${outdoorZone.getElevatorStateSnapshot().timeInState.toFixed(2)}s`,
       `  Transitions ${outdoorZone.getElevatorStateSnapshot().transitionCount}`,
       `  Rejected    ${outdoorZone.getElevatorStateSnapshot().rejectedTransitionCount}`,
+      'State Machine · Standard Enemies',
+      `  Machines    ${standardEnemyMachines.length}`,
+      `  Idle        ${standardEnemyStateCounts.idle}`,
+      `  Chase       ${standardEnemyStateCounts.chase}`,
+      `  Windup      ${standardEnemyStateCounts['attack-windup']}`,
+      `  Recover     ${standardEnemyStateCounts.recover}`,
+      `  Dead        ${standardEnemyStateCounts.dead}`,
+      `  Rejected    ${standardEnemyRejected}`,
+      '  Elites      legacy behavior',
     ].join('\n');
   }
 
