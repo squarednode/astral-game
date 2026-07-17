@@ -731,6 +731,150 @@ World-volume visualization:
 - Blue: modifier volume
 - Red: hazard volume
 
+# Astral 0.5.2.1 — Volume Type Validation
+
+This update fixes the remaining free-surface edge retention and expands World
+Volumes into a reusable set of validated gameplay categories.
+
+## Confirmed log issue
+
+The cross-river log was still affected by legacy free-surface edge protection.
+When the system detected blocked or hazardous ground beneath an edge, it
+clamped the player back onto the surface. The entrance log did not show the
+same behavior because it had safe ground beside it.
+
+That behavior has been removed.
+
+All free surfaces now release support at every edge. Logs, beams, rocks, slabs,
+and similar objects never hold the player in place. Any desired ledge rail,
+edge restriction, one-way boundary, or safety barrier must now be authored as a
+World Volume.
+
+## World volume types
+
+### Modifier volume
+
+Changes movement rules while occupied.
+
+Validated with the brown mud pad:
+
+- 45% movement speed
+- Dodge disabled
+- No damage
+
+Future uses include shallow water, mud, snow, tall grass, wind, and silence
+fields.
+
+### Hazard volume
+
+Applies continuous environmental damage and may also modify movement.
+
+Validated with the red fire pad:
+
+- 18 damage per second
+- 80% movement speed
+- Damage bypasses normal combat hit invulnerability
+
+Future uses include fire, lava, poison, acid, electrified floors, and damaging
+weather.
+
+### Water hazard volume
+
+Retains the existing river behavior:
+
+- Deep-water movement reduction
+- Jump and dodge restrictions
+- Five-second drowning timer
+- Entry-bank recovery
+- No swimming across
+
+### Constraint volume
+
+Rejects entry and restores the prior position.
+
+Validated with the orange constraint pad. This is the reusable replacement for
+special ledge clamps and invisible traversal rails.
+
+Future uses include:
+
+- Ledge safety strips
+- Temporary arena boundaries
+- One-way world gates
+- Narrow-path side limits
+- Cutscene containment
+
+### Trigger volume
+
+Emits a named event on entry.
+
+Validated with the yellow trigger pad. The test trigger fires again after the
+player leaves and re-enters.
+
+Future uses include dialogue, quests, music, checkpoints, cutscenes, boss
+activation, and tutorial prompts.
+
+### Spawn volume
+
+Emits an enemy-spawn request on entry.
+
+Validated with the purple spawn pad:
+
+- Spawns two normal enemies
+- Can be retriggered after exiting and re-entering
+
+Future uses include ambushes, wildlife, encounter groups, reinforcements, and
+loot or prop population.
+
+## Volume test lane
+
+Open Developer Tools with `P` and select **Volume Tests**.
+
+The test lane contains, from left to right:
+
+1. Brown — modifier
+2. Red — damage hazard
+3. Yellow — trigger
+4. Purple — spawn
+5. Orange — constraint
+
+Enable **World Volumes** to see the debug footprints.
+
+Debug colors:
+
+- Blue — modifier
+- Red — hazard or water hazard
+- Orange — constraint
+- Yellow — trigger
+- Purple — spawn
+
+## Modified files
+
+- `src/main.ts`
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/WorldVolumeTypes.ts`
+- `src/game/world/WorldVolumeSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/devtools/DeveloperConsole.ts`
+
+## Validation checklist
+
+1. Walk off every side and both ends of the cross-river log.
+2. Confirm the character falls naturally instead of being retained.
+3. Repeat on the entrance log, rocks, and slab.
+4. Enter the brown pad and verify movement slows and dodge is disabled.
+5. Leave the brown pad and verify normal movement returns.
+6. Enter the red pad and confirm health decreases continuously.
+7. Enter, leave, and re-enter the yellow pad; confirm the trigger message fires
+   on each entry only.
+8. Enter the purple pad and confirm two enemies spawn.
+9. Remain on the purple pad and confirm it does not repeatedly spawn enemies.
+10. Leave and re-enter the purple pad and confirm it triggers again.
+11. Attempt to enter the orange pad from several directions and confirm entry
+    is rejected.
+12. Retest shallow water, deep water, drowning, bank recovery, bridge crossing,
+    and Blink landing rules.
+13. Enable World Volumes and confirm all debug footprints match their pads.
+
 
 ### Validate
 ```bash

@@ -227,7 +227,7 @@ export class TraversalSurfaceSystem {
     grounded: boolean,
     verticalVelocity: number,
     currentSupportHeight: number,
-    isLandingBlocked: LandingValidator,
+    _isLandingBlocked: LandingValidator,
   ): SurfaceResolution | null {
     const supportHeight = this.sampleHeight(
       surface,
@@ -293,47 +293,9 @@ export class TraversalSurfaceSystem {
       };
     }
 
-    // If the player was standing on a free surface and walks toward an unsafe
-    // edge, keep them within its footprint. Safe edges release support.
-    const previousSupportHeight = this.sampleHeight(
-      surface,
-      previous.x,
-      previous.z,
-    );
-    const wasStanding =
-      grounded &&
-      Math.abs(
-        currentSupportHeight - previousSupportHeight,
-      ) <= GameBalance.movement.groundSnapDistance &&
-      this.isInsideFree(surface, previous, 0);
-
-    if (!wasStanding || insideFootprint) {
-      return null;
-    }
-
-    const landing = this.createFreeLanding(
-      surface,
-      desired,
-    );
-    const ignored = new Set([
-      surface.colliderLabel,
-    ]);
-
-    if (!isLandingBlocked(landing, ignored)) {
-      return null;
-    }
-
-    return {
-      position: this.clampToFree(
-        surface,
-        desired,
-      ),
-      supportHeight,
-      ignoredColliderLabels: ignored,
-      surfaceId: surface.id,
-      mode: 'free',
-      surfaceDelta: Vector3.Zero(),
-    };
+    // Free surfaces never retain the player at an edge. Any ledge, rail,
+    // one-way boundary, or safety restriction belongs to World Volumes.
+    return null;
   }
 
   private sampleHeight(
@@ -438,123 +400,6 @@ export class TraversalSurfaceSystem {
 
     position.y = desired.y;
     return position;
-  }
-
-  private clampToFree(
-    surface: FreeTraversalSurface,
-    desired: Vector3,
-  ): Vector3 {
-    const point = desired.clone();
-
-    if (surface.shape === 'box') {
-      point.x = Math.max(
-        surface.center.x - surface.halfWidth,
-        Math.min(
-          surface.center.x + surface.halfWidth,
-          point.x,
-        ),
-      );
-      point.z = Math.max(
-        surface.center.z - surface.halfDepth,
-        Math.min(
-          surface.center.z + surface.halfDepth,
-          point.z,
-        ),
-      );
-      return point;
-    }
-
-    const offset = point.subtract(surface.center);
-    offset.y = 0;
-    const distance = offset.length();
-
-    if (
-      distance > surface.radius &&
-      distance > 0.0001
-    ) {
-      offset.scaleInPlace(
-        surface.radius / distance,
-      );
-      point.x = surface.center.x + offset.x;
-      point.z = surface.center.z + offset.z;
-    }
-
-    return point;
-  }
-
-  private createFreeLanding(
-    surface: FreeTraversalSurface,
-    desired: Vector3,
-  ): Vector3 {
-    const landing = desired.clone();
-    landing.y = 0;
-
-    if (surface.shape === 'box') {
-      const localX =
-        desired.x - surface.center.x;
-      const localZ =
-        desired.z - surface.center.z;
-      const xOverflow =
-        Math.abs(localX) - surface.halfWidth;
-      const zOverflow =
-        Math.abs(localZ) - surface.halfDepth;
-
-      if (xOverflow >= zOverflow) {
-        landing.x =
-          surface.center.x +
-          Math.sign(localX || 1) *
-            (
-              surface.halfWidth +
-              surface.exitDistance
-            );
-        landing.z = Math.max(
-          surface.center.z - surface.halfDepth,
-          Math.min(
-            surface.center.z + surface.halfDepth,
-            desired.z,
-          ),
-        );
-      } else {
-        landing.z =
-          surface.center.z +
-          Math.sign(localZ || 1) *
-            (
-              surface.halfDepth +
-              surface.exitDistance
-            );
-        landing.x = Math.max(
-          surface.center.x - surface.halfWidth,
-          Math.min(
-            surface.center.x + surface.halfWidth,
-            desired.x,
-          ),
-        );
-      }
-
-      return landing;
-    }
-
-    const direction = desired.subtract(
-      surface.center,
-    );
-    direction.y = 0;
-
-    if (direction.lengthSquared() <= 0.0001) {
-      direction.set(1, 0, 0);
-    } else {
-      direction.normalize();
-    }
-
-    landing.x =
-      surface.center.x +
-      direction.x *
-        (surface.radius + surface.exitDistance);
-    landing.z =
-      surface.center.z +
-      direction.z *
-        (surface.radius + surface.exitDistance);
-
-    return landing;
   }
 
   private isInsideFree(

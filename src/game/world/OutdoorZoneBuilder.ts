@@ -434,6 +434,91 @@ export function buildOutdoorZone(
   addPath('alternate-west', -11, 7, 4.5, 24, 0.08);
   addPath('alternate-east', 13, -5, 4.5, 19, -0.12);
 
+  // Volume validation lane. These pads deliberately exercise each reusable
+  // volume category before the systems are used broadly in world content.
+  const addVolumePad = (
+    id: string,
+    x: number,
+    z: number,
+    color: Color3,
+  ): void => {
+    const pad = MeshBuilder.CreateBox(
+      id,
+      { width: 4, depth: 4, height: 0.06 },
+      scene,
+    );
+    pad.position.set(x, 0.03, z);
+    pad.material = material(id, color, 0.12);
+    pad.receiveShadows = true;
+  };
+
+  addVolumePad('volume-test-mud', 10, -18, new Color3(0.28, 0.19, 0.10));
+  addVolumePad('volume-test-fire', 16, -18, new Color3(0.62, 0.14, 0.06));
+  addVolumePad('volume-test-trigger', 22, -18, new Color3(0.62, 0.55, 0.08));
+  addVolumePad('volume-test-spawn', 28, -18, new Color3(0.38, 0.16, 0.58));
+  addVolumePad('volume-test-constraint', 34, -18, new Color3(0.72, 0.47, 0.06));
+
+  worldVolumes.push(
+    {
+      id: 'test-mud-modifier',
+      label: 'Mud Modifier Test',
+      kind: 'modifier',
+      footprint: {
+        shape: 'box', centerX: 10, centerZ: -18,
+        halfWidth: 2, halfDepth: 2,
+      },
+      speedMultiplier: 0.45,
+      disableDodge: true,
+    },
+    {
+      id: 'test-fire-hazard',
+      label: 'Fire Hazard Test',
+      kind: 'hazard',
+      footprint: {
+        shape: 'box', centerX: 16, centerZ: -18,
+        halfWidth: 2, halfDepth: 2,
+      },
+      speedMultiplier: 0.8,
+      damagePerSecond: 18,
+    },
+    {
+      id: 'test-story-trigger',
+      label: 'Story Trigger Test',
+      kind: 'trigger',
+      footprint: {
+        shape: 'box', centerX: 22, centerZ: -18,
+        halfWidth: 2, halfDepth: 2,
+      },
+      eventId: 'test-story-trigger-entered',
+      once: false,
+    },
+    {
+      id: 'test-enemy-spawn',
+      label: 'Enemy Spawn Test',
+      kind: 'spawn',
+      footprint: {
+        shape: 'box', centerX: 28, centerZ: -18,
+        halfWidth: 2, halfDepth: 2,
+      },
+      spawnId: 'test-ambush',
+      spawnType: 'normal',
+      count: 2,
+      once: false,
+    },
+    {
+      id: 'test-ledge-constraint',
+      label: 'Constraint Test',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: 34, centerZ: -18,
+        halfWidth: 1.2, halfDepth: 2,
+      },
+      message: 'Constraint volume blocked movement.',
+    },
+  );
+
+  addLandmark('volume-tests', 'Volume Test Lane', 7, -18);
+
   // Stream splits the zone. It is blocked except at the bridge and log crossing.
   const stream = MeshBuilder.CreateBox(
     'stream',

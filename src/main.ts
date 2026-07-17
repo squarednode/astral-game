@@ -198,6 +198,7 @@ let worldMovementMultiplier = 1;
 let worldJumpDisabled = false;
 let worldDodgeDisabled = false;
 let wasInDeepWater = false;
+let environmentalDamageAccumulator = 0;
 
 const waterStatus = document.createElement('div');
 waterStatus.id = 'water-status';
@@ -449,13 +450,25 @@ function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   return ring;
 }
 
-function spawnEnemy(elite = false): void {
+function spawnEnemy(elite = false, spawnPosition?: Vector3): void {
   const angle = Math.random() * Math.PI * 2;
   const radius = 10 + Math.random() * 4;
   const mesh = elite
     ? MeshBuilder.CreateIcoSphere('elite', { radius: 0.95, subdivisions: 2 }, scene)
     : MeshBuilder.CreateCapsule('enemy', { height: 1.5, radius: 0.46 }, scene);
-  mesh.position.set(Math.cos(angle) * radius, elite ? 0.95 : 0.75, Math.sin(angle) * radius);
+  if (spawnPosition) {
+    mesh.position.set(
+      spawnPosition.x,
+      elite ? 0.95 : 0.75,
+      spawnPosition.z,
+    );
+  } else {
+    mesh.position.set(
+      Math.cos(angle) * radius,
+      elite ? 0.95 : 0.75,
+      Math.sin(angle) * radius,
+    );
+  }
   mesh.material = mat(elite ? 'elite' : 'enemy', elite ? new Color3(0.68, 0.2, 0.58) : new Color3(0.34, 0.5, 0.34), elite ? 0.2 : 0.03);
   shadows.addShadowCaster(mesh);
   const hp = (elite ? 280 : 58) * (1 + (wave - 1) * 0.18);
@@ -749,10 +762,13 @@ function killEnemy(enemy: Enemy): void {
   refreshHud();
 }
 
-function hurtActive(amount: number): void {
+function hurtActive(
+  amount: number,
+  bypassHitProtection = false,
+): void {
   if (developerState.godMode) return;
-  if (movement.isInvulnerable()) return;
-  if (!combat.registerPlayerHit()) return;
+  if (!bypassHitProtection && movement.isInvulnerable()) return;
+  if (!bypassHitProtection && !combat.registerPlayerHit()) return;
   active.hp -= amount;
   vfxRing(playerRoot.position, new Color3(1,.12,.12), 1.5, .16);
   if (active.hp <= 0) {
@@ -1004,6 +1020,7 @@ scene.onBeforeRenderObservable.add(() => {
   movement.reconcileSupportHeight();
 
   const volumeResult = worldVolumes.update(
+    positionBeforeMovement,
     playerRoot.position,
     movement.getSupportHeight(),
     dt,
@@ -1014,6 +1031,38 @@ scene.onBeforeRenderObservable.add(() => {
   worldMovementMultiplier = volumeResult.speedMultiplier;
   worldJumpDisabled = volumeResult.disableJump;
   worldDodgeDisabled = volumeResult.disableDodge;
+
+  environmentalDamageAccumulator += volumeResult.damageAmount;
+  if (environmentalDamageAccumulator >= 1) {
+    const environmentalDamage = Math.floor(
+      environmentalDamageAccumulator,
+    );
+    environmentalDamageAccumulator -= environmentalDamage;
+    hurtActive(environmentalDamage, true);
+  }
+
+  for (const eventId of volumeResult.triggerEvents) {
+    feed(`Trigger volume: ${eventId}.`);
+  }
+
+  for (const request of volumeResult.spawnRequests) {
+    for (let index = 0; index < request.count; index++) {
+      const offset = new Vector3(
+        (index - (request.count - 1) / 2) * 1.6,
+        0,
+        2.5,
+      );
+      spawnEnemy(
+        request.spawnType === 'elite',
+        request.position.add(offset),
+      );
+    }
+    feed(`Spawn volume: ${request.spawnId}.`);
+  }
+
+  for (const message of volumeResult.constraintMessages) {
+    feed(message);
+  }
 
   if (volumeResult.inDeepWater) {
     waterStatus.hidden = false;

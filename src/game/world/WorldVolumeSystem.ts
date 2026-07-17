@@ -17,6 +17,8 @@ export class WorldVolumeSystem {
   private waterEntryBank: WaterEntryBank | null = null;
   private activeWaterVolumeId: string | null = null;
   private drownRemaining: number | null = null;
+  private activeVolumeIds = new Set<string>();
+  private readonly consumedVolumeIds = new Set<string>();
   private readonly debugMeshes: Mesh[] = [];
 
   constructor(
@@ -30,6 +32,7 @@ export class WorldVolumeSystem {
     this.waterEntryBank = null;
     this.activeWaterVolumeId = null;
     this.drownRemaining = null;
+    this.activeVolumeIds.clear();
   }
 
   setDebugVisible(visible: boolean): void {
@@ -39,6 +42,7 @@ export class WorldVolumeSystem {
   }
 
   update(
+    previousPosition: Vector3,
     position: Vector3,
     supportHeight: number,
     dt: number,
@@ -49,39 +53,87 @@ export class WorldVolumeSystem {
       disableJump: false,
       disableDodge: false,
       activeVolumeIds: [],
+      enteredVolumeIds: [],
+      exitedVolumeIds: [],
+      triggerEvents: [],
+      spawnRequests: [],
+      constraintMessages: [],
+      damageAmount: 0,
       inDeepWater: false,
       drownRemaining: null,
       drowned: false,
     };
 
-    // Raised surfaces such as bridges, logs, rocks, and platforms take
-    // precedence over water volumes beneath them.
-    const mayEnterWater = supportHeight <= 0.08 && position.y <= 0.22;
+    const mayEnterWater =
+      supportHeight <= 0.08 && position.y <= 0.22;
+    const nextActiveIds = new Set<string>();
 
-    const activeVolumes = this.volumes.filter(volume =>
-      this.contains(volume, position),
-    );
+    for (const volume of this.volumes) {
+      if (!this.contains(volume, result.position)) continue;
+      if (volume.kind === 'water-hazard' && !mayEnterWater) continue;
 
-    for (const volume of activeVolumes) {
-      if (
-        volume.kind === 'water-hazard' &&
-        !mayEnterWater
-      ) {
-        continue;
-      }
-
+      const entering = !this.activeVolumeIds.has(volume.id);
+      nextActiveIds.add(volume.id);
       result.activeVolumeIds.push(volume.id);
-      result.speedMultiplier = Math.min(
-        result.speedMultiplier,
-        volume.speedMultiplier,
-      );
-      result.disableJump ||= Boolean(volume.disableJump);
-      result.disableDodge ||= Boolean(volume.disableDodge);
+      if (entering) result.enteredVolumeIds.push(volume.id);
 
-      if (volume.kind === 'water-hazard') {
-        this.applyWaterHazard(volume, result, dt);
+      switch (volume.kind) {
+        case 'modifier':
+          this.applyMovementModifier(volume, result);
+          break;
+        case 'hazard':
+          result.speedMultiplier = Math.min(
+            result.speedMultiplier,
+            volume.speedMultiplier ?? 1,
+          );
+          result.disableJump ||= Boolean(volume.disableJump);
+          result.disableDodge ||= Boolean(volume.disableDodge);
+          result.damageAmount += volume.damagePerSecond * dt;
+          break;
+        case 'water-hazard':
+          this.applyWaterHazard(volume, result, dt);
+          break;
+        case 'constraint':
+          // Constraint volumes reject entry. They are the reusable replacement
+          // for ledge rails and special traversal clamps.
+          result.position.copyFrom(previousPosition);
+          if (entering && volume.message) {
+            result.constraintMessages.push(volume.message);
+          }
+          break;
+        case 'trigger':
+          if (
+            entering &&
+            (!volume.once || !this.consumedVolumeIds.has(volume.id))
+          ) {
+            result.triggerEvents.push(volume.eventId);
+            if (volume.once) this.consumedVolumeIds.add(volume.id);
+          }
+          break;
+        case 'spawn':
+          if (
+            entering &&
+            (!volume.once || !this.consumedVolumeIds.has(volume.id))
+          ) {
+            result.spawnRequests.push({
+              volumeId: volume.id,
+              spawnId: volume.spawnId,
+              spawnType: volume.spawnType,
+              count: volume.count,
+              position: result.position.clone(),
+            });
+            if (volume.once) this.consumedVolumeIds.add(volume.id);
+          }
+          break;
       }
     }
+
+    for (const priorId of this.activeVolumeIds) {
+      if (!nextActiveIds.has(priorId)) {
+        result.exitedVolumeIds.push(priorId);
+      }
+    }
+    this.activeVolumeIds = nextActiveIds;
 
     if (!result.inDeepWater) {
       this.waterEntryBank = null;
@@ -92,12 +144,29 @@ export class WorldVolumeSystem {
     return result;
   }
 
+  private applyMovementModifier(
+    volume: {
+      speedMultiplier: number;
+      disableJump?: boolean;
+      disableDodge?: boolean;
+    },
+    result: WorldVolumeResult,
+  ): void {
+    result.speedMultiplier = Math.min(
+      result.speedMultiplier,
+      volume.speedMultiplier,
+    );
+    result.disableJump ||= Boolean(volume.disableJump);
+    result.disableDodge ||= Boolean(volume.disableDodge);
+  }
+
   private applyWaterHazard(
     volume: WaterHazardVolume,
     result: WorldVolumeResult,
     dt: number,
   ): void {
     result.inDeepWater = true;
+    this.applyMovementModifier(volume, result);
 
     if (this.activeWaterVolumeId !== volume.id) {
       this.activeWaterVolumeId = volume.id;
@@ -157,9 +226,7 @@ export class WorldVolumeSystem {
     position: Vector3,
   ): WaterEntryBank {
     const coordinate =
-      volume.bankAxis === 'x'
-        ? position.x
-        : position.z;
+      volume.bankAxis === 'x' ? position.x : position.z;
 
     return coordinate < volume.bankCenter
       ? 'negative'
@@ -174,17 +241,11 @@ export class WorldVolumeSystem {
 
     const constrained = position.clone();
     const coordinate =
-      volume.bankAxis === 'x'
-        ? position.x
-        : position.z;
-
-    // The player may move sideways and back toward the entry bank, but may
-    // not advance farther through the river toward the opposite bank.
+      volume.bankAxis === 'x' ? position.x : position.z;
     const limit =
       this.waterEntryBank === 'negative'
         ? volume.bankCenter - volume.recoveryPadding
         : volume.bankCenter + volume.recoveryPadding;
-
     const constrainedCoordinate =
       this.waterEntryBank === 'negative'
         ? Math.min(coordinate, limit)
@@ -209,7 +270,6 @@ export class WorldVolumeSystem {
     ) {
       return false;
     }
-
     if (
       volume.maximumY !== undefined &&
       position.y > volume.maximumY
@@ -238,29 +298,30 @@ export class WorldVolumeSystem {
         },
         this.scene,
       );
-
-      mesh.position.set(
-        footprint.centerX,
-        0.1,
-        footprint.centerZ,
-      );
+      mesh.position.set(footprint.centerX, 0.1, footprint.centerZ);
 
       const material = new StandardMaterial(
         `world-volume-debug-material-${volume.id}`,
         this.scene,
       );
-
-      const color =
-        volume.kind === 'water-hazard'
-          ? new Color3(0.9, 0.15, 0.12)
-          : new Color3(0.1, 0.55, 1);
-
+      const color = this.debugColor(volume);
       material.diffuseColor = color;
       material.emissiveColor = color.scale(0.55);
       material.alpha = 0.42;
       mesh.material = material;
       mesh.visibility = 0;
       this.debugMeshes.push(mesh);
+    }
+  }
+
+  private debugColor(volume: WorldVolume): Color3 {
+    switch (volume.kind) {
+      case 'modifier': return new Color3(0.1, 0.55, 1);
+      case 'hazard':
+      case 'water-hazard': return new Color3(0.9, 0.15, 0.12);
+      case 'constraint': return new Color3(1, 0.72, 0.12);
+      case 'trigger': return new Color3(0.95, 0.85, 0.18);
+      case 'spawn': return new Color3(0.68, 0.28, 0.95);
     }
   }
 }
