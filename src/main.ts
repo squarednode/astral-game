@@ -1029,8 +1029,16 @@ scene.onBeforeRenderObservable.add(() => {
 
   const movementPosition = playerRoot.position.clone();
 
-  // Preliminary support is used only to identify a walkable surface collider
-  // that horizontal collision may ignore, such as the 0.22 step.
+  // Step-up is resolved before horizontal collision rejects a legal low
+  // obstacle. This represents the walkable top separately from its side faces.
+  const stepUpCandidate =
+    traversalSurfaces.queryStepUp(
+      positionBeforeMovement,
+      movementPosition,
+      movement.isGrounded(),
+      movement.getSupportHeight(),
+    );
+
   const preliminarySupport =
     traversalSurfaces.querySupport(
       positionBeforeMovement,
@@ -1040,10 +1048,19 @@ scene.onBeforeRenderObservable.add(() => {
       movement.getSupportHeight(),
     );
 
+  const horizontalIgnoredLabels = new Set(
+    preliminarySupport.ignoredColliderLabels,
+  );
+  if (stepUpCandidate) {
+    horizontalIgnoredLabels.add(
+      stepUpCandidate.colliderLabel,
+    );
+  }
+
   const resolvedPosition = worldCollision.resolvePosition(
     positionBeforeMovement,
     movementPosition,
-    preliminarySupport.ignoredColliderLabels,
+    horizontalIgnoredLabels,
   );
 
   playerRoot.position.x = resolvedPosition.x;
@@ -1061,8 +1078,14 @@ scene.onBeforeRenderObservable.add(() => {
       movement.getSupportHeight(),
     );
 
+  const resolvedSupportHeight =
+    traversalResolution.surfaceId !== null
+      ? traversalResolution.supportHeight
+      : stepUpCandidate?.supportHeight ??
+        traversalResolution.supportHeight;
+
   movement.setSupportHeight(
-    traversalResolution.supportHeight,
+    resolvedSupportHeight,
     Math.abs(traversalResolution.surfaceDelta.y) > 0.00001,
     dt,
   );

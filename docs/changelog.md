@@ -1549,6 +1549,91 @@ Now:
 - `src/game/world/DynamicCollisionSystem.ts`
 - `src/main.ts`
 
+# Astral 0.5.3.6 — Collision Refactor
+
+This revision addresses two collision failures found during movement-course
+testing:
+
+- The `0.22` platform side wall blocked movement before legal step-up.
+- The actor capsule caught on the vertical side face while leaving platforms.
+
+## Collision model
+
+Walkable geometry is now treated as two separate concepts:
+
+```text
+Walkable top
+    Used for step-up, landing, and support height
+
+Blocking side faces
+    Used for horizontal collision
+```
+
+The support resolver remains passive. It never modifies X/Z.
+
+## Explicit step-up resolver
+
+Before horizontal collision is allowed to reject movement, the traversal
+surface system now checks for a legal step candidate.
+
+A step is valid when:
+
+- The actor is grounded.
+- The actor is moving toward a free walkable surface.
+- The capsule has reached the expanded side-face boundary.
+- The top is above the current support.
+- The rise is no more than `stepHeight + 0.015`.
+- The surface slope is walkable.
+
+For a valid step:
+
+1. The candidate surface collider is ignored for that horizontal move.
+2. Collision resolves the requested X/Z.
+3. The step top supplies the support height.
+4. Normal exact-foot support takes over once the foot point reaches the top
+   footprint.
+
+This allows the `0.22` platform to be walked onto without jumping.
+
+## Clean ledge release
+
+When the foot leaves a support surface, its vertical side collider remains
+ignored until the entire actor capsule has cleared the expanded footprint.
+
+Release clearance is:
+
+```text
+actorRadius + 0.04
+```
+
+The bypass is based on physical clearance rather than a one-frame timer.
+
+This prevents the sequence:
+
+```text
+Support releases
+Capsule overlaps side face
+Collision restores previous X/Z
+Actor hangs on the ledge
+```
+
+The side face becomes active again as soon as the capsule is fully clear.
+
+## Moving platforms
+
+The previous passive-support and side-preserving dynamic-platform changes are
+retained.
+
+- Support does not reposition the actor horizontally.
+- Platform frame movement is inherited before player input.
+- Side contact preserves the actor's original side instead of teleporting them
+  across the platform.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/main.ts`
+
 
 ### Validate
 ```bash

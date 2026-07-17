@@ -19,6 +19,12 @@ export interface SurfaceResolution {
   surfaceDelta: Vector3;
 }
 
+export interface StepUpCandidate {
+  surfaceId: string;
+  colliderLabel: string;
+  supportHeight: number;
+}
+
 interface GuidedProjection {
   progress: number;
   lateralDistance: number;
@@ -34,7 +40,9 @@ export class TraversalSurfaceSystem {
   enabled = true;
 
   private currentSupportSurfaceId: string | null = null;
-  private releasedColliderLabel: string | null = null;
+  private releasedSurfaceId: string | null = null;
+  private readonly actorRadius = 0.5;
+  private readonly releaseClearance = 0.04;
 
   constructor(
     private readonly surfaces: ReadonlyArray<TraversalSurface>,
@@ -42,7 +50,7 @@ export class TraversalSurfaceSystem {
 
   reset(): void {
     this.currentSupportSurfaceId = null;
-    this.releasedColliderLabel = null;
+    this.releasedSurfaceId = null;
   }
 
   releaseForBlink(): void {
@@ -68,6 +76,75 @@ export class TraversalSurfaceSystem {
     );
 
     return surface?.frameDelta?.clone() ?? Vector3.Zero();
+  }
+
+  /**
+   * Finds a legal low obstacle before horizontal collision rejects the move.
+   * The actor center may still be outside the top footprint while the capsule
+   * is touching its front face.
+   */
+  queryStepUp(
+    previous: Vector3,
+    desired: Vector3,
+    grounded: boolean,
+    currentSupportHeight: number,
+  ): StepUpCandidate | null {
+    if (!this.enabled || !grounded) return null;
+
+    const movementX = desired.x - previous.x;
+    const movementZ = desired.z - previous.z;
+    if (movementX * movementX + movementZ * movementZ < 0.000001) {
+      return null;
+    }
+
+    const candidates = this.surfaces
+      .filter(
+        (surface): surface is FreeTraversalSurface =>
+          surface.mode === 'free',
+      )
+      .filter(surface =>
+        this.isWalkableSlope(surface),
+      )
+      .filter(surface =>
+        !this.isInsideFree(surface, previous),
+      )
+      .filter(surface =>
+        this.isInsideFreeExpanded(
+          surface,
+          desired,
+          this.actorRadius,
+        ),
+      )
+      .map(surface => ({
+        surface,
+        supportHeight: this.sampleHeight(
+          surface,
+          desired.x,
+          desired.z,
+        ),
+      }))
+      .filter(candidate => {
+        const rise =
+          candidate.supportHeight - currentSupportHeight;
+        return (
+          rise > 0.005 &&
+          rise <=
+            GameBalance.movement.stepHeight + 0.015
+        );
+      })
+      .sort(
+        (a, b) =>
+          b.supportHeight - a.supportHeight,
+      );
+
+    const selected = candidates[0];
+    if (!selected) return null;
+
+    return {
+      surfaceId: selected.surface.id,
+      colliderLabel: selected.surface.colliderLabel,
+      supportHeight: selected.supportHeight,
+    };
   }
 
   /**
@@ -133,7 +210,7 @@ export class TraversalSurfaceSystem {
     if (selected) {
       this.currentSupportSurfaceId =
         selected.surface.id;
-      this.releasedColliderLabel = null;
+      this.releasedSurfaceId = null;
 
       return {
         supportHeight: selected.supportHeight,
@@ -150,28 +227,30 @@ export class TraversalSurfaceSystem {
 
     this.currentSupportSurfaceId = null;
 
-    // Ignore the old support collider for exactly one release query so the
-    // capsule can move cleanly away from an edge.
     if (priorOwner) {
-      this.releasedColliderLabel =
-        priorOwner.colliderLabel;
-
-      return {
-        supportHeight: 0,
-        ignoredColliderLabels: new Set([
-          priorOwner.colliderLabel,
-        ]),
-        surfaceId: null,
-        mode: 'ground',
-        surfaceDelta: Vector3.Zero(),
-      };
+      this.releasedSurfaceId = priorOwner.id;
     }
 
-    const ignored = this.releasedColliderLabel
-      ? new Set([this.releasedColliderLabel])
-      : new Set<string>();
+    const ignored = new Set<string>();
+    const releasedSurface = this.releasedSurfaceId
+      ? this.surfaces.find(
+          surface =>
+            surface.id === this.releasedSurfaceId,
+        )
+      : undefined;
 
-    this.releasedColliderLabel = null;
+    if (
+      releasedSurface &&
+      this.isInsideSurfaceExpanded(
+        releasedSurface,
+        footPosition,
+        this.actorRadius + this.releaseClearance,
+      )
+    ) {
+      ignored.add(releasedSurface.colliderLabel);
+    } else {
+      this.releasedSurfaceId = null;
+    }
 
     return {
       supportHeight: 0,
@@ -247,6 +326,60 @@ export class TraversalSurfaceSystem {
     }
 
     return this.isInsideFree(surface, position);
+  }
+
+  private isInsideSurfaceExpanded(
+    surface: TraversalSurface,
+    position: Vector3,
+    padding: number,
+  ): boolean {
+    if (surface.mode === 'guided') {
+      const projection = this.projectOntoGuided(
+        surface,
+        position,
+      );
+      return (
+        projection.progress >=
+          -padding / Math.max(
+            0.001,
+            Vector3.Distance(surface.start, surface.end),
+          ) &&
+        projection.progress <=
+          1 +
+            padding / Math.max(
+              0.001,
+              Vector3.Distance(surface.start, surface.end),
+            ) &&
+        projection.lateralDistance <=
+          surface.width / 2 + padding
+      );
+    }
+
+    return this.isInsideFreeExpanded(
+      surface,
+      position,
+      padding,
+    );
+  }
+
+  private isInsideFreeExpanded(
+    surface: FreeTraversalSurface,
+    position: Vector3,
+    padding: number,
+  ): boolean {
+    if (surface.shape === 'box') {
+      return (
+        Math.abs(position.x - surface.center.x) <=
+          surface.halfWidth + padding &&
+        Math.abs(position.z - surface.center.z) <=
+          surface.halfDepth + padding
+      );
+    }
+
+    const dx = position.x - surface.center.x;
+    const dz = position.z - surface.center.z;
+    const radius = surface.radius + padding;
+    return dx * dx + dz * dz <= radius * radius;
   }
 
   private isWalkableSlope(
