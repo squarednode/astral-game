@@ -214,7 +214,7 @@ export class TraversalSurfaceSystem {
       grounded &&
       heightDifference > 0.01 &&
       heightDifference <=
-        GameBalance.movement.stepHeight &&
+        GameBalance.movement.stepHeight + 0.015 &&
       insideLength &&
       insideLandingWidth;
 
@@ -223,8 +223,6 @@ export class TraversalSurfaceSystem {
       verticalVelocity <= 0 &&
       heightDifference <=
         GameBalance.movement.maximumJumpOntoHeight &&
-      heightDifference >
-        -GameBalance.movement.groundSnapDistance &&
       insideLength &&
       insideLandingWidth &&
       this.crossesSurfaceHeight(
@@ -297,17 +295,15 @@ export class TraversalSurfaceSystem {
       grounded &&
       heightDifference > 0.01 &&
       heightDifference <=
-        GameBalance.movement.stepHeight &&
-      insideFootprint;
+        GameBalance.movement.stepHeight + 0.015 &&
+      insideLandingFootprint;
 
     const canLandFromJump =
       !grounded &&
       verticalVelocity <= 0 &&
       heightDifference <=
         GameBalance.movement.maximumJumpOntoHeight &&
-      heightDifference >
-        -GameBalance.movement.groundSnapDistance &&
-      insideLandingFootprint &&
+      insideFootprint &&
       this.crossesSurfaceHeight(
         previous,
         desired,

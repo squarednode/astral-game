@@ -8,6 +8,7 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import type {
+  DynamicBoxCollider,
   OutdoorZone,
   TraversalSurface,
   WorldCollider,
@@ -32,13 +33,14 @@ export function buildOutdoorZone(
   const colliders: WorldCollider[] = [];
   const traversalSurfaces: TraversalSurface[] = [];
   const worldVolumes: WorldVolume[] = [];
+  const dynamicColliders: DynamicBoxCollider[] = [];
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
   const dynamicUpdates: Array<(dt: number) => void> = [];
 
   const ground = MeshBuilder.CreateGround(
     'outdoor-ground',
-    { width: 80, height: 260, subdivisions: 8 },
+    { width: 80, height: 300, subdivisions: 8 },
     scene,
   );
   ground.material = material('outdoor-ground', new Color3(0.12, 0.19, 0.13));
@@ -403,6 +405,15 @@ export function buildOutdoorZone(
       rail.position.set(x + side * (width / 2 - 0.08), 0.48, z);
       rail.material = material('bridge-rail', new Color3(0.29, 0.18, 0.09));
       shadows.addShadowCaster(rail);
+      addBoxCollider(
+        `${name}-rail-${side}`,
+        x + side * (width / 2 - 0.08),
+        z,
+        0.18,
+        depth,
+        'solid',
+        1.4,
+      );
     }
   };
 
@@ -881,7 +892,7 @@ export function buildOutdoorZone(
     2.5,
     1.75,
     0.22,
-    0.2,
+    0.55,
     0.45,
   );
 
@@ -949,6 +960,42 @@ export function buildOutdoorZone(
       return stairRise * (stepIndex + 1);
     },
   });
+  worldVolumes.push(
+    {
+      id: 'course-stairs-west-side',
+      label: 'Course Stairs West Side',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: -2.72, centerZ: stairsZ,
+        halfWidth: 0.22, halfDepth: stairCount * stairDepth / 2,
+      },
+      minimumY: 0,
+      maximumY: 1.5,
+    },
+    {
+      id: 'course-stairs-east-side',
+      label: 'Course Stairs East Side',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: 2.72, centerZ: stairsZ,
+        halfWidth: 0.22, halfDepth: stairCount * stairDepth / 2,
+      },
+      minimumY: 0,
+      maximumY: 1.5,
+    },
+    {
+      id: 'course-stairs-back',
+      label: 'Course Stairs Back',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: 0,
+        centerZ: stairsZ + stairCount * stairDepth / 2 + 0.18,
+        halfWidth: 2.7, halfDepth: 0.2,
+      },
+      minimumY: 0,
+      maximumY: 1.5,
+    },
+  );
 
   // 4. Hill — continuous sampled height across authored visual terraces.
   const hillZ = courseZ + 22;
@@ -984,6 +1031,41 @@ export function buildOutdoorZone(
       return 1.5 * (1 - normalized * normalized);
     },
   });
+  worldVolumes.push(
+    {
+      id: 'course-hill-west-side',
+      label: 'Course Hill West Side',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: -3.22, centerZ: hillZ,
+        halfWidth: 0.22, halfDepth: hillHalfDepth,
+      },
+      minimumY: 0,
+      maximumY: 1.8,
+    },
+    {
+      id: 'course-hill-east-side',
+      label: 'Course Hill East Side',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: 3.22, centerZ: hillZ,
+        halfWidth: 0.22, halfDepth: hillHalfDepth,
+      },
+      minimumY: 0,
+      maximumY: 1.8,
+    },
+    {
+      id: 'course-hill-back',
+      label: 'Course Hill Back',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box', centerX: 0, centerZ: hillZ + hillHalfDepth + 0.18,
+        halfWidth: 3.2, halfDepth: 0.2,
+      },
+      minimumY: 0,
+      maximumY: 1.8,
+    },
+  );
 
   // 5. Narrow beam — intentionally no guided behavior or edge retention.
   const beamZ = courseZ + 31;
@@ -1072,6 +1154,36 @@ export function buildOutdoorZone(
       groundContactOnly: true,
     maximumY: 0.22,
   });
+  const shallowRaised = addCoursePad(
+    'course-shallow-raised-support',
+    -1.8,
+    shallowZ,
+    2.2,
+    4.2,
+    new Color3(0.16, 0.38, 0.72),
+    0.32,
+  );
+  shallowRaised.position.y = 0.16;
+  addBoxCollider(
+    'course-shallow-raised-support',
+    -1.8,
+    shallowZ,
+    2.2,
+    4.2,
+    'traversable',
+    0.32,
+  );
+  addFreeBoxTraversalSurface(
+    'course-shallow-raised-support-surface',
+    'Shallow Water Raised Support',
+    'course-shallow-raised-support',
+    new Vector3(-1.8, 0.32, shallowZ),
+    1.1,
+    2.1,
+    0.32,
+    0.52,
+    0.45,
+  );
 
   // 8. Deep water — enter, retreat to the original bank, then use the side
   // bypass to continue through the course.
@@ -1103,6 +1215,36 @@ export function buildOutdoorZone(
     recoveryPadding: 0.28,
     maximumY: 0.22,
   });
+  const deepRaised = addCoursePad(
+    'course-deep-raised-support',
+    -1.8,
+    deepZ,
+    2.2,
+    3.2,
+    new Color3(0.12, 0.27, 0.6),
+    0.42,
+  );
+  deepRaised.position.y = 0.21;
+  addBoxCollider(
+    'course-deep-raised-support',
+    -1.8,
+    deepZ,
+    2.2,
+    3.2,
+    'traversable',
+    0.42,
+  );
+  addFreeBoxTraversalSurface(
+    'course-deep-raised-support-surface',
+    'Deep Water Raised Support',
+    'course-deep-raised-support',
+    new Vector3(-1.8, 0.42, deepZ),
+    1.1,
+    1.6,
+    0.42,
+    0.52,
+    0.45,
+  );
   addPath('course-deep-water-bypass', 5.2, deepZ, 2.2, 7);
 
   // 9. Horizontal moving platform — carries a supported actor using frameDelta.
@@ -1145,12 +1287,25 @@ export function buildOutdoorZone(
     frameDelta: Vector3.Zero(),
   };
   traversalSurfaces.push(movingSurface);
+  const movingDynamicCollider: DynamicBoxCollider = {
+    id: 'course-moving-platform-dynamic',
+    center: new Vector3(0, 0.25, movingZ),
+    previousCenter: new Vector3(0, 0.25, movingZ),
+    halfWidth: 2,
+    halfDepth: 2,
+    halfHeight: 0.25,
+    delta: Vector3.Zero(),
+  };
+  dynamicColliders.push(movingDynamicCollider);
   let movingTime = 0;
   let movingPriorX = 0;
   dynamicUpdates.push((dt: number) => {
     movingTime += dt;
     const nextX = Math.sin(movingTime * 0.75) * 4;
-    movingSurface.frameDelta!.set(nextX - movingPriorX, 0, 0);
+    movingDynamicCollider.previousCenter.copyFrom(movingDynamicCollider.center);
+    movingDynamicCollider.delta.set(nextX - movingPriorX, 0, 0);
+    movingDynamicCollider.center.set(nextX, 0.25, movingZ);
+    movingSurface.frameDelta!.copyFrom(movingDynamicCollider.delta);
     movingSurface.center.x = nextX;
     movingPlatform.position.x = nextX;
     if (movingCollider.kind === 'box') movingCollider.centerX = nextX;
@@ -1193,12 +1348,25 @@ export function buildOutdoorZone(
     frameDelta: Vector3.Zero(),
   };
   traversalSurfaces.push(elevatorSurface);
+  const elevatorDynamicCollider: DynamicBoxCollider = {
+    id: 'course-elevator-dynamic',
+    center: new Vector3(0, 0.2, elevatorZ),
+    previousCenter: new Vector3(0, 0.2, elevatorZ),
+    halfWidth: 2,
+    halfDepth: 2,
+    halfHeight: 0.2,
+    delta: Vector3.Zero(),
+  };
+  dynamicColliders.push(elevatorDynamicCollider);
   let elevatorTime = -Math.PI / 2;
   let elevatorPriorHeight = 0.4;
   dynamicUpdates.push((dt: number) => {
     elevatorTime += dt * 0.7;
     const nextHeight = 1.6 + Math.sin(elevatorTime) * 1.2;
-    elevatorSurface.frameDelta!.set(0, nextHeight - elevatorPriorHeight, 0);
+    elevatorDynamicCollider.previousCenter.copyFrom(elevatorDynamicCollider.center);
+    elevatorDynamicCollider.delta.set(0, nextHeight - elevatorPriorHeight, 0);
+    elevatorDynamicCollider.center.set(0, nextHeight - 0.2, elevatorZ);
+    elevatorSurface.frameDelta!.copyFrom(elevatorDynamicCollider.delta);
     elevatorSurface.surfaceHeight = nextHeight;
     elevatorSurface.center.y = nextHeight;
     elevator.position.y = nextHeight - 0.2;
@@ -1252,8 +1420,9 @@ export function buildOutdoorZone(
   });
 
   // 12. Force volume — crosswind pushes sideways, proving reusable forces.
-  const forceZ = courseZ + 94;
+  const forceZ = courseZ + 92;
   addStationMarker(12, 0, forceZ, new Color3(0.15, 0.85, 0.78));
+  addPath('course-force-approach', 0, forceZ - 5, 4, 5);
   addCoursePad(
     'course-force-volume-visual',
     0,
@@ -1293,6 +1462,7 @@ export function buildOutdoorZone(
     colliders,
     traversalSurfaces,
     worldVolumes,
+    dynamicColliders,
     landmarks,
     update(dt: number): void {
       dynamicUpdates.forEach(update => update(dt));

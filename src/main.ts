@@ -35,6 +35,7 @@ import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildOutdoorZone } from './game/world/OutdoorZoneBuilder';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
+import { DynamicCollisionSystem } from './game/world/DynamicCollisionSystem';
 import { TraversalSurfaceSystem } from './game/world/TraversalSurfaceSystem';
 import { WorldVolumeSystem } from './game/world/WorldVolumeSystem';
 import type {
@@ -140,6 +141,7 @@ const outdoorZone = buildOutdoorZone({
 });
 const ground = scene.getMeshByName(outdoorZone.groundName)!;
 const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
+const dynamicCollision = new DynamicCollisionSystem(outdoorZone.dynamicColliders);
 const traversalSurfaces = new TraversalSurfaceSystem(
   outdoorZone.traversalSurfaces,
 );
@@ -985,6 +987,18 @@ scene.onBeforeRenderObservable.add(() => {
   if (input.isPointerHeld('left')) updatePointerWorldFromCursor();
 
   outdoorZone.update(dt);
+
+  const dynamicResolution = dynamicCollision.resolve(
+    playerRoot.position,
+    movement.getSupportHeight(),
+  );
+  playerRoot.position.copyFrom(dynamicResolution.position);
+  if (
+    dynamicResolution.pushedVertically &&
+    dynamicResolution.supportHeight !== null
+  ) {
+    movement.resetVerticalState(dynamicResolution.supportHeight);
+  }
 
   const positionBeforeMovement = playerRoot.position.clone();
   movement.update(dt);

@@ -1081,6 +1081,86 @@ movement where practical. Pay particular attention to:
 - Riding the elevator through a complete up/down cycle
 - Walking against the conveyor and crosswind
 
+# Astral 0.5.3.1 — Movement Course Fixes and Dynamic Collision
+
+This patch addresses the first complete test pass through the 0.5.3 movement
+validation course.
+
+## Fixes from the test report
+
+1. **0.22 step acquisition**
+   - Added a small numerical tolerance to the universal step-height comparison.
+   - Expanded the step acquisition footprint so the actor can acquire support
+     before its capsule is stopped by the traversable collider.
+
+2. **0.22 edge sticking**
+   - Jump landings now require the actor center to be inside the actual surface
+     footprint, rather than the padded approach area.
+   - Padded acquisition remains available only for grounded step-up behavior.
+
+3. **Stair and hill undersides**
+   - Added side and back constraint volumes so the test geometry cannot be
+     entered from underneath or behind.
+
+4. **Stairs-to-hill landing**
+   - Descending actors may now acquire any valid lower support crossed during
+     the frame. Landing is no longer rejected because the prior support was
+     more than the ground-snap distance above the destination surface.
+
+5. **Bridge rails**
+   - Visible bridge rails now receive solid colliders. They cannot be bypassed
+     by jumping over a short constraint volume.
+
+6. **Raised support over water**
+   - Added raised-support tests inside both shallow and deep water stations.
+   - These verify that raised support suppresses ground-contact water modifiers
+     and deep-water hazards.
+
+7. **Horizontal dynamic collision**
+   - Added `DynamicCollisionSystem`.
+   - A moving platform now pushes an actor standing beside it on the zero plane
+     instead of passing through.
+   - Riding on top continues to use surface `frameDelta` and is not double-pushed.
+
+8. **Elevator underside collision**
+   - The elevator now has a dynamic solid volume.
+   - When rising into an actor beneath it, the actor is moved to the platform
+     top rather than being penetrated.
+
+9. **Conveyor**
+   - Existing behavior retained.
+
+10. **Wind accessibility**
+    - Extended the ground and added a connecting approach path.
+    - Moved the final force station slightly inward.
+
+## New engine file
+
+- `src/game/world/DynamicCollisionSystem.ts`
+
+## Modified files
+
+- `src/main.ts`
+- `src/game/world/WorldTypes.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/game/world/TraversalSurfaceSystem.ts`
+
+## Test order
+
+1. Walk directly onto the 0.22 step from all four sides.
+2. Jump near each step edge and walk off slowly in every direction.
+3. Try to enter beneath the stairs and hill from the sides and back.
+4. Jump from the upper stairs onto multiple points of the hill.
+5. Walk and jump against both bridge rails.
+6. Cross both raised water supports and verify no water effects occur while on top.
+7. Stand beside the horizontal platform and let it move into the character.
+8. Stand on top and confirm the horizontal platform still carries correctly.
+9. Stand under the elevator and let it rise.
+10. Ride the elevator up and down from the top.
+11. Recheck the conveyor.
+12. Walk through the connected wind station.
+
+
 
 ### Validate
 ```bash

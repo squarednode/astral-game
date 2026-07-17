@@ -31,6 +31,17 @@ export interface BoxWorldCollider {
 
 export type WorldCollider = CircleWorldCollider | BoxWorldCollider;
 
+export interface DynamicBoxCollider {
+  id: string;
+  center: Vector3;
+  previousCenter: Vector3;
+  halfWidth: number;
+  halfDepth: number;
+  halfHeight: number;
+  delta: Vector3;
+}
+
+
 interface WalkableSurfaceBase {
   id: string;
   label: string;
@@ -120,6 +131,7 @@ export interface OutdoorZone {
   colliders: WorldCollider[];
   traversalSurfaces: TraversalSurface[];
   worldVolumes: WorldVolume[];
+  dynamicColliders: DynamicBoxCollider[];
   landmarks: WorldLandmark[];
   update(dt: number): void;
   setTraversalHighlightVisible(visible: boolean): void;
