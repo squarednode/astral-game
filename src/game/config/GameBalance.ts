@@ -21,6 +21,11 @@ export const GameBalance = {
     minZ: -25.0,
     maxZ: 25.0,
   },
+  worldVolumes: {
+    shallowWaterSpeedMultiplier: 0.65,
+    deepWaterSpeedMultiplier: 0.25,
+    drownSeconds: 5,
+  },
   camera: {
     followSharpness: 8.5,
     lookAheadDistance: 1.35,

@@ -17,6 +17,7 @@ type ToggleKey = keyof Pick<
   | 'noCooldowns'
   | 'worldCollisionEnabled'
   | 'traversalHighlightsVisible'
+  | 'worldVolumeHighlightsVisible'
 >;
 
 export class DeveloperConsole {
@@ -94,7 +95,8 @@ export class DeveloperConsole {
           <button data-action="teleport-elite">Elite Arena</button>
           <button data-action="teleport-exit">Exit</button>
           <button data-toggle="worldCollisionEnabled">World Collision</button>
-          <button data-toggle="traversalHighlightsVisible">Traversal Highlight</button>
+          <button data-toggle="traversalHighlightsVisible">Surface Highlight</button>
+          <button data-toggle="worldVolumeHighlightsVisible">World Volumes</button>
         </div>
       </section>
 
@@ -127,6 +129,12 @@ export class DeveloperConsole {
         if (toggle === 'traversalHighlightsVisible') {
           this.actions.setTraversalHighlightsVisible(
             this.state.traversalHighlightsVisible,
+          );
+        }
+
+        if (toggle === 'worldVolumeHighlightsVisible') {
+          this.actions.setWorldVolumeHighlightsVisible(
+            this.state.worldVolumeHighlightsVisible,
           );
         }
 

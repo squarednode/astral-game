@@ -14,6 +14,7 @@ export interface DeveloperState {
   noCooldowns: boolean;
   worldCollisionEnabled: boolean;
   traversalHighlightsVisible: boolean;
+  worldVolumeHighlightsVisible: boolean;
 }
 
 export const developerState: DeveloperState = {
@@ -32,4 +33,5 @@ export const developerState: DeveloperState = {
   noCooldowns: false,
   worldCollisionEnabled: true,
   traversalHighlightsVisible: false,
+  worldVolumeHighlightsVisible: false,
 };

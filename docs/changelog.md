@@ -614,6 +614,122 @@ Use free box or circular surfaces without lateral guidance.
 The supplied source package does not contain the repository-level
 `package.json`, so validation must be run after copying it into the repository:
 
+# Astral 0.5.2.0 — World Volumes
+
+This milestone begins the world-volume framework while preserving the locked
+surface movement model.
+
+## Final surface rule
+
+All logs and small beams now behave like the entrance log:
+
+- Raised free walkable surfaces
+- Jump required when above `stepHeight`
+- Land from any accessible point
+- Move freely on top
+- Walk or jump off any edge
+
+The stream log is no longer a guided corridor. Restrictions near ledges,
+bridges, hazards, and narrow paths should be built with world volumes rather
+than special traversal behavior.
+
+## New files
+
+- `src/game/world/WorldVolumeTypes.ts`
+- `src/game/world/WorldVolumeSystem.ts`
+
+## Modified files
+
+- `src/main.ts`
+- `src/game/config/GameBalance.ts`
+- `src/game/world/WorldTypes.ts`
+- `src/game/world/WorldCollisionSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/devtools/DeveloperActions.ts`
+- `src/devtools/DeveloperConsole.ts`
+- `src/devtools/DeveloperState.ts`
+
+## World-volume foundation
+
+The engine now supports:
+
+### Modifier volumes
+
+Change movement without causing direct damage.
+
+Current example:
+
+- Shallow water
+- 65% movement speed
+- Jump and dodge remain available
+
+Future uses:
+
+- Mud
+- Snow
+- Ice
+- Tall grass
+- Wind
+- Slow fields
+
+### Hazard volumes
+
+Change movement and apply timed danger.
+
+Current example:
+
+- Deep river water
+- 25% movement speed
+- Jump disabled
+- Dodge disabled
+- Five-second drowning timer
+- Player may retreat toward the original bank
+- Player may not continue swimming across the river
+- Drowning returns the player to the original bank and defeats the active
+  character
+
+Future uses:
+
+- Lava
+- Acid
+- Poison
+- Quicksand
+- Deep mud
+- Environmental damage zones
+
+## River behavior
+
+The river is divided into:
+
+1. South shallow-water band
+2. Deep-water center
+3. North shallow-water band
+
+Raised surfaces take precedence over water volumes. The bridge and logs remain
+safe while the player is supported above the water.
+
+The player may intentionally enter the river:
+
+- Shallow water slows movement
+- Deep water starts the timer
+- Deep movement is constrained toward the entry bank
+- Crossing through deep water is prevented
+- Blink may cross the water only when it reaches valid ground
+- Blink may not end inside water
+
+## Developer tools
+
+Press `P`.
+
+The World section now contains:
+
+- Surface Highlight
+- World Volumes
+
+World-volume visualization:
+
+- Blue: modifier volume
+- Red: hazard volume
 
 
 ### Validate

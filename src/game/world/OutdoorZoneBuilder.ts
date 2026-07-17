@@ -13,6 +13,7 @@ import type {
   WorldCollider,
   WorldLandmark,
 } from './WorldTypes';
+import type { WorldVolume } from './WorldVolumeTypes';
 
 export interface OutdoorZoneBuildOptions {
   scene: Scene;
@@ -30,6 +31,7 @@ export function buildOutdoorZone(
   const { scene, shadows, material } = options;
   const colliders: WorldCollider[] = [];
   const traversalSurfaces: TraversalSurface[] = [];
+  const worldVolumes: WorldVolume[] = [];
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
 
@@ -447,16 +449,74 @@ export function buildOutdoorZone(
   addBoxCollider('stream-middle-boundary', -3, 2, 12, 4.4, 'hazard');
   addBoxCollider('stream-east-boundary', 22.5, 2, 31, 4.4, 'hazard');
 
+  // World volumes divide the river into shallow edges and a deep center.
+  // Raised surfaces above the river take precedence over these volumes.
+  worldVolumes.push(
+    {
+      id: 'river-shallow-south',
+      label: 'South Shallow Water',
+      kind: 'modifier',
+      footprint: {
+        shape: 'box',
+        centerX: 0,
+        centerZ: 0.25,
+        halfWidth: 35,
+        halfDepth: 0.85,
+      },
+      speedMultiplier: 0.65,
+      disableJump: false,
+      disableDodge: false,
+      maximumY: 0.22,
+    },
+    {
+      id: 'river-deep',
+      label: 'Deep River Water',
+      kind: 'water-hazard',
+      footprint: {
+        shape: 'box',
+        centerX: 0,
+        centerZ: 2,
+        halfWidth: 35,
+        halfDepth: 0.95,
+      },
+      speedMultiplier: 0.25,
+      drownSeconds: 5,
+      disableJump: true,
+      disableDodge: true,
+      bankAxis: 'z',
+      bankCenter: 2,
+      recoveryPadding: 0.28,
+      maximumY: 0.22,
+    },
+    {
+      id: 'river-shallow-north',
+      label: 'North Shallow Water',
+      kind: 'modifier',
+      footprint: {
+        shape: 'box',
+        centerX: 0,
+        centerZ: 3.75,
+        halfWidth: 35,
+        halfDepth: 0.85,
+      },
+      speedMultiplier: 0.65,
+      disableJump: false,
+      disableDodge: false,
+      maximumY: 0.22,
+    },
+  );
+
   addBridge('old-bridge', 5, 2, 4.6, 5.2);
   addLog('stream-log-crossing', -11, 2, 5.5, Math.PI / 2, true);
-  addGuidedTraversalSurface(
+  addFreeBoxTraversalSurface(
     'stream-log-surface',
     'Stream Log Crossing',
     'stream-log-crossing',
-    new Vector3(-11, 0.58, -0.85),
-    new Vector3(-11, 0.58, 4.85),
+    new Vector3(-11, 0.58, 2),
+    0.52,
+    2.85,
     0.58,
-    1.05,
+    0.25,
     0.72,
   );
 
@@ -635,6 +695,7 @@ export function buildOutdoorZone(
     groundName: ground.name,
     colliders,
     traversalSurfaces,
+    worldVolumes,
     landmarks,
     setTraversalHighlightVisible(visible: boolean): void {
       traversalHighlights.forEach(mesh => {

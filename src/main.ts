@@ -36,6 +36,7 @@ import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildOutdoorZone } from './game/world/OutdoorZoneBuilder';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
 import { TraversalSurfaceSystem } from './game/world/TraversalSurfaceSystem';
+import { WorldVolumeSystem } from './game/world/WorldVolumeSystem';
 import type {
   GearFamily,
   GearSlot,
@@ -142,6 +143,10 @@ const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
 const traversalSurfaces = new TraversalSurfaceSystem(
   outdoorZone.traversalSurfaces,
 );
+const worldVolumes = new WorldVolumeSystem(
+  scene,
+  outdoorZone.worldVolumes,
+);
 
 const defs: CharacterDef[] = [
   { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
@@ -189,10 +194,38 @@ const abilitiesEl = document.querySelector<HTMLDivElement>('#abilities')!;
 const lootFeed = document.querySelector<HTMLDivElement>('#lootFeed')!;
 const inventoryEl = document.querySelector<HTMLDivElement>('#inventory')!;
 
+let worldMovementMultiplier = 1;
+let worldJumpDisabled = false;
+let worldDodgeDisabled = false;
+let wasInDeepWater = false;
+
+const waterStatus = document.createElement('div');
+waterStatus.id = 'water-status';
+waterStatus.hidden = true;
+waterStatus.style.cssText = [
+  'position:fixed',
+  'top:18px',
+  'left:50%',
+  'transform:translateX(-50%)',
+  'z-index:40',
+  'padding:10px 16px',
+  'border:1px solid rgba(255,255,255,.35)',
+  'border-radius:8px',
+  'background:rgba(10,20,34,.86)',
+  'color:white',
+  'font:600 14px system-ui,sans-serif',
+  'pointer-events:none',
+].join(';');
+document.body.appendChild(waterStatus);
+
 const movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
-  getMoveSpeed: () => active.speed,
-  canDodge: () => active.cooldowns.dodge <= 0 && !inventoryOpen && !gameOver,
+  getMoveSpeed: () => active.speed * worldMovementMultiplier,
+  canDodge: () =>
+    active.cooldowns.dodge <= 0 &&
+    !inventoryOpen &&
+    !gameOver &&
+    !worldDodgeDisabled,
   onDodgeStarted: (cooldown: number) => {
     active.cooldowns.dodge = cooldown;
     vfxRing(playerRoot.position, active.color, 2.8, 0.24);
@@ -797,6 +830,7 @@ const developerActions: DeveloperActions = {
     if (!landmark) return;
 
     traversalSurfaces.reset();
+    worldVolumes.reset();
     playerRoot.position.copyFrom(landmark.position);
     movement.resetVerticalState(landmark.position.y);
     movement.setPointerWorld(landmark.position);
@@ -811,6 +845,10 @@ const developerActions: DeveloperActions = {
 
   setTraversalHighlightsVisible: (visible: boolean) => {
     outdoorZone.setTraversalHighlightVisible(visible);
+  },
+
+  setWorldVolumeHighlightsVisible: (visible: boolean) => {
+    worldVolumes.setDebugVisible(visible);
   },
 
   getStatus: () => ({
@@ -913,7 +951,7 @@ scene.onBeforeRenderObservable.add(() => {
     renderPartyManagement();
   }
   if (input.consumePressed('dodge')) movement.requestDodge();
-  if (input.consumePressed('jump')) {
+  if (input.consumePressed('jump') && !worldJumpDisabled) {
     movement.requestJump();
   }
   if (input.consumePressed('ability1')) castAbilitySlot(1);
@@ -965,6 +1003,43 @@ scene.onBeforeRenderObservable.add(() => {
   );
   movement.reconcileSupportHeight();
 
+  const volumeResult = worldVolumes.update(
+    playerRoot.position,
+    movement.getSupportHeight(),
+    dt,
+  );
+
+  playerRoot.position.x = volumeResult.position.x;
+  playerRoot.position.z = volumeResult.position.z;
+  worldMovementMultiplier = volumeResult.speedMultiplier;
+  worldJumpDisabled = volumeResult.disableJump;
+  worldDodgeDisabled = volumeResult.disableDodge;
+
+  if (volumeResult.inDeepWater) {
+    waterStatus.hidden = false;
+    waterStatus.textContent =
+      `Deep water — return to the entry bank · ${Math.max(
+        0,
+        volumeResult.drownRemaining ?? 0,
+      ).toFixed(1)}s`;
+
+    if (!wasInDeepWater) {
+      feed('Deep water: return to the bank before you drown.');
+    }
+  } else {
+    waterStatus.hidden = true;
+  }
+
+  if (volumeResult.drowned) {
+    playerRoot.position.copyFrom(volumeResult.position);
+    movement.resetVerticalState(0);
+    feed('You drowned and were returned to the entry bank.');
+    hurtActive(hpMax(active) + 999);
+    worldVolumes.reset();
+  }
+
+  wasInDeepWater = volumeResult.inDeepWater;
+
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
   playerCamera.update(dt);
@@ -1004,6 +1079,9 @@ scene.onBeforeRenderObservable.add(() => {
   worldCollision.enabled = developerState.worldCollisionEnabled;
   outdoorZone.setTraversalHighlightVisible(
     developerState.traversalHighlightsVisible,
+  );
+  worldVolumes.setDebugVisible(
+    developerState.worldVolumeHighlightsVisible,
   );
 
   enemies.forEach(e => {
@@ -1045,4 +1123,5 @@ window.addEventListener('beforeunload', () => {
   damageNumbers.dispose();
   hitFeedback.dispose();
   enemyTelegraphs.dispose();
+  waterStatus.remove();
 });

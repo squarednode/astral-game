@@ -9,6 +9,7 @@ export interface DeveloperActions {
   teleportToLandmark(landmarkId: string): void;
   setWorldCollision(enabled: boolean): void;
   setTraversalHighlightsVisible(visible: boolean): void;
+  setWorldVolumeHighlightsVisible(visible: boolean): void;
   getStatus(): {
     wave: number;
     enemies: number;

@@ -1,4 +1,5 @@
 import type { Vector3 } from '@babylonjs/core';
+import type { WorldVolume } from './WorldVolumeTypes';
 
 export type EnvironmentInteractionClass =
   | 'decorative'
@@ -118,6 +119,7 @@ export interface OutdoorZone {
   groundName: string;
   colliders: WorldCollider[];
   traversalSurfaces: TraversalSurface[];
+  worldVolumes: WorldVolume[];
   landmarks: WorldLandmark[];
   setTraversalHighlightVisible(visible: boolean): void;
 }

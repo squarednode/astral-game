@@ -21,17 +21,17 @@ export class WorldCollisionSystem {
     ignoredColliderLabels: ReadonlySet<string> = new Set(),
   ): Vector3 {
     if (!this.enabled) return desired.clone();
-    if (!this.collides(desired, ignoredColliderLabels, true)) {
+    if (!this.collides(desired, ignoredColliderLabels, false)) {
       return desired.clone();
     }
 
     const xOnly = new Vector3(desired.x, desired.y, previous.z);
-    if (!this.collides(xOnly, ignoredColliderLabels, true)) {
+    if (!this.collides(xOnly, ignoredColliderLabels, false)) {
       return xOnly;
     }
 
     const zOnly = new Vector3(previous.x, desired.y, desired.z);
-    if (!this.collides(zOnly, ignoredColliderLabels, true)) {
+    if (!this.collides(zOnly, ignoredColliderLabels, false)) {
       return zOnly;
     }
 
