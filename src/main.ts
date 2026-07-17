@@ -20,6 +20,7 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import { InputManager } from './engine/input/InputManager';
+import { EventBus } from './engine/events';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
@@ -162,15 +163,42 @@ const worldVolumes = new WorldVolumeSystem(
   outdoorZone.worldVolumes,
 );
 
+const events = new EventBus();
+
+let validationEventValue = 0;
+const unsubscribeValidation = events.subscribe(
+  'framework.validation',
+  event => {
+    validationEventValue = event.payload.value;
+  },
+);
+events.emit('framework.validation', { value: 42 });
+events.flush();
+unsubscribeValidation();
+if (validationEventValue !== 42) {
+  throw new Error('Event bus foundation validation failed.');
+}
+events.resetDiagnostics();
+
 const entities = new EntityRegistry();
 
 let entityCreatedCount = 0;
 let entityDestroyedCount = 0;
-entities.onCreated(() => {
+entities.onCreated(entity => {
   entityCreatedCount += 1;
+  events.emit('entity.created', {
+    entityId: entity.id,
+    name: entity.name,
+    tags: entity.getTags(),
+  });
 });
 entities.onDestroyed(entity => {
   entityDestroyedCount += 1;
+  events.emit('entity.destroyed', {
+    entityId: entity.id,
+    name: entity.name,
+    tags: entity.getTags(),
+  });
 
   if (!entity.hasTag('entity-owned-transform')) return;
   const transform = entity.getComponent<TransformComponent>(
@@ -342,8 +370,11 @@ const movement = new PlayerMovementController(input, playerRoot, {
   onDodgeEnded: () => {
     vfxRing(playerRoot.position, active.color, 1.8, 0.16);
   },
-  onLanded: () => {
-    vfxRing(playerRoot.position, new Color3(0.72, 0.78, 0.86), 2.2, 0.22);
+  onLanded: (impactSpeed: number) => {
+    events.emit('movement.playerLanded', {
+      impactSpeed,
+      supportHeight: movement.getSupportHeight(),
+    });
   },
 });
 
@@ -543,6 +574,20 @@ function feed(text: string): void {
   lootFeed.prepend(line);
   setTimeout(() => line.remove(), 4200);
 }
+
+const eventUnsubscribers = [
+  events.subscribe('movement.playerLanded', () => {
+    vfxRing(
+      playerRoot.position,
+      new Color3(0.72, 0.78, 0.86),
+      2.2,
+      0.22,
+    );
+  }),
+  events.subscribe('world.triggerActivated', event => {
+    feed(`Trigger volume: ${event.payload.triggerId}.`);
+  }),
+];
 
 function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   const ring = MeshBuilder.CreateTorus('ring', { diameter: size, thickness: 0.09, tessellation: 32 }, scene);
@@ -906,6 +951,12 @@ function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
 function killEnemy(enemy: Enemy): void {
   enemyTelegraphs.cancel(enemy.mesh);
   kills++;
+  events.emit('combat.enemyKilled', {
+    entityId: enemy.entityId,
+    elite: enemy.elite,
+    wave,
+    totalKills: kills,
+  });
   generateLoot(enemy.elite);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
   enemies = enemies.filter(e => e !== enemy);
@@ -1093,8 +1144,14 @@ document.querySelector('#closeInventory')?.addEventListener('click', () => {
 });
 document.querySelector('#restart')!.addEventListener('click', () => location.reload());
 
-function flushEntityLifecycle(): void {
+function flushFrameInfrastructure(): void {
   entities.flushDestroyed();
+  events.flush((error, event) => {
+    console.error(
+      `Event handler failed for ${event.type}.`,
+      error,
+    );
+  });
 }
 
 let last = performance.now();
@@ -1102,7 +1159,9 @@ let entityFrame = 0;
 let entityStatusTimer = 0;
 
 scene.onBeforeRenderObservable.add(() => {
-  entities.beginFrame(entityFrame++);
+  entities.beginFrame(entityFrame);
+  events.beginFrame(entityFrame);
+  entityFrame += 1;
   const now = performance.now();
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
@@ -1119,12 +1178,12 @@ scene.onBeforeRenderObservable.add(() => {
     combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
     combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
     movementDebug.setVisible(developerState.movementDebugEnabled);
-    flushEntityLifecycle();
+    flushFrameInfrastructure();
     input.endFrame();
     return;
   }
 
-  if (inventoryOpen || gameOver) { flushEntityLifecycle(); input.endFrame(); return; }
+  if (inventoryOpen || gameOver) { flushFrameInfrastructure(); input.endFrame(); return; }
 
   if (input.consumePressed('toggleInventory')) {
     inventoryOpen = !inventoryOpen;
@@ -1277,7 +1336,9 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   for (const eventId of volumeResult.triggerEvents) {
-    feed(`Trigger volume: ${eventId}.`);
+    events.emit('world.triggerActivated', {
+      triggerId: eventId,
+    });
   }
 
   for (const request of volumeResult.spawnRequests) {
@@ -1400,19 +1461,29 @@ scene.onBeforeRenderObservable.add(() => {
     entityStatusTimer = 0.5;
     const stats = entities.stats();
     const registeredEnemies = entities.withTag('enemy').length;
+    const eventStats = events.stats();
     entityStatus.textContent = [
-      'ENTITY FRAMEWORK',
-      `Total      ${stats.total}`,
-      `Active     ${stats.active}`,
-      `Disabled   ${stats.disabled}`,
-      `Pending    ${stats.destroyPending}`,
-      `Enemies    ${registeredEnemies}`,
-      `Created    ${entityCreatedCount}`,
-      `Destroyed  ${entityDestroyedCount}`,
+      'ENGINE FRAMEWORK',
+      'Entities',
+      `  Total       ${stats.total}`,
+      `  Active      ${stats.active}`,
+      `  Disabled    ${stats.disabled}`,
+      `  Pending     ${stats.destroyPending}`,
+      `  Enemies     ${registeredEnemies}`,
+      `  Created     ${entityCreatedCount}`,
+      `  Destroyed   ${entityDestroyedCount}`,
+      'Events',
+      `  Queued      ${eventStats.queued}`,
+      `  Emitted     ${eventStats.emitted}`,
+      `  Dispatched  ${eventStats.dispatched}`,
+      `  Handled     ${eventStats.handled}`,
+      `  Subscribers ${eventStats.subscribers}`,
+      `  Errors      ${eventStats.errors}`,
+      `  Last        ${eventStats.lastEventType ?? 'none'}`,
     ].join('\n');
   }
 
-  flushEntityLifecycle();
+  flushFrameInfrastructure();
   input.endFrame();
 });
 
@@ -1426,6 +1497,9 @@ window.addEventListener('beforeunload', () => {
   damageNumbers.dispose();
   hitFeedback.dispose();
   enemyTelegraphs.dispose();
+  for (const unsubscribe of eventUnsubscribers) unsubscribe();
+  events.clearQueue();
+  events.clearSubscriptions();
   entities.clear();
   developerHud.remove();
   waterStatus.remove();
