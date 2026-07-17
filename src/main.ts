@@ -43,6 +43,8 @@ import {
   EntityRegistry,
 } from './engine/entity';
 import type {
+  EnemyComponent,
+  HealthComponent,
   MetadataComponent,
   TransformComponent,
 } from './engine/entity';
@@ -83,6 +85,8 @@ interface CharacterState extends CharacterDef {
 }
 
 interface Enemy {
+  entityId: string;
+  healthComponent: HealthComponent;
   mesh: Mesh;
   hp: number;
   maxHp: number;
@@ -159,6 +163,21 @@ const worldVolumes = new WorldVolumeSystem(
 );
 
 const entities = new EntityRegistry();
+
+let entityCreatedCount = 0;
+let entityDestroyedCount = 0;
+entities.onCreated(() => {
+  entityCreatedCount += 1;
+});
+entities.onDestroyed(entity => {
+  entityDestroyedCount += 1;
+
+  if (!entity.hasTag('entity-owned-transform')) return;
+  const transform = entity.getComponent<TransformComponent>(
+    EntityComponentKeys.transform,
+  );
+  transform?.node.dispose();
+});
 
 const defs: CharacterDef[] = [
   { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
@@ -561,7 +580,53 @@ function spawnEnemy(elite = false, spawnPosition?: Vector3): void {
   mesh.material = mat(elite ? 'elite' : 'enemy', elite ? new Color3(0.68, 0.2, 0.58) : new Color3(0.34, 0.5, 0.34), elite ? 0.2 : 0.03);
   shadows.addShadowCaster(mesh);
   const hp = (elite ? 280 : 58) * (1 + (wave - 1) * 0.18);
-  enemies.push({ mesh, hp, maxHp: hp, speed: elite ? 2.1 : 2.65 + Math.random() * 0.7, damage: (elite ? 19 : 8) * (1 + wave * 0.08), elite, attackCd: Math.random(), statuses: {}, knockbackVelocity: Vector3.Zero() });
+  const healthComponent: HealthComponent = {
+    current: hp,
+    maximum: hp,
+  };
+  const enemyEntity = entities
+    .create({
+      name: elite ? 'Elite Enemy' : 'Enemy',
+      tags: [
+        'actor',
+        'enemy',
+        elite ? 'elite' : 'standard',
+        'entity-owned-transform',
+      ],
+    })
+    .setComponent<TransformComponent>(
+      EntityComponentKeys.transform,
+      { node: mesh },
+    )
+    .setComponent<MetadataComponent>(
+      EntityComponentKeys.metadata,
+      {
+        archetype: elite ? 'enemy-elite' : 'enemy-standard',
+        persistent: false,
+      },
+    )
+    .setComponent<HealthComponent>(
+      EntityComponentKeys.health,
+      healthComponent,
+    )
+    .setComponent<EnemyComponent>(
+      EntityComponentKeys.enemy,
+      { elite, spawnWave: wave },
+    );
+
+  enemies.push({
+    entityId: enemyEntity.id,
+    healthComponent,
+    mesh,
+    hp,
+    maxHp: hp,
+    speed: elite ? 2.1 : 2.65 + Math.random() * 0.7,
+    damage: (elite ? 19 : 8) * (1 + wave * 0.08),
+    elite,
+    attackCd: Math.random(),
+    statuses: {},
+    knockbackVelocity: Vector3.Zero(),
+  });
 }
 
 function startWave(): void {
@@ -601,12 +666,14 @@ function damageEnemy(
     nearby.forEach(e => {
       const chainDamage = final * 0.45;
       e.hp -= chainDamage;
+      e.healthComponent.current = e.hp;
       combat.applyEnemyHit({ target: e, damage: chainDamage, element: 'lightning', worldPosition: e.mesh.position, sourcePosition: enemy.mesh.position, weight: 'light' });
       vfxRing(e.mesh.position, active.color, 1.1, 0.2);
     });
   }
 
   enemy.hp -= final;
+  enemy.healthComponent.current = enemy.hp;
   if (element !== 'physical') enemy.statuses[element] = 3.5;
   combat.applyEnemyHit({ target: enemy, damage: final, element, worldPosition: hitPos, sourcePosition, weight: resolvedWeight });
 }
@@ -841,8 +908,8 @@ function killEnemy(enemy: Enemy): void {
   kills++;
   generateLoot(enemy.elite);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
-  enemy.mesh.dispose();
   enemies = enemies.filter(e => e !== enemy);
+  entities.destroy(enemy.entityId);
   if (enemies.length === 0) {
     wave++;
     party.forEach(c => c.hp = Math.min(hpMax(c), c.hp + hpMax(c) * .22));
@@ -901,7 +968,7 @@ const developerActions: DeveloperActions = {
   killAllEnemies: () => {
     for (const enemy of [...enemies]) {
       enemyTelegraphs.cancel(enemy.mesh);
-      enemy.mesh.dispose();
+      entities.destroy(enemy.entityId);
     }
     enemies = [];
     refreshHud();
@@ -1026,6 +1093,10 @@ document.querySelector('#closeInventory')?.addEventListener('click', () => {
 });
 document.querySelector('#restart')!.addEventListener('click', () => location.reload());
 
+function flushEntityLifecycle(): void {
+  entities.flushDestroyed();
+}
+
 let last = performance.now();
 let entityFrame = 0;
 let entityStatusTimer = 0;
@@ -1048,11 +1119,12 @@ scene.onBeforeRenderObservable.add(() => {
     combat.cameraShakeEnabled = developerState.cameraShakeEnabled;
     combat.playerFeedbackEnabled = developerState.playerDamageFeedbackEnabled;
     movementDebug.setVisible(developerState.movementDebugEnabled);
+    flushEntityLifecycle();
     input.endFrame();
     return;
   }
 
-  if (inventoryOpen || gameOver) { input.endFrame(); return; }
+  if (inventoryOpen || gameOver) { flushEntityLifecycle(); input.endFrame(); return; }
 
   if (input.consumePressed('toggleInventory')) {
     inventoryOpen = !inventoryOpen;
@@ -1327,16 +1399,20 @@ scene.onBeforeRenderObservable.add(() => {
   if (entityStatusTimer <= 0) {
     entityStatusTimer = 0.5;
     const stats = entities.stats();
+    const registeredEnemies = entities.withTag('enemy').length;
     entityStatus.textContent = [
       'ENTITY FRAMEWORK',
-      `Total     ${stats.total}`,
-      `Active    ${stats.active}`,
-      `Disabled  ${stats.disabled}`,
-      `Pending   ${stats.destroyPending}`,
+      `Total      ${stats.total}`,
+      `Active     ${stats.active}`,
+      `Disabled   ${stats.disabled}`,
+      `Pending    ${stats.destroyPending}`,
+      `Enemies    ${registeredEnemies}`,
+      `Created    ${entityCreatedCount}`,
+      `Destroyed  ${entityDestroyedCount}`,
     ].join('\n');
   }
 
-  entities.flushDestroyed();
+  flushEntityLifecycle();
   input.endFrame();
 });
 

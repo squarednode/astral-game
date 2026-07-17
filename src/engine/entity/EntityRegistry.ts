@@ -1,4 +1,6 @@
 import { Entity } from './Entity';
+
+export type EntityLifecycleListener = (entity: Entity) => void;
 import type {
   ComponentKey,
   CreateEntityOptions,
@@ -25,6 +27,8 @@ export class EntityRegistry {
   private readonly pendingDestroy = new Set<EntityId>();
   private nextSequence = 1;
   private frame = 0;
+  private readonly createdListeners = new Set<EntityLifecycleListener>();
+  private readonly destroyedListeners = new Set<EntityLifecycleListener>();
 
   beginFrame(frame: number): void {
     this.frame = Math.max(0, Math.floor(frame));
@@ -45,7 +49,19 @@ export class EntityRegistry {
     );
 
     this.entities.set(id, entity);
+    for (const listener of this.createdListeners) listener(entity);
     return entity;
+  }
+
+
+  onCreated(listener: EntityLifecycleListener): () => void {
+    this.createdListeners.add(listener);
+    return () => this.createdListeners.delete(listener);
+  }
+
+  onDestroyed(listener: EntityLifecycleListener): () => void {
+    this.destroyedListeners.add(listener);
+    return () => this.destroyedListeners.delete(listener);
   }
 
   has(id: EntityId): boolean {
@@ -83,6 +99,7 @@ export class EntityRegistry {
       if (!entity) continue;
 
       onDestroy?.(entity);
+      for (const listener of this.destroyedListeners) listener(entity);
       entity.finalizeDestroyed();
       this.entities.delete(id);
       count += 1;
@@ -173,6 +190,7 @@ export class EntityRegistry {
   ): void {
     for (const entity of this.entities.values()) {
       onDestroy?.(entity);
+      for (const listener of this.destroyedListeners) listener(entity);
       entity.finalizeDestroyed();
     }
 

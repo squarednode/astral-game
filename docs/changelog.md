@@ -1855,6 +1855,198 @@ Those changes should follow incrementally after the base registry is validated.
 7. Restart and confirm IDs remain deterministic.
 8. Confirm browser shutdown does not report disposal errors.
 
+# Astral 0.5.4.2 — Entity Lifecycle & System Bridge
+
+This milestone connects the existing enemy gameplay objects to the entity
+framework without replacing or rewriting combat behavior.
+
+## Goal
+
+Prove that an existing gameplay system can adopt entity identity and lifecycle
+incrementally.
+
+The current enemy array remains the combat system's working data structure.
+The entity registry now provides:
+
+- Stable identity
+- Tags and classification
+- Transform lookup
+- Health data exposure
+- Enemy metadata
+- Deferred destruction
+- Centralized transform disposal
+- Lifecycle diagnostics
+
+## Enemy registration
+
+Every spawned enemy now receives an entity ID and registry entry.
+
+Standard enemy tags:
+
+```text
+actor
+enemy
+standard
+entity-owned-transform
+```
+
+Elite enemy tags:
+
+```text
+actor
+enemy
+elite
+entity-owned-transform
+```
+
+Each enemy entity receives:
+
+```text
+core.transform
+core.metadata
+gameplay.health
+gameplay.enemy
+```
+
+The existing `Enemy` gameplay object stores its corresponding `entityId`.
+This creates a bridge in both directions:
+
+```text
+Existing combat object -> entityId -> registry entity
+Registry entity -> transform and gameplay metadata
+```
+
+## Shared health component
+
+Enemy entities expose a `HealthComponent`:
+
+```ts
+interface HealthComponent {
+  current: number;
+  maximum: number;
+}
+```
+
+The existing combat health values remain authoritative during this milestone.
+Damage operations synchronize the shared component immediately.
+
+This avoids changing combat calculations while allowing later systems and
+debug tools to inspect health through the entity registry.
+
+## Enemy component
+
+A lightweight enemy component was added:
+
+```ts
+interface EnemyComponent {
+  elite: boolean;
+  spawnWave: number;
+}
+```
+
+This gives future systems enough classification data without importing the
+large temporary `Enemy` interface from `main.ts`.
+
+## Lifecycle callbacks
+
+`EntityRegistry` now supports subscriptions:
+
+```ts
+entities.onCreated(listener);
+entities.onDestroyed(listener);
+```
+
+Both return unsubscribe functions.
+
+Created callbacks run after registration.
+Destroyed callbacks run during the deferred destruction flush, before tags and
+components are cleared.
+
+## Deferred enemy destruction
+
+Enemy death now follows:
+
+```text
+Combat marks enemy dead
+Existing enemy object leaves combat array
+Entity enters destroy-pending
+End-of-frame lifecycle flush runs
+Destroyed callback disposes the owned transform
+Registry removes the entity
+```
+
+This means gameplay systems may finish iterating the enemy collection without
+having the registry or scene node disappear in the middle of the frame.
+
+The developer `Kill All Enemies` action uses the same lifecycle path.
+
+## Transform ownership
+
+Only entities tagged:
+
+```text
+entity-owned-transform
+```
+
+have their transform disposed by the lifecycle bridge.
+
+The player is registered but does not carry this tag, so registry cleanup does
+not accidentally dispose player-owned scene structure during normal gameplay.
+
+## Pause-safe lifecycle flush
+
+Pending destruction is flushed even while:
+
+- The developer console is open
+- Inventory is open
+- The game-over screen is active
+
+This prevents destroy-pending entities from remaining indefinitely when the
+normal gameplay frame exits early.
+
+## Developer HUD
+
+The Entity Framework panel now shows:
+
+```text
+ENTITY FRAMEWORK
+Total      10
+Active      9
+Disabled    1
+Pending     0
+Enemies     8
+Created    10
+Destroyed   0
+```
+
+`Enemies` comes from a registry tag query rather than the existing enemy array.
+It should track visible living enemies.
+
+`Created` and `Destroyed` confirm that lifecycle callbacks are running.
+
+## Intentional compatibility layer
+
+This milestone intentionally retains:
+
+- The existing `Enemy` interface
+- The existing `enemies` array
+- Existing AI loops
+- Existing combat targeting
+- Existing damage calculations
+- Existing wave behavior
+
+The bridge is additive. It demonstrates safe adoption before gameplay data is
+moved fully into components.
+
+## Modified files
+
+```text
+src/engine/entity/EntityComponents.ts
+src/engine/entity/EntityRegistry.ts
+src/engine/entity/index.ts
+src/main.ts
+
+
 ### Validate
 ```bash
 npm run build

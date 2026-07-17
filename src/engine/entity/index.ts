@@ -4,6 +4,7 @@ export {
   EntityComponentKeys,
 } from './EntityComponents';
 export type {
+  EnemyComponent,
   HealthComponent,
   MetadataComponent,
   TransformComponent,
@@ -17,5 +18,6 @@ export type {
   EntityTag,
 } from './EntityTypes';
 export type {
+  EntityLifecycleListener,
   EntityRegistryStats,
 } from './EntityRegistry';

@@ -4,6 +4,7 @@ export const EntityComponentKeys = {
   transform: 'core.transform',
   metadata: 'core.metadata',
   health: 'gameplay.health',
+  enemy: 'gameplay.enemy',
 } as const;
 
 export interface TransformComponent {
@@ -18,4 +19,9 @@ export interface MetadataComponent {
 export interface HealthComponent {
   current: number;
   maximum: number;
+}
+
+export interface EnemyComponent {
+  elite: boolean;
+  spawnWave: number;
 }
