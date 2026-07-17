@@ -1262,6 +1262,97 @@ Run the full 12-station course:
 15. Cross the full wind area in both directions.
 16. Repeat the route with collision, support, and volume debug displays active.
 
+# Astral 0.5.3.3 — Movement Polish
+
+This milestone closes the movement-validation phase with support-contact
+refinement, visual/collision parity, continuous hill geometry, and smoother
+dynamic-platform following.
+
+## 1. Capsule-aware support contact
+
+Support is no longer accepted from the player center point alone.
+
+The surface system samples the player capsule footprint at:
+
+- Center
+- Left
+- Right
+- Front
+- Rear
+
+All five samples must be over a free surface before that surface may become or
+remain the support owner.
+
+This changes edge behavior:
+
+- Landing with only part of the capsule over an edge is rejected.
+- The actor falls cleanly instead of becoming split between support and
+  collision.
+- Existing support releases before the capsule becomes partially embedded.
+- Narrow beams remain usable because their authored width supports the defined
+  contact radius.
+
+The current test contact radius is:
+
+```text
+0.42
+```
+
+## 2. Continuous hill geometry
+
+The seven terraced hill pieces were removed.
+
+The hill is now:
+
+- One continuous visible mesh
+- One matching sampled support surface
+- Two visible triangular side faces with matching side collision
+- Open at both sloped ends
+- Free of invisible rear or side walls
+
+The support height now follows the visible two-sided hill profile exactly.
+There are no terrace seams for the player to land between.
+
+## 3. Stair collision parity
+
+The stairs retain their visible treads.
+
+Each visible tread now has matching collision using the same shared stair
+support label. The former invisible side and rear walls remain removed.
+
+This means:
+
+- Collision exists only where stair geometry exists.
+- The stair support can still ignore its own tread collision while walking.
+- The player is not blocked by walls that are not visually represented.
+
+## 4. Edge landing refinement
+
+Entry padding no longer makes an edge landing valid.
+
+Step, jump, and owned-support checks use the same capsule-contact test. This
+keeps acquisition and retention rules consistent.
+
+## 5. Moving-platform smoothing
+
+Dynamic vertical support remains logically exact, but the visible actor height
+now follows moving support with a short exponential blend.
+
+This reduces abrupt snapping on:
+
+- Elevators
+- Vertically moving platforms
+- Future lift tables
+
+Horizontal platform displacement remains exact so the player does not drift
+off a moving platform.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/game/movement/PlayerMovementController.ts`
+- `src/main.ts`
 
 
 ### Validate

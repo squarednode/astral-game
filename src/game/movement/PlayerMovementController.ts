@@ -38,6 +38,7 @@ export class PlayerMovementController {
   private verticalVelocity = 0;
   private supportHeight = 0;
   private grounded = true;
+  private smoothingMovingSupport = false;
 
   private dodgeTimeRemaining = 0;
   private invulnerabilityTimeRemaining = 0;
@@ -112,20 +113,29 @@ export class PlayerMovementController {
    */
   setSupportHeight(
     height: number,
-    followDescendingSupport = false,
+    followMovingSupport = false,
+    dt = 0,
   ): void {
     const nextHeight = Math.max(0, height);
     const priorHeight = this.supportHeight;
     this.supportHeight = nextHeight;
+    this.smoothingMovingSupport = false;
 
     if (!this.grounded) return;
 
-    if (nextHeight < priorHeight - 0.04) {
-      if (followDescendingSupport) {
-        this.actor.position.y = nextHeight;
-        return;
-      }
+    if (followMovingSupport) {
+      // Follow dynamic vertical supports with a short critically damped blend.
+      // The logical support remains exact while the visible actor motion is
+      // softened to avoid elevator snapping.
+      const safeDt = Math.max(0, Math.min(dt, 1 / 20));
+      const blend = 1 - Math.exp(-22 * safeDt);
+      this.actor.position.y +=
+        (nextHeight - this.actor.position.y) * blend;
+      this.smoothingMovingSupport = true;
+      return;
+    }
 
+    if (nextHeight < priorHeight - 0.04) {
       this.grounded = false;
       this.verticalVelocity = 0;
       return;
@@ -157,6 +167,18 @@ export class PlayerMovementController {
     }
 
     if (this.grounded) {
+      if (this.smoothingMovingSupport) {
+        if (
+          Math.abs(
+            this.actor.position.y - this.supportHeight,
+          ) <= 0.01
+        ) {
+          this.actor.position.y = this.supportHeight;
+          this.smoothingMovingSupport = false;
+        }
+        return;
+      }
+
       this.actor.position.y = this.supportHeight;
     }
   }
@@ -170,6 +192,7 @@ export class PlayerMovementController {
     this.actor.position.y = this.supportHeight;
     this.verticalVelocity = 0;
     this.grounded = true;
+    this.smoothingMovingSupport = false;
   }
 
   setPointerWorld(worldPosition: Vector3): void {

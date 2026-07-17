@@ -42,6 +42,7 @@ interface GuidedProjection {
 export class TraversalSurfaceSystem {
   enabled = true;
   private currentSupportSurfaceId: string | null = null;
+  private readonly supportContactRadius = 0.42;
 
   constructor(
     private readonly surfaces: ReadonlyArray<TraversalSurface>,
@@ -163,7 +164,7 @@ export class TraversalSurfaceSystem {
       ) {
         return null;
       }
-    } else if (!this.isInsideFree(surface, desired, 0)) {
+    } else if (!this.hasStableSupportContact(surface, desired)) {
       return null;
     }
 
@@ -342,15 +343,13 @@ export class TraversalSurfaceSystem {
     );
     const heightDifference =
       supportHeight - currentSupportHeight;
-    const insideFootprint = this.isInsideFree(
+    const insideFootprint = this.hasStableSupportContact(
       surface,
       desired,
-      0,
     );
-    const insideLandingFootprint = this.isInsideFree(
+    const insideLandingFootprint = this.hasStableSupportContact(
       surface,
       desired,
-      surface.entryPadding,
     );
 
     const standing =
@@ -505,6 +504,28 @@ export class TraversalSurfaceSystem {
 
     position.y = desired.y;
     return position;
+  }
+
+  /**
+   * Support is accepted only when the capsule footprint is substantially over
+   * the surface. Center-point overlap alone is not enough.
+   */
+  private hasStableSupportContact(
+    surface: FreeTraversalSurface,
+    position: Vector3,
+  ): boolean {
+    const radius = this.supportContactRadius;
+    const samples = [
+      position,
+      new Vector3(position.x + radius, position.y, position.z),
+      new Vector3(position.x - radius, position.y, position.z),
+      new Vector3(position.x, position.y, position.z + radius),
+      new Vector3(position.x, position.y, position.z - radius),
+    ];
+
+    return samples.every(sample =>
+      this.isInsideFree(surface, sample, 0),
+    );
   }
 
   private isInsideFree(

@@ -6,6 +6,7 @@ import {
   ShadowGenerator,
   StandardMaterial,
   Vector3,
+  VertexData,
 } from '@babylonjs/core';
 import type {
   DynamicBoxCollider,
@@ -937,12 +938,28 @@ export function buildOutdoorZone(
       { width: 5, depth: stairDepth, height },
       scene,
     );
-    tread.position.set(
-      0,
-      height / 2,
-      stairsZ - (stairCount * stairDepth) / 2 + (index + 0.5) * stairDepth,
+    const treadZ =
+      stairsZ -
+      (stairCount * stairDepth) / 2 +
+      (index + 0.5) * stairDepth;
+    tread.position.set(0, height / 2, treadZ);
+    tread.material = material(
+      'course-stairs',
+      new Color3(0.46, 0.39, 0.22),
     );
-    tread.material = material('course-stairs', new Color3(0.46, 0.39, 0.22));
+
+    // Collision follows the visible tread geometry. All treads share the
+    // support collider label so the active stair support can ignore them.
+    colliders.push({
+      kind: 'box',
+      label: 'course-stairs',
+      centerX: 0,
+      centerZ: treadZ,
+      halfWidth: 2.5,
+      halfDepth: stairDepth / 2,
+      interaction: 'traversable',
+      clearanceHeight: height,
+    });
   }
   traversalSurfaces.push({
     mode: 'free',
@@ -966,98 +983,90 @@ export function buildOutdoorZone(
       return stairRise * (stepIndex + 1);
     },
   });
-  // Permanent stair geometry uses solid authored collision on its closed
-  // sides and rear. The front remains open for normal stair entry.
-  addBoxCollider(
-    'course-stairs-west-wall',
-    -2.82,
-    stairsZ,
-    0.24,
-    stairCount * stairDepth,
-    'solid',
-  );
-  addBoxCollider(
-    'course-stairs-east-wall',
-    2.82,
-    stairsZ,
-    0.24,
-    stairCount * stairDepth,
-    'solid',
-  );
-  addBoxCollider(
-    'course-stairs-back-wall',
-    0,
-    stairsZ + stairCount * stairDepth / 2 + 0.12,
-    5.9,
-    0.24,
-    'solid',
-    0.65,
-    0,
-    0.55,
-  );
 
-  // 4. Hill — continuous sampled height across authored visual terraces.
+
+  // 4. Hill — one continuous authored mesh and one matching support sample.
   const hillZ = courseZ + 22;
   addStationMarker(4, 0, hillZ, new Color3(0.42, 0.72, 0.3));
   const hillHalfDepth = 3.5;
-  for (let index = 0; index < 7; index++) {
-    const localZ = -hillHalfDepth + (index + 0.5);
-    const normalized = Math.abs(localZ) / hillHalfDepth;
-    const height = Math.max(0.12, 1.5 * (1 - normalized * normalized));
-    const terrace = MeshBuilder.CreateBox(
-      `course-hill-terrace-${index}`,
-      { width: 6, depth: 1.05, height },
-      scene,
-    );
-    terrace.position.set(0, height / 2, hillZ + localZ);
-    terrace.material = material('course-hill', new Color3(0.22, 0.44, 0.18));
-  }
+  const hillHalfWidth = 3;
+  const hillHeight = 1.5;
+
+  const hill = new Mesh('course-hill', scene);
+  const hillData = new VertexData();
+  hillData.positions = [
+    -hillHalfWidth, 0, -hillHalfDepth,
+     hillHalfWidth, 0, -hillHalfDepth,
+    -hillHalfWidth, hillHeight, 0,
+     hillHalfWidth, hillHeight, 0,
+    -hillHalfWidth, 0, hillHalfDepth,
+     hillHalfWidth, 0, hillHalfDepth,
+  ];
+  hillData.indices = [
+    0, 1, 2,
+    1, 3, 2,
+    2, 3, 4,
+    3, 5, 4,
+    0, 2, 4,
+    0, 4, 5,
+    0, 5, 1,
+    1, 5, 3,
+  ];
+  VertexData.ComputeNormals(
+    hillData.positions,
+    hillData.indices,
+    hillData.normals = [],
+  );
+  hillData.applyToMesh(hill);
+  hill.position.z = hillZ;
+  hill.material = material('course-hill', new Color3(0.22, 0.44, 0.18));
+  hill.receiveShadows = true;
+  shadows.addShadowCaster(hill);
+
   traversalSurfaces.push({
     mode: 'free',
     shape: 'box',
     id: 'course-hill-surface',
     label: 'Course Hill',
     colliderLabel: 'course-hill',
-    center: new Vector3(0, 1.5, hillZ),
-    halfWidth: 3,
+    center: new Vector3(0, hillHeight, hillZ),
+    halfWidth: hillHalfWidth,
     halfDepth: hillHalfDepth,
-    surfaceHeight: 1.5,
-    entryPadding: 0.35,
+    surfaceHeight: hillHeight,
+    entryPadding: 0,
     exitDistance: 0.55,
     slopeDegrees: 24,
     sampleHeight: (_x: number, z: number) => {
-      const normalized = Math.min(1, Math.abs(z - hillZ) / hillHalfDepth);
-      return 1.5 * (1 - normalized * normalized);
+      const normalized = Math.min(
+        1,
+        Math.abs(z - hillZ) / hillHalfDepth,
+      );
+      return hillHeight * (1 - normalized);
     },
   });
-  // Closed hill sides and rear use solid collision so the actor cannot walk
-  // beneath the terrace visuals. The front remains open.
+
+  // The visible triangular side faces are the only hill walls.
   addBoxCollider(
-    'course-hill-west-wall',
-    -3.12,
+    'course-hill-west-face',
+    -hillHalfWidth - 0.08,
     hillZ,
-    0.24,
+    0.16,
     hillHalfDepth * 2,
-    'solid',
-  );
-  addBoxCollider(
-    'course-hill-east-wall',
-    3.12,
-    hillZ,
-    0.24,
-    hillHalfDepth * 2,
-    'solid',
-  );
-  addBoxCollider(
-    'course-hill-back-wall',
-    0,
-    hillZ + hillHalfDepth + 0.12,
-    6.4,
-    0.24,
     'solid',
     0.65,
     0,
-    0.45,
+    hillHeight,
+  );
+  addBoxCollider(
+    'course-hill-east-face',
+    hillHalfWidth + 0.08,
+    hillZ,
+    0.16,
+    hillHalfDepth * 2,
+    'solid',
+    0.65,
+    0,
+    hillHeight,
   );
 
   // 5. Narrow beam — intentionally no guided behavior or edge retention.

@@ -1033,6 +1033,7 @@ scene.onBeforeRenderObservable.add(() => {
   movement.setSupportHeight(
     traversalResolution.supportHeight,
     Math.abs(traversalResolution.surfaceDelta.y) > 0.00001,
+    dt,
   );
   movement.reconcileSupportHeight();
 
