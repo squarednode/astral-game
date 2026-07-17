@@ -1855,22 +1855,6 @@ Those changes should follow incrementally after the base registry is validated.
 7. Restart and confirm IDs remain deterministic.
 8. Confirm browser shutdown does not report disposal errors.
 
-## Recommended next milestone
-
-```text
-0.5.4.2 — Entity Lifecycle and System Bridge
-```
-
-Suggested scope:
-
-- Register enemies as entities while retaining the existing enemy objects
-- Associate meshes with entity IDs
-- Destroy enemy entities when their existing gameplay objects die
-- Add entity-created and entity-destroyed lifecycle callbacks
-- Add developer registry inspection
-- Avoid changing combat behavior
-
-
 ### Validate
 ```bash
 npm run build

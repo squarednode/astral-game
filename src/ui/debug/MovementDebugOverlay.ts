@@ -5,13 +5,13 @@ export class MovementDebugOverlay {
   private readonly element: HTMLDivElement;
   private elapsed = 0;
 
-  constructor() {
+  constructor(parent: HTMLElement = document.body) {
     this.element = document.createElement('div');
     this.element.style.cssText = [
-      'position:fixed',
-      'left:12px',
-      'bottom:12px',
-      'z-index:1000',
+      'position:relative',
+      'z-index:1',
+      'width:100%',
+      'box-sizing:border-box',
       'padding:8px 10px',
       'border:1px solid rgba(255,255,255,.18)',
       'border-radius:6px',
@@ -22,7 +22,7 @@ export class MovementDebugOverlay {
       'white-space:pre',
     ].join(';');
     this.element.hidden = !GameBalance.debug.enabled;
-    document.body.appendChild(this.element);
+    parent.appendChild(this.element);
   }
 
   setVisible(visible: boolean): void {

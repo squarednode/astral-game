@@ -274,21 +274,39 @@ waterStatus.style.cssText = [
 ].join(';');
 document.body.appendChild(waterStatus);
 
+const developerHud = document.createElement('div');
+developerHud.id = 'developer-hud';
+developerHud.style.cssText = [
+  'position:fixed',
+  'right:12px',
+  'bottom:12px',
+  'z-index:1000',
+  'display:flex',
+  'flex-direction:column',
+  'align-items:stretch',
+  'gap:8px',
+  'width:min(270px,calc(100vw - 24px))',
+  'max-height:calc(100vh - 24px)',
+  'pointer-events:none',
+].join(';');
+document.body.appendChild(developerHud);
+
 const entityStatus = document.createElement('div');
 entityStatus.id = 'entity-status';
 entityStatus.style.cssText = [
-  'position:fixed',
-  'left:14px',
-  'bottom:14px',
-  'z-index:35',
-  'padding:6px 9px',
+  'position:relative',
+  'width:100%',
+  'box-sizing:border-box',
+  'padding:8px 10px',
+  'border:1px solid rgba(255,255,255,.18)',
   'border-radius:6px',
-  'background:rgba(5,12,22,.72)',
-  'color:rgba(255,255,255,.72)',
-  'font:11px ui-monospace,Consolas,monospace',
+  'background:rgba(5,8,14,.72)',
+  'color:#d8e6ff',
+  'font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace',
+  'white-space:pre',
   'pointer-events:none',
 ].join(';');
-document.body.appendChild(entityStatus);
+developerHud.appendChild(entityStatus);
 
 const movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
@@ -315,7 +333,7 @@ const playerCamera = new PlayerCameraController(
   playerRoot,
   () => movement.getVelocity(),
 );
-const movementDebug = new MovementDebugOverlay();
+const movementDebug = new MovementDebugOverlay(developerHud);
 const damageNumbers = new DamageNumberManager(scene, camera, engine);
 const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
@@ -1309,9 +1327,13 @@ scene.onBeforeRenderObservable.add(() => {
   if (entityStatusTimer <= 0) {
     entityStatusTimer = 0.5;
     const stats = entities.stats();
-    entityStatus.textContent =
-      `Entities ${stats.total} · Active ${stats.active}` +
-      ` · Disabled ${stats.disabled}`;
+    entityStatus.textContent = [
+      'ENTITY FRAMEWORK',
+      `Total     ${stats.total}`,
+      `Active    ${stats.active}`,
+      `Disabled  ${stats.disabled}`,
+      `Pending   ${stats.destroyPending}`,
+    ].join('\n');
   }
 
   entities.flushDestroyed();
@@ -1329,6 +1351,6 @@ window.addEventListener('beforeunload', () => {
   hitFeedback.dispose();
   enemyTelegraphs.dispose();
   entities.clear();
-  entityStatus.remove();
+  developerHud.remove();
   waterStatus.remove();
 });
