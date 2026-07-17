@@ -2502,6 +2502,132 @@ Those should be introduced incrementally after the base machine is validated.
 12. Open the developer console and confirm the validation machine continues to
     cycle without affecting gameplay.
 
+# Astral 0.5.4.5 — Elevator State-Machine Bridge
+
+This milestone converts the movement-validation elevator into the first real
+game-world consumer of the generic state-machine framework.
+
+## Production state machine
+
+The elevator now uses:
+
+```text
+bottom-idle
+moving-up
+top-idle
+moving-down
+```
+
+The former sine-wave animation has been removed.
+
+## Timing
+
+```text
+Bottom height:   0.4
+Top height:      2.8
+Idle duration:   1.2 seconds
+Travel duration: 2.6 seconds
+```
+
+Movement uses a smooth-step curve so acceleration and deceleration remain
+gentle while platform support continues to receive exact frame deltas.
+
+## State responsibilities
+
+### `bottom-idle`
+
+- Holds the elevator at the bottom.
+- Waits for the idle duration.
+- Requests `moving-up`.
+
+### `moving-up`
+
+- Interpolates from bottom to top.
+- Updates the visual mesh.
+- Updates the traversal support height.
+- Updates the dynamic collider.
+- Publishes the platform frame delta.
+- Requests `top-idle` when complete.
+
+### `top-idle`
+
+- Holds the elevator at the top.
+- Waits for the idle duration.
+- Requests `moving-down`.
+
+### `moving-down`
+
+- Interpolates from top to bottom.
+- Updates all elevator geometry and support data.
+- Requests `bottom-idle` when complete.
+
+## Event integration
+
+The elevator publishes the same generic events as the validation machine:
+
+```text
+state.entered
+state.exited
+state.changed
+state.transitionRejected
+```
+
+The machine ID is:
+
+```text
+course-elevator
+```
+
+No elevator-specific event type was added.
+
+## Developer HUD
+
+The framework HUD now shows two state machines:
+
+```text
+State Machine · Validation
+State Machine · Elevator
+```
+
+The elevator section displays:
+
+- ID
+- Current state
+- Previous state
+- Time in state
+- Transition count
+- Rejected transition count
+
+## Architecture retained
+
+The state machine controls elevator behavior, but the existing movement
+architecture remains unchanged:
+
+```text
+Elevator state
+    ↓
+Elevator height and frame delta
+    ↓
+Dynamic collision and traversal support
+    ↓
+Player inherits platform movement
+```
+
+The player movement controller does not know that the elevator uses a state
+machine.
+
+## Files modified
+
+```text
+src/game/world/OutdoorZoneBuilder.ts
+src/game/world/WorldTypes.ts
+src/main.ts
+README.md
+```
+
+No movement, collision, support, combat, entity, or core state-machine files
+were changed.
+
 
 ### Validate
 ```bash

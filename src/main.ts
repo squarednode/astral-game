@@ -148,10 +148,42 @@ function mat(name: string, color: Color3, emissive = 0): StandardMaterial {
   return m;
 }
 
+const events = new EventBus();
+
 const outdoorZone = buildOutdoorZone({
   scene,
   shadows,
   material: mat,
+  onElevatorStateEntered: (state, from) => {
+    events.emit('state.entered', {
+      machineId: 'course-elevator',
+      state,
+      from,
+    });
+  },
+  onElevatorStateExited: (state, to) => {
+    events.emit('state.exited', {
+      machineId: 'course-elevator',
+      state,
+      to,
+    });
+  },
+  onElevatorStateChanged: (from, to, reason) => {
+    events.emit('state.changed', {
+      machineId: 'course-elevator',
+      from,
+      to,
+      reason,
+    });
+  },
+  onElevatorTransitionRejected: (from, to, rejectedBy) => {
+    events.emit('state.transitionRejected', {
+      machineId: 'course-elevator',
+      from,
+      to,
+      rejectedBy,
+    });
+  },
 });
 const ground = scene.getMeshByName(outdoorZone.groundName)!;
 const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
@@ -163,8 +195,6 @@ const worldVolumes = new WorldVolumeSystem(
   scene,
   outdoorZone.worldVolumes,
 );
-
-const events = new EventBus();
 
 let validationEventValue = 0;
 const unsubscribeValidation = events.subscribe(
@@ -1592,13 +1622,20 @@ scene.onBeforeRenderObservable.add(() => {
       `  Subscribers ${eventStats.subscribers}`,
       `  Errors      ${eventStats.errors}`,
       `  Last        ${eventStats.lastEventType ?? 'none'}`,
-      'State Machine',
+      'State Machine · Validation',
       `  ID          ${validationStateMachine.id}`,
       `  Current     ${validationStateMachine.getCurrentStateId() ?? 'none'}`,
       `  Previous    ${validationStateMachine.getPreviousStateId() ?? 'none'}`,
       `  Time        ${validationStateMachine.getTimeInState().toFixed(2)}s`,
       `  Transitions ${validationStateMachine.snapshot().transitionCount}`,
       `  Rejected    ${validationStateMachine.snapshot().rejectedTransitionCount}`,
+      'State Machine · Elevator',
+      `  ID          ${outdoorZone.getElevatorStateSnapshot().id}`,
+      `  Current     ${outdoorZone.getElevatorStateSnapshot().currentState ?? 'none'}`,
+      `  Previous    ${outdoorZone.getElevatorStateSnapshot().previousState ?? 'none'}`,
+      `  Time        ${outdoorZone.getElevatorStateSnapshot().timeInState.toFixed(2)}s`,
+      `  Transitions ${outdoorZone.getElevatorStateSnapshot().transitionCount}`,
+      `  Rejected    ${outdoorZone.getElevatorStateSnapshot().rejectedTransitionCount}`,
     ].join('\n');
   }
 

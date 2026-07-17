@@ -1,4 +1,5 @@
 import type { Vector3 } from '@babylonjs/core';
+import type { StateMachineSnapshot } from '../../engine/state';
 import type { WorldVolume } from './WorldVolumeTypes';
 
 export type EnvironmentInteractionClass =
@@ -130,6 +131,12 @@ export interface WorldLandmark {
   position: Vector3;
 }
 
+export type ElevatorStateId =
+  | 'bottom-idle'
+  | 'moving-up'
+  | 'top-idle'
+  | 'moving-down';
+
 export interface OutdoorZone {
   groundName: string;
   colliders: WorldCollider[];
@@ -138,5 +145,6 @@ export interface OutdoorZone {
   dynamicColliders: DynamicBoxCollider[];
   landmarks: WorldLandmark[];
   update(dt: number): void;
+  getElevatorStateSnapshot(): StateMachineSnapshot<ElevatorStateId>;
   setTraversalHighlightVisible(visible: boolean): void;
 }

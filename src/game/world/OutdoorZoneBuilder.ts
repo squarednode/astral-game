@@ -8,8 +8,11 @@ import {
   Vector3,
   VertexData,
 } from '@babylonjs/core';
+import { StateMachine } from '../../engine/state';
 import type {
   DynamicBoxCollider,
+  ElevatorStateId,
+  FreeBoxTraversalSurface,
   OutdoorZone,
   TraversalSurface,
   WorldCollider,
@@ -20,6 +23,24 @@ import type { WorldVolume } from './WorldVolumeTypes';
 export interface OutdoorZoneBuildOptions {
   scene: Scene;
   shadows: ShadowGenerator;
+  onElevatorStateEntered?: (
+    state: ElevatorStateId,
+    from: ElevatorStateId | null,
+  ) => void;
+  onElevatorStateExited?: (
+    state: ElevatorStateId,
+    to: ElevatorStateId,
+  ) => void;
+  onElevatorStateChanged?: (
+    from: ElevatorStateId | null,
+    to: ElevatorStateId,
+    reason?: string,
+  ) => void;
+  onElevatorTransitionRejected?: (
+    from: ElevatorStateId | null,
+    to: ElevatorStateId,
+    rejectedBy: string,
+  ) => void;
   material: (
     name: string,
     color: Color3,
@@ -1328,7 +1349,7 @@ export function buildOutdoorZone(
     clearanceHeight: 0.4,
   };
   colliders.push(elevatorCollider);
-  const elevatorSurface: TraversalSurface = {
+  const elevatorSurface: FreeBoxTraversalSurface = {
     mode: 'free',
     shape: 'box',
     id: 'course-elevator-surface',
@@ -1353,19 +1374,150 @@ export function buildOutdoorZone(
     delta: Vector3.Zero(),
   };
   dynamicColliders.push(elevatorDynamicCollider);
-  let elevatorTime = -Math.PI / 2;
-  let elevatorPriorHeight = 0.4;
+  interface ElevatorStateContext {
+    bottomHeight: number;
+    topHeight: number;
+    idleDuration: number;
+    travelDuration: number;
+    priorHeight: number;
+  }
+
+  const elevatorContext: ElevatorStateContext = {
+    bottomHeight: 0.4,
+    topHeight: 2.8,
+    idleDuration: 1.2,
+    travelDuration: 2.6,
+    priorHeight: 0.4,
+  };
+
+  function applyElevatorHeight(nextHeight: number): void {
+    const clampedHeight = Math.max(
+      elevatorContext.bottomHeight,
+      Math.min(elevatorContext.topHeight, nextHeight),
+    );
+
+    elevatorDynamicCollider.previousCenter.copyFrom(
+      elevatorDynamicCollider.center,
+    );
+    elevatorDynamicCollider.delta.set(
+      0,
+      clampedHeight - elevatorContext.priorHeight,
+      0,
+    );
+    elevatorDynamicCollider.center.set(
+      0,
+      clampedHeight - 0.2,
+      elevatorZ,
+    );
+
+    elevatorSurface.frameDelta!.copyFrom(
+      elevatorDynamicCollider.delta,
+    );
+    elevatorSurface.surfaceHeight = clampedHeight;
+    elevatorSurface.center.y = clampedHeight;
+    elevator.position.y = clampedHeight - 0.2;
+    elevatorContext.priorHeight = clampedHeight;
+  }
+
+  function smoothStep(progress: number): number {
+    const t = Math.max(0, Math.min(1, progress));
+    return t * t * (3 - 2 * t);
+  }
+
+  const elevatorStateMachine = new StateMachine<
+    ElevatorStateContext,
+    ElevatorStateId
+  >(
+    'course-elevator',
+    elevatorContext,
+    {
+      onEntered: (state, from) => {
+        options.onElevatorStateEntered?.(state, from);
+      },
+      onExited: (state, to) => {
+        options.onElevatorStateExited?.(state, to);
+      },
+      onChanged: (from, to, reason) => {
+        options.onElevatorStateChanged?.(from, to, reason);
+      },
+      onRejected: result => {
+        options.onElevatorTransitionRejected?.(
+          result.from,
+          result.to,
+          result.rejectedBy ?? 'unknown',
+        );
+      },
+    },
+  )
+    .addState({
+      id: 'bottom-idle',
+      enter: context => {
+        applyElevatorHeight(context.bottomHeight);
+      },
+      update: (context, machine) => {
+        applyElevatorHeight(context.bottomHeight);
+        if (machine.getTimeInState() >= context.idleDuration) {
+          machine.request('moving-up', 'bottom-wait-complete');
+        }
+      },
+    })
+    .addState({
+      id: 'moving-up',
+      update: (context, machine) => {
+        const progress =
+          machine.getTimeInState() / context.travelDuration;
+        const height =
+          context.bottomHeight +
+          (context.topHeight - context.bottomHeight) *
+            smoothStep(progress);
+        applyElevatorHeight(height);
+
+        if (progress >= 1) {
+          machine.request('top-idle', 'top-reached');
+        }
+      },
+      exit: context => {
+        applyElevatorHeight(context.topHeight);
+      },
+    })
+    .addState({
+      id: 'top-idle',
+      enter: context => {
+        applyElevatorHeight(context.topHeight);
+      },
+      update: (context, machine) => {
+        applyElevatorHeight(context.topHeight);
+        if (machine.getTimeInState() >= context.idleDuration) {
+          machine.request('moving-down', 'top-wait-complete');
+        }
+      },
+    })
+    .addState({
+      id: 'moving-down',
+      update: (context, machine) => {
+        const progress =
+          machine.getTimeInState() / context.travelDuration;
+        const height =
+          context.topHeight -
+          (context.topHeight - context.bottomHeight) *
+            smoothStep(progress);
+        applyElevatorHeight(height);
+
+        if (progress >= 1) {
+          machine.request('bottom-idle', 'bottom-reached');
+        }
+      },
+      exit: context => {
+        applyElevatorHeight(context.bottomHeight);
+      },
+    });
+
+  elevatorStateMachine.start('bottom-idle', 'world-start');
   dynamicUpdates.push((dt: number) => {
-    elevatorTime += dt * 0.7;
-    const nextHeight = 1.6 + Math.sin(elevatorTime) * 1.2;
-    elevatorDynamicCollider.previousCenter.copyFrom(elevatorDynamicCollider.center);
-    elevatorDynamicCollider.delta.set(0, nextHeight - elevatorPriorHeight, 0);
-    elevatorDynamicCollider.center.set(0, nextHeight - 0.2, elevatorZ);
-    elevatorSurface.frameDelta!.copyFrom(elevatorDynamicCollider.delta);
-    elevatorSurface.surfaceHeight = nextHeight;
-    elevatorSurface.center.y = nextHeight;
-    elevator.position.y = nextHeight - 0.2;
-    elevatorPriorHeight = nextHeight;
+    // Reset frame delta before the machine writes this frame's movement.
+    elevatorDynamicCollider.delta.setAll(0);
+    elevatorSurface.frameDelta!.setAll(0);
+    elevatorStateMachine.update(dt);
   });
 
   // 11. Conveyor — force volume moves the actor forward while input remains active.
@@ -1461,6 +1613,9 @@ export function buildOutdoorZone(
     landmarks,
     update(dt: number): void {
       dynamicUpdates.forEach(update => update(dt));
+    },
+    getElevatorStateSnapshot() {
+      return elevatorStateMachine.snapshot();
     },
     setTraversalHighlightVisible(visible: boolean): void {
       traversalHighlights.forEach(mesh => {
