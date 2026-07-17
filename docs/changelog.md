@@ -1354,6 +1354,107 @@ off a moving platform.
 - `src/game/movement/PlayerMovementController.ts`
 - `src/main.ts`
 
+# Astral 0.5.3.4 — Single-Contact Support
+
+This revision simplifies movement support after the multipoint capsule test
+introduced conflicting support decisions.
+
+## Core rule
+
+```text
+Collision decides where the actor may exist.
+Support decides what is directly beneath the actor's feet.
+```
+
+The support system no longer samples five points around the capsule.
+
+## Single foot query
+
+Support acquisition now uses one foot position at the player root.
+
+When multiple surfaces are available, the engine selects the highest valid
+walkable support beneath that point.
+
+The support system no longer attempts to solve capsule overlap. That remains
+the responsibility of world and dynamic collision.
+
+## One active support owner
+
+The resolver continues to track:
+
+```text
+currentSupportSurfaceId
+```
+
+While grounded:
+
+1. The current owner is checked first.
+2. If the foot point remains inside its release boundary, ownership continues.
+3. If ownership is lost, all valid supports beneath the foot are evaluated.
+4. The highest valid support becomes the new owner.
+5. If no support is available, the actor falls to ground support.
+
+Blink, teleport, and reset operations clear ownership.
+
+## Support hysteresis
+
+Two small boundaries are used:
+
+```text
+Acquisition inset:       0.035
+Ownership release pad:   0.025
+```
+
+A new surface cannot be acquired from its exact mathematical edge.
+
+An existing owner receives only a very small tolerance to avoid floating-point
+flicker. The tolerance is intentionally too small to hold the actor visibly
+outside the surface.
+
+## Smooth stair support
+
+The six visible stair treads remain unchanged, but they no longer provide
+individual collision or stepped support heights.
+
+The stairs now use one continuous ramp support:
+
+```text
+Visible stairs
++
+Continuous support ramp
+```
+
+This removes conflicting contacts between adjacent treads and produces a
+stable transition into jumps and nearby sloped surfaces.
+
+There are no added stair side or rear walls.
+
+## Hill
+
+The continuous hill mesh and matching sampled support introduced in 0.5.3.3
+are retained.
+
+## Moving-platform follow
+
+The vertical support blend was tightened slightly:
+
+```text
+22
+→
+28
+```
+
+This should reduce visible snapping without introducing noticeable separation
+between the player and an elevator.
+
+Horizontal inherited movement remains exact.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/game/movement/PlayerMovementController.ts`
+
 
 ### Validate
 ```bash

@@ -22,11 +22,6 @@ export interface SurfaceResolution {
   ignoredColliderLabels: ReadonlySet<string>;
   surfaceId: string | null;
   mode: SurfaceMovementMode;
-
-  /**
-   * Reserved for moving platforms, elevators, and boats. Current static
-   * surfaces return zero.
-   */
   surfaceDelta: Vector3;
 }
 
@@ -39,10 +34,28 @@ interface GuidedProjection {
   perpendicular: Vector3;
 }
 
+/**
+ * Resolves one support directly beneath the actor's foot position.
+ *
+ * Collision owns the actor capsule. This system only determines what the
+ * actor is standing on and never attempts to solve capsule overlap.
+ */
 export class TraversalSurfaceSystem {
   enabled = true;
+
   private currentSupportSurfaceId: string | null = null;
-  private readonly supportContactRadius = 0.42;
+
+  /**
+   * New supports require the foot point to be slightly inside the footprint.
+   * This prevents acquiring a surface from a mathematically exact edge.
+   */
+  private readonly acquisitionInset = 0.035;
+
+  /**
+   * An existing owner receives a very small release tolerance to prevent
+   * floating-point flicker. This is intentionally much smaller than the actor.
+   */
+  private readonly ownershipReleasePadding = 0.025;
 
   constructor(
     private readonly surfaces: ReadonlyArray<TraversalSurface>,
@@ -60,23 +73,16 @@ export class TraversalSurfaceSystem {
     return this.currentSupportSurfaceId;
   }
 
-  /**
-   * Stateless support query used every frame.
-   *
-   * Raised surfaces may be acquired in two ways:
-   * - Walk/step when the height change is at or below stepHeight.
-   * - Descending jump when the height change is at or below
-   *   maximumJumpOntoHeight.
-   */
   querySupport(
     previous: Vector3,
     desired: Vector3,
     grounded: boolean,
     verticalVelocity: number,
     currentSupportHeight: number,
-    isLandingBlocked: LandingValidator,
+    _isLandingBlocked: LandingValidator,
   ): SurfaceResolution {
     if (!this.enabled) {
+      this.currentSupportSurfaceId = null;
       return this.groundResolution(desired);
     }
 
@@ -86,30 +92,25 @@ export class TraversalSurfaceSystem {
         )
       : undefined;
 
-    // Keep exactly one support owner while the actor remains inside its true
-    // footprint. Padding is never used for an already-owned support.
     if (grounded && ownedSurface) {
-      const ownedResolution = this.evaluateOwnedSurface(
+      const owned = this.resolveOwnedSurface(
         ownedSurface,
         desired,
         currentSupportHeight,
       );
 
-      if (ownedResolution) {
-        return ownedResolution;
-      }
+      if (owned) return owned;
     }
 
     const candidates = this.surfaces
       .map(surface =>
-        this.evaluateSurface(
+        this.resolveAcquisition(
           surface,
           previous,
           desired,
           grounded,
           verticalVelocity,
           currentSupportHeight,
-          isLandingBlocked,
         ),
       )
       .filter(
@@ -118,13 +119,12 @@ export class TraversalSurfaceSystem {
       )
       .sort((a, b) => b.supportHeight - a.supportHeight);
 
-    if (candidates[0]) {
-      this.currentSupportSurfaceId = candidates[0].surfaceId;
-      return candidates[0];
+    const selected = candidates[0];
+    if (selected) {
+      this.currentSupportSurfaceId = selected.surfaceId;
+      return selected;
     }
 
-    // Release the prior owner immediately and ignore only its collider during
-    // the release frame. This prevents edge oscillation and partial embedding.
     if (ownedSurface) {
       this.currentSupportSurfaceId = null;
       return {
@@ -143,28 +143,44 @@ export class TraversalSurfaceSystem {
     return this.groundResolution(desired);
   }
 
-  private evaluateOwnedSurface(
+  private resolveOwnedSurface(
     surface: TraversalSurface,
     desired: Vector3,
     currentSupportHeight: number,
   ): SurfaceResolution | null {
+    if (!this.isWalkableSlope(surface)) return null;
+    if (!this.containsOwnedFootPoint(surface, desired)) return null;
+
+    const supportHeight = this.sampleHeight(
+      surface,
+      desired.x,
+      desired.z,
+    );
+
     if (
-      (surface.slopeDegrees ?? 0) >
-      GameBalance.movement.maximumWalkableSlopeDegrees
+      Math.abs(currentSupportHeight - supportHeight) >
+      GameBalance.movement.maximumJumpOntoHeight
     ) {
       return null;
     }
 
-    if (surface.mode === 'guided') {
-      const projection = this.projectOntoGuided(surface, desired);
-      if (
-        projection.progress < 0 ||
-        projection.progress > 1 ||
-        projection.lateralDistance > surface.guideHalfWidth
-      ) {
-        return null;
-      }
-    } else if (!this.hasStableSupportContact(surface, desired)) {
+    return this.surfaceResolution(
+      surface,
+      desired,
+      supportHeight,
+    );
+  }
+
+  private resolveAcquisition(
+    surface: TraversalSurface,
+    previous: Vector3,
+    desired: Vector3,
+    grounded: boolean,
+    verticalVelocity: number,
+    currentSupportHeight: number,
+  ): SurfaceResolution | null {
+    if (!this.isWalkableSlope(surface)) return null;
+    if (!this.containsAcquisitionFootPoint(surface, desired)) {
       return null;
     }
 
@@ -173,25 +189,60 @@ export class TraversalSurfaceSystem {
       desired.x,
       desired.z,
     );
+    const heightDifference =
+      supportHeight - currentSupportHeight;
 
-    // A large height mismatch means ownership is stale and must be released.
+    const canStepOnto =
+      grounded &&
+      heightDifference > 0.005 &&
+      heightDifference <=
+        GameBalance.movement.stepHeight + 0.015;
+
+    const canTransferGrounded =
+      grounded &&
+      Math.abs(heightDifference) <=
+        GameBalance.movement.groundSnapDistance;
+
+    const canLandFromJump =
+      !grounded &&
+      verticalVelocity <= 0 &&
+      heightDifference <=
+        GameBalance.movement.maximumJumpOntoHeight &&
+      this.crossesSurfaceHeight(
+        previous,
+        desired,
+        supportHeight,
+      );
+
     if (
-      Math.abs(currentSupportHeight - supportHeight) >
-      Math.max(
-        GameBalance.movement.maximumJumpOntoHeight,
-        GameBalance.movement.groundSnapDistance,
-      )
+      !canStepOnto &&
+      !canTransferGrounded &&
+      !canLandFromJump
     ) {
       return null;
     }
 
+    return this.surfaceResolution(
+      surface,
+      desired,
+      supportHeight,
+    );
+  }
+
+  private surfaceResolution(
+    surface: TraversalSurface,
+    desired: Vector3,
+    supportHeight: number,
+  ): SurfaceResolution {
     const frameDelta =
       surface.frameDelta?.clone() ?? Vector3.Zero();
     const position = desired.clone();
+
     position.x += frameDelta.x;
     position.z += frameDelta.z;
 
     this.currentSupportSurfaceId = surface.id;
+
     return {
       position,
       supportHeight,
@@ -204,202 +255,70 @@ export class TraversalSurfaceSystem {
     };
   }
 
-  private evaluateSurface(
+  private isWalkableSlope(
     surface: TraversalSurface,
-    previous: Vector3,
-    desired: Vector3,
-    grounded: boolean,
-    verticalVelocity: number,
-    currentSupportHeight: number,
-    isLandingBlocked: LandingValidator,
-  ): SurfaceResolution | null {
-    if (
-      (surface.slopeDegrees ?? 0) >
+  ): boolean {
+    return (
+      (surface.slopeDegrees ?? 0) <=
       GameBalance.movement.maximumWalkableSlopeDegrees
-    ) {
-      return null;
-    }
+    );
+  }
 
+  private containsOwnedFootPoint(
+    surface: TraversalSurface,
+    position: Vector3,
+  ): boolean {
     if (surface.mode === 'guided') {
-      return this.evaluateGuided(
+      const projection = this.projectOntoGuided(
         surface,
-        previous,
-        desired,
-        grounded,
-        verticalVelocity,
-        currentSupportHeight,
-      );
-    }
-
-    return this.evaluateFree(
-      surface,
-      previous,
-      desired,
-      grounded,
-      verticalVelocity,
-      currentSupportHeight,
-      isLandingBlocked,
-    );
-  }
-
-  private evaluateGuided(
-    surface: GuidedTraversalSurface,
-    previous: Vector3,
-    desired: Vector3,
-    grounded: boolean,
-    verticalVelocity: number,
-    currentSupportHeight: number,
-  ): SurfaceResolution | null {
-    const projection = this.projectOntoGuided(
-      surface,
-      desired,
-    );
-    const supportHeight = this.sampleHeight(
-      surface,
-      desired.x,
-      desired.z,
-    );
-    const heightDifference =
-      supportHeight - currentSupportHeight;
-
-    const insideLength =
-      projection.progress >= 0 &&
-      projection.progress <= 1;
-    const insideLandingWidth =
-      projection.lateralDistance <=
-      Math.max(surface.width / 2, 0.52);
-    const insideGuide =
-      projection.lateralDistance <=
-      surface.guideHalfWidth;
-
-    const standing =
-      grounded &&
-      Math.abs(
-        currentSupportHeight - supportHeight,
-      ) <= GameBalance.movement.groundSnapDistance &&
-      insideLength &&
-      insideGuide;
-
-    const canStepOnto =
-      grounded &&
-      heightDifference > 0.01 &&
-      heightDifference <=
-        GameBalance.movement.stepHeight + 0.015 &&
-      insideLength &&
-      insideLandingWidth;
-
-    const canLandFromJump =
-      !grounded &&
-      verticalVelocity <= 0 &&
-      heightDifference <=
-        GameBalance.movement.maximumJumpOntoHeight &&
-      insideLength &&
-      insideLandingWidth &&
-      this.crossesSurfaceHeight(
-        previous,
-        desired,
-        supportHeight,
-      );
-
-    if (!standing && !canStepOnto && !canLandFromJump) {
-      return null;
-    }
-
-    const position = this.clampToGuidedCorridor(
-      surface,
-      desired,
-      projection,
-    );
-    const frameDelta =
-      surface.frameDelta?.clone() ?? Vector3.Zero();
-    position.x += frameDelta.x;
-    position.z += frameDelta.z;
-
-    return {
-      position,
-      supportHeight,
-      ignoredColliderLabels: new Set([
-        surface.colliderLabel,
-      ]),
-      surfaceId: surface.id,
-      mode: 'guided',
-      surfaceDelta: frameDelta,
-    };
-  }
-
-  private evaluateFree(
-    surface: FreeTraversalSurface,
-    previous: Vector3,
-    desired: Vector3,
-    grounded: boolean,
-    verticalVelocity: number,
-    currentSupportHeight: number,
-    _isLandingBlocked: LandingValidator,
-  ): SurfaceResolution | null {
-    const supportHeight = this.sampleHeight(
-      surface,
-      desired.x,
-      desired.z,
-    );
-    const heightDifference =
-      supportHeight - currentSupportHeight;
-    const insideFootprint = this.hasStableSupportContact(
-      surface,
-      desired,
-    );
-    const insideLandingFootprint = this.hasStableSupportContact(
-      surface,
-      desired,
-    );
-
-    const standing =
-      grounded &&
-      Math.abs(
-        currentSupportHeight - supportHeight,
-      ) <= GameBalance.movement.groundSnapDistance &&
-      insideFootprint;
-
-    const canStepOnto =
-      grounded &&
-      heightDifference > 0.01 &&
-      heightDifference <=
-        GameBalance.movement.stepHeight + 0.015 &&
-      insideLandingFootprint;
-
-    const canLandFromJump =
-      !grounded &&
-      verticalVelocity <= 0 &&
-      heightDifference <=
-        GameBalance.movement.maximumJumpOntoHeight &&
-      insideFootprint &&
-      this.crossesSurfaceHeight(
-        previous,
-        desired,
-        supportHeight,
-      );
-
-    if (standing || canStepOnto || canLandFromJump) {
-      const frameDelta =
-        surface.frameDelta?.clone() ?? Vector3.Zero();
-      const position = desired.clone();
-      position.x += frameDelta.x;
-      position.z += frameDelta.z;
-
-      return {
         position,
-        supportHeight,
-        ignoredColliderLabels: new Set([
-          surface.colliderLabel,
-        ]),
-        surfaceId: surface.id,
-        mode: 'free',
-        surfaceDelta: frameDelta,
-      };
+      );
+
+      return (
+        projection.progress >=
+          -this.ownershipReleasePadding &&
+        projection.progress <=
+          1 + this.ownershipReleasePadding &&
+        projection.lateralDistance <=
+          surface.guideHalfWidth +
+            this.ownershipReleasePadding
+      );
     }
 
-    // Free surfaces never retain the player at an edge. Any ledge, rail,
-    // one-way boundary, or safety restriction belongs to World Volumes.
-    return null;
+    return this.isInsideFree(
+      surface,
+      position,
+      this.ownershipReleasePadding,
+    );
+  }
+
+  private containsAcquisitionFootPoint(
+    surface: TraversalSurface,
+    position: Vector3,
+  ): boolean {
+    if (surface.mode === 'guided') {
+      const projection = this.projectOntoGuided(
+        surface,
+        position,
+      );
+
+      return (
+        projection.progress >= 0 &&
+        projection.progress <= 1 &&
+        projection.lateralDistance <=
+          Math.max(
+            0,
+            surface.width / 2 -
+              this.acquisitionInset,
+          )
+      );
+    }
+
+    return this.isInsideFree(
+      surface,
+      position,
+      -this.acquisitionInset,
+    );
   }
 
   private sampleHeight(
@@ -473,76 +392,28 @@ export class TraversalSurfaceSystem {
     };
   }
 
-  private clampToGuidedCorridor(
-    surface: GuidedTraversalSurface,
-    desired: Vector3,
-    projection: GuidedProjection,
-  ): Vector3 {
-    const axisLength = this.planarDistance(
-      surface.start,
-      surface.end,
-    );
-    const alongDistance =
-      projection.clampedProgress * axisLength;
-    const lateralOffset = Math.max(
-      -surface.guideHalfWidth,
-      Math.min(
-        surface.guideHalfWidth,
-        projection.lateralOffset,
-      ),
-    );
-
-    const position = surface.start
-      .add(
-        projection.axis.scale(alongDistance),
-      )
-      .add(
-        projection.perpendicular.scale(
-          lateralOffset,
-        ),
-      );
-
-    position.y = desired.y;
-    return position;
-  }
-
-  /**
-   * Support is accepted only when the capsule footprint is substantially over
-   * the surface. Center-point overlap alone is not enough.
-   */
-  private hasStableSupportContact(
-    surface: FreeTraversalSurface,
-    position: Vector3,
-  ): boolean {
-    const radius = this.supportContactRadius;
-    const samples = [
-      position,
-      new Vector3(position.x + radius, position.y, position.z),
-      new Vector3(position.x - radius, position.y, position.z),
-      new Vector3(position.x, position.y, position.z + radius),
-      new Vector3(position.x, position.y, position.z - radius),
-    ];
-
-    return samples.every(sample =>
-      this.isInsideFree(surface, sample, 0),
-    );
-  }
-
   private isInsideFree(
     surface: FreeTraversalSurface,
     position: Vector3,
     padding: number,
   ): boolean {
     if (surface.shape === 'box') {
+      const usableHalfWidth = Math.max(
+        0,
+        surface.halfWidth + padding,
+      );
+      const usableHalfDepth = Math.max(
+        0,
+        surface.halfDepth + padding,
+      );
+
       return (
         Math.abs(
           position.x - surface.center.x,
-        ) <=
-          surface.halfWidth + padding &&
+        ) <= usableHalfWidth &&
         Math.abs(
           position.z - surface.center.z,
-        ) <=
-          surface.halfDepth + padding
+        ) <= usableHalfDepth
       );
     }
 
@@ -551,7 +422,7 @@ export class TraversalSurfaceSystem {
         position,
         surface.center,
       ) <=
-      surface.radius + padding
+      Math.max(0, surface.radius + padding)
     );
   }
 

@@ -925,7 +925,7 @@ export function buildOutdoorZone(
     0.6,
   );
 
-  // 3. Stairs — visual treads with sampled height support.
+  // 3. Stairs — visual treads over one continuous ramp support.
   const stairsZ = courseZ + 13;
   addStationMarker(3, 0, stairsZ, new Color3(0.76, 0.68, 0.38));
   const stairCount = 6;
@@ -947,19 +947,6 @@ export function buildOutdoorZone(
       'course-stairs',
       new Color3(0.46, 0.39, 0.22),
     );
-
-    // Collision follows the visible tread geometry. All treads share the
-    // support collider label so the active stair support can ignore them.
-    colliders.push({
-      kind: 'box',
-      label: 'course-stairs',
-      centerX: 0,
-      centerZ: treadZ,
-      halfWidth: 2.5,
-      halfDepth: stairDepth / 2,
-      interaction: 'traversable',
-      clearanceHeight: height,
-    });
   }
   traversalSurfaces.push({
     mode: 'free',
@@ -975,12 +962,18 @@ export function buildOutdoorZone(
     exitDistance: 0.5,
     slopeDegrees: 12,
     sampleHeight: (_x: number, z: number) => {
-      const local = z - (stairsZ - stairCount * stairDepth / 2);
-      const stepIndex = Math.max(
+      const stairStart =
+        stairsZ - stairCount * stairDepth / 2;
+      const normalized = Math.max(
         0,
-        Math.min(stairCount - 1, Math.floor(local / stairDepth)),
+        Math.min(
+          1,
+          (z - stairStart) /
+            (stairCount * stairDepth),
+        ),
       );
-      return stairRise * (stepIndex + 1);
+
+      return normalized * stairRise * stairCount;
     },
   });
 

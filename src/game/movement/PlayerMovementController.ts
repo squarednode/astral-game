@@ -128,7 +128,7 @@ export class PlayerMovementController {
       // The logical support remains exact while the visible actor motion is
       // softened to avoid elevator snapping.
       const safeDt = Math.max(0, Math.min(dt, 1 / 20));
-      const blend = 1 - Math.exp(-22 * safeDt);
+      const blend = 1 - Math.exp(-28 * safeDt);
       this.actor.position.y +=
         (nextHeight - this.actor.position.y) * blend;
       this.smoothingMovingSupport = true;
