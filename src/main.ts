@@ -38,6 +38,14 @@ import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
 import { DynamicCollisionSystem } from './game/world/DynamicCollisionSystem';
 import { TraversalSurfaceSystem } from './game/world/TraversalSurfaceSystem';
 import { WorldVolumeSystem } from './game/world/WorldVolumeSystem';
+import {
+  EntityComponentKeys,
+  EntityRegistry,
+} from './engine/entity';
+import type {
+  MetadataComponent,
+  TransformComponent,
+} from './engine/entity';
 import type {
   GearFamily,
   GearSlot,
@@ -150,6 +158,8 @@ const worldVolumes = new WorldVolumeSystem(
   outdoorZone.worldVolumes,
 );
 
+const entities = new EntityRegistry();
+
 const defs: CharacterDef[] = [
   { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
   { id: 'warden', name: 'Warden', role: 'Frost support', preferredFamily: 'fortified', element: 'frost', color: new Color3(0.28, 0.72, 1), maxHp: 130, speed: 6.5, attackDamage: 16, attackRange: 7.0, attackCooldown: 0.72, qName: 'Frost Field', eName: 'Ice Barrier' },
@@ -172,6 +182,49 @@ playerBody.parent = playerRoot;
 playerBody.position.y = 1;
 playerBody.material = mat('player', active.color, 0.08);
 shadows.addShadowCaster(playerBody);
+
+const playerEntity = entities
+  .create({
+    id: 'player',
+    name: 'Player',
+    tags: ['actor', 'player', 'controllable'],
+  })
+  .setComponent<TransformComponent>(
+    EntityComponentKeys.transform,
+    { node: playerRoot },
+  )
+  .setComponent<MetadataComponent>(
+    EntityComponentKeys.metadata,
+    {
+      archetype: 'player-party-controller',
+      persistent: true,
+    },
+  );
+
+const entityValidationProbe = entities
+  .create({
+    id: 'entity-validation-probe',
+    name: 'Entity Validation Probe',
+    tags: ['developer', 'validation'],
+    enabled: false,
+  })
+  .setComponent<MetadataComponent>(
+    EntityComponentKeys.metadata,
+    {
+      archetype: 'framework-probe',
+      persistent: false,
+    },
+  );
+
+if (
+  entities.query(
+    ['player'],
+    [EntityComponentKeys.transform],
+  )[0] !== playerEntity ||
+  entityValidationProbe.state !== 'disabled'
+) {
+  throw new Error('Entity foundation validation failed.');
+}
 const facingMarker = MeshBuilder.CreateBox('facing', { width: 0.16, height: 0.16, depth: 1.0 }, scene);
 facingMarker.parent = playerRoot;
 facingMarker.position.set(0, 0.45, 0.75);
@@ -220,6 +273,22 @@ waterStatus.style.cssText = [
   'pointer-events:none',
 ].join(';');
 document.body.appendChild(waterStatus);
+
+const entityStatus = document.createElement('div');
+entityStatus.id = 'entity-status';
+entityStatus.style.cssText = [
+  'position:fixed',
+  'left:14px',
+  'bottom:14px',
+  'z-index:35',
+  'padding:6px 9px',
+  'border-radius:6px',
+  'background:rgba(5,12,22,.72)',
+  'color:rgba(255,255,255,.72)',
+  'font:11px ui-monospace,Consolas,monospace',
+  'pointer-events:none',
+].join(';');
+document.body.appendChild(entityStatus);
 
 const movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
@@ -940,7 +1009,11 @@ document.querySelector('#closeInventory')?.addEventListener('click', () => {
 document.querySelector('#restart')!.addEventListener('click', () => location.reload());
 
 let last = performance.now();
+let entityFrame = 0;
+let entityStatusTimer = 0;
+
 scene.onBeforeRenderObservable.add(() => {
+  entities.beginFrame(entityFrame++);
   const now = performance.now();
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
@@ -1231,6 +1304,17 @@ scene.onBeforeRenderObservable.add(() => {
   if (elite) (document.querySelector('#bossFill') as HTMLElement).style.width = `${Math.max(0, elite.hp / elite.maxHp * 100)}%`;
 
   if (Math.floor(now / 100) !== Math.floor((now - dt * 1000) / 100)) refreshHud();
+
+  entityStatusTimer -= dt;
+  if (entityStatusTimer <= 0) {
+    entityStatusTimer = 0.5;
+    const stats = entities.stats();
+    entityStatus.textContent =
+      `Entities ${stats.total} · Active ${stats.active}` +
+      ` · Disabled ${stats.disabled}`;
+  }
+
+  entities.flushDestroyed();
   input.endFrame();
 });
 
@@ -1244,5 +1328,7 @@ window.addEventListener('beforeunload', () => {
   damageNumbers.dispose();
   hitFeedback.dispose();
   enemyTelegraphs.dispose();
+  entities.clear();
+  entityStatus.remove();
   waterStatus.remove();
 });

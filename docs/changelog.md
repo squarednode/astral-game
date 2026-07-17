@@ -1634,6 +1634,242 @@ retained.
 - `src/game/world/TraversalSurfaceSystem.ts`
 - `src/main.ts`
 
+# Astral 0.5.4.1 — Entity Foundation
+
+This milestone begins the 0.5.4 engine-architecture phase without migrating
+movement or combat into a new framework prematurely.
+
+## Goal
+
+Provide one central authority for:
+
+- Stable entity identity
+- Entity lookup
+- Tags
+- Components
+- Lifecycle state
+- Deferred destruction
+- Queries
+- Developer inspection
+
+Behavior remains in systems. Entities are lightweight containers.
+
+## New engine files
+
+```text
+src/engine/entity/
+  Entity.ts
+  EntityComponents.ts
+  EntityRegistry.ts
+  EntityTypes.ts
+  index.ts
+```
+
+## Entity identity
+
+Every entity has a stable string ID.
+
+IDs may be authored:
+
+```ts
+entities.create({
+  id: 'player',
+  name: 'Player',
+});
+```
+
+or generated automatically:
+
+```text
+entity-1
+entity-2
+entity-3
+```
+
+Duplicate IDs throw immediately.
+
+## Lifecycle
+
+Supported states:
+
+```text
+active
+disabled
+destroy-pending
+destroyed
+```
+
+Destruction is deferred:
+
+```ts
+entities.destroy(entity.id);
+entities.flushDestroyed();
+```
+
+This allows gameplay systems to iterate query results safely during the frame.
+
+Destroyed entities:
+
+- Are removed from the registry
+- Lose tags
+- Lose components
+- Cannot be modified
+
+## Tags
+
+Tags provide broad classification:
+
+```ts
+entity
+  .addTag('actor')
+  .addTag('player')
+  .addTag('controllable');
+```
+
+Queries may require one or multiple tags.
+
+## Components
+
+Components are keyed plain data or object references.
+
+Initial component keys:
+
+```text
+core.transform
+core.metadata
+gameplay.health
+```
+
+The framework does not put behavior inside components. Systems will read and
+modify component data in later milestones.
+
+## Registry queries
+
+The registry supports:
+
+```ts
+entities.withTag('player');
+
+entities.withComponent(
+  EntityComponentKeys.transform,
+);
+
+entities.query(
+  ['actor', 'player'],
+  [EntityComponentKeys.transform],
+);
+```
+
+Inactive entities are excluded by default from gameplay queries.
+
+## Initial integration
+
+The existing player is now registered as:
+
+```text
+ID: player
+Tags:
+  actor
+  player
+  controllable
+
+Components:
+  core.transform
+  core.metadata
+```
+
+Movement, combat, party state, and input still use their existing code paths.
+This is deliberate. The first milestone establishes identity and lookup before
+systems are migrated.
+
+## Validation probe
+
+A disabled entity named:
+
+```text
+entity-validation-probe
+```
+
+is created at startup to validate:
+
+- Authored IDs
+- Disabled lifecycle state
+- Tag queries
+- Component queries
+
+Startup throws if the foundation test fails.
+
+## Developer display
+
+A small status line appears at the lower-left corner:
+
+```text
+Entities 2 · Active 1 · Disabled 1
+```
+
+It refreshes twice per second and confirms the registry is alive.
+
+## Frame integration
+
+The registry now receives:
+
+```ts
+entities.beginFrame(frameNumber);
+```
+
+at the beginning of the game frame and:
+
+```ts
+entities.flushDestroyed();
+```
+
+at the end.
+
+This establishes the lifecycle boundary that future systems will use.
+
+## Intentional exclusions
+
+This milestone does not yet:
+
+- Replace the existing `Enemy` interface
+- Convert projectiles into entities
+- Convert effects into entities
+- Add an event bus
+- Add state machines
+- Add serialization
+- Add prefabs or archetype factories
+- Add parent-child entity relationships
+- Add system scheduling
+
+Those changes should follow incrementally after the base registry is validated.
+
+## Validation checklist
+
+1. Start the game and confirm no startup error.
+2. Confirm the lower-left display reads:
+   `Entities 2 · Active 1 · Disabled 1`.
+3. Confirm movement remains unchanged.
+4. Confirm combat remains unchanged.
+5. Confirm the movement validation course remains stable.
+6. Open and close the developer console.
+7. Restart and confirm IDs remain deterministic.
+8. Confirm browser shutdown does not report disposal errors.
+
+## Recommended next milestone
+
+```text
+0.5.4.2 — Entity Lifecycle and System Bridge
+```
+
+Suggested scope:
+
+- Register enemies as entities while retaining the existing enemy objects
+- Associate meshes with entity IDs
+- Destroy enemy entities when their existing gameplay objects die
+- Add entity-created and entity-destroyed lifecycle callbacks
+- Add developer registry inspection
+- Avoid changing combat behavior
+
 
 ### Validate
 ```bash
