@@ -57,23 +57,42 @@ export class DynamicCollisionSystem {
         continue;
       }
 
-      // Horizontal moving solids push in their travel direction rather than
-      // passing through actors standing beside them.
+      // Preserve the actor's side relative to the platform's previous
+      // position. Pushing to the travel-direction edge can teleport an actor
+      // across the entire platform when the collider overlaps them.
       if (Math.abs(collider.delta.x) >= Math.abs(collider.delta.z)) {
-        position.x += collider.delta.x;
-        const required = collider.halfWidth + this.actorRadius + 0.01;
-        if (collider.delta.x > 0) {
-          position.x = Math.max(position.x, collider.center.x + required);
+        const required =
+          collider.halfWidth + this.actorRadius + 0.01;
+        const priorOffset =
+          actorPosition.x - collider.previousCenter.x;
+
+        if (priorOffset <= 0) {
+          position.x = Math.min(
+            position.x,
+            collider.center.x - required,
+          );
         } else {
-          position.x = Math.min(position.x, collider.center.x - required);
+          position.x = Math.max(
+            position.x,
+            collider.center.x + required,
+          );
         }
       } else {
-        position.z += collider.delta.z;
-        const required = collider.halfDepth + this.actorRadius + 0.01;
-        if (collider.delta.z > 0) {
-          position.z = Math.max(position.z, collider.center.z + required);
+        const required =
+          collider.halfDepth + this.actorRadius + 0.01;
+        const priorOffset =
+          actorPosition.z - collider.previousCenter.z;
+
+        if (priorOffset <= 0) {
+          position.z = Math.min(
+            position.z,
+            collider.center.z - required,
+          );
         } else {
-          position.z = Math.min(position.z, collider.center.z - required);
+          position.z = Math.max(
+            position.z,
+            collider.center.z + required,
+          );
         }
       }
     }

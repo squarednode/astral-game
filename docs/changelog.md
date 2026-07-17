@@ -1455,6 +1455,100 @@ Horizontal inherited movement remains exact.
 - `src/game/world/OutdoorZoneBuilder.ts`
 - `src/game/movement/PlayerMovementController.ts`
 
+# Astral 0.5.3.5 — Passive Support Refactor
+
+This revision removes horizontal correction from the support system.
+
+## Final ownership rule
+
+```text
+Collision owns X/Z.
+Support owns Y.
+```
+
+Support no longer:
+
+- Clamps horizontal position
+- Moves the player onto a surface
+- Corrects the player toward an edge
+- Applies platform displacement through its support result
+- Uses acquisition insets or ownership padding
+
+Given a collision-resolved foot position, support returns only:
+
+- Support height
+- Surface ID
+- Surface movement delta
+- Collider label that may be ignored while standing on that surface
+
+## Frame order
+
+The gameplay frame now resolves in this order:
+
+1. Dynamic world geometry updates.
+2. The currently owned moving surface contributes its frame delta.
+3. Collision resolves inherited platform motion.
+4. Dynamic colliders push actors contacted from the side or underneath.
+5. Player input and movement update.
+6. A preliminary passive support query identifies a traversable collider that
+   may be ignored, such as the `0.22` step.
+7. World collision resolves the requested X/Z position.
+8. A final passive support query samples the collision-resolved foot position.
+9. The movement controller applies only the returned support height.
+10. World volumes apply gameplay effects.
+
+## `0.22` step
+
+Walking onto the step is supported again without allowing support to move the
+player.
+
+When the requested foot position lies on the step and the height change is
+within `stepHeight`, the preliminary query identifies the step as walkable.
+World collision then ignores that step's traversable collider for the move.
+The final query applies the `0.22` support height at the resolved position.
+
+## Edge release
+
+When the foot point leaves the current support footprint:
+
+- Support immediately returns ground or another valid surface.
+- The old support collider is ignored for one release query.
+- Horizontal movement continues through collision normally.
+- Gravity begins when no support is found.
+
+No ownership padding or edge correction remains.
+
+## Moving platforms
+
+A supported actor inherits the platform's current `frameDelta` before player
+input. That inherited movement is passed through world collision.
+
+The support result itself does not change X/Z.
+
+This prevents support acquisition from placing the player on another part of
+the platform.
+
+## Horizontal dynamic collision
+
+The side-push resolver now preserves which side of a moving platform the actor
+was on relative to the platform's previous position.
+
+Previously, the actor could be pushed to the platform's travel-direction edge,
+which could appear as a teleport across the full platform.
+
+Now:
+
+- Actor on the left remains on the left.
+- Actor on the right remains on the right.
+- Actor in front or behind retains that side.
+- The platform still pushes rather than passing through the actor.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/DynamicCollisionSystem.ts`
+- `src/main.ts`
+
 
 ### Validate
 ```bash

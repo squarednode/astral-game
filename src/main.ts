@@ -988,6 +988,30 @@ scene.onBeforeRenderObservable.add(() => {
 
   outdoorZone.update(dt);
 
+  // A moving support contributes its own frame motion before player input.
+  // Collision resolves that inherited motion; support never corrects X/Z.
+  const inheritedSurfaceDelta =
+    traversalSurfaces.getCurrentSupportDelta();
+  if (
+    Math.abs(inheritedSurfaceDelta.x) > 0.000001 ||
+    Math.abs(inheritedSurfaceDelta.z) > 0.000001
+  ) {
+    const inheritedTarget = playerRoot.position.add(
+      new Vector3(
+        inheritedSurfaceDelta.x,
+        0,
+        inheritedSurfaceDelta.z,
+      ),
+    );
+    const inheritedResolved =
+      worldCollision.resolvePosition(
+        playerRoot.position,
+        inheritedTarget,
+      );
+    playerRoot.position.x = inheritedResolved.x;
+    playerRoot.position.z = inheritedResolved.z;
+  }
+
   const dynamicResolution = dynamicCollision.resolve(
     playerRoot.position,
     movement.getSupportHeight(),
@@ -1005,30 +1029,37 @@ scene.onBeforeRenderObservable.add(() => {
 
   const movementPosition = playerRoot.position.clone();
 
-  const traversalResolution = traversalSurfaces.querySupport(
-    positionBeforeMovement,
-    movementPosition,
-    movement.isGrounded(),
-    movement.getVerticalVelocity(),
-    movement.getSupportHeight(),
-    (landingPosition, ignoredColliderLabels) =>
-      worldCollision.isBlocked(
-        landingPosition,
-        ignoredColliderLabels,
-      ),
-  );
+  // Preliminary support is used only to identify a walkable surface collider
+  // that horizontal collision may ignore, such as the 0.22 step.
+  const preliminarySupport =
+    traversalSurfaces.querySupport(
+      positionBeforeMovement,
+      movementPosition,
+      movement.isGrounded(),
+      movement.getVerticalVelocity(),
+      movement.getSupportHeight(),
+    );
 
   const resolvedPosition = worldCollision.resolvePosition(
     positionBeforeMovement,
-    traversalResolution.position,
-    traversalResolution.ignoredColliderLabels,
+    movementPosition,
+    preliminarySupport.ignoredColliderLabels,
   );
 
-  // Collision and traversal own horizontal placement only. Vertical motion
-  // remains entirely inside PlayerMovementController.
   playerRoot.position.x = resolvedPosition.x;
   playerRoot.position.z = resolvedPosition.z;
   playerRoot.position.y = movementPosition.y;
+
+  // Final support is sampled from the collision-resolved X/Z. It can only
+  // provide Y support and cannot move the character horizontally.
+  const traversalResolution =
+    traversalSurfaces.querySupport(
+      positionBeforeMovement,
+      playerRoot.position,
+      movement.isGrounded(),
+      movement.getVerticalVelocity(),
+      movement.getSupportHeight(),
+    );
 
   movement.setSupportHeight(
     traversalResolution.supportHeight,
