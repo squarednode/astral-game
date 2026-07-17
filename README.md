@@ -64,3 +64,13 @@ This is deliberately a combat-first vertical slice. It uses procedural primitive
 3. Move game definitions into data files.
 4. Add sound, hit-stop, screen shake, and animation timing.
 5. Replace primitives with GLB character and environment assets.
+
+## Required edits later
+### Movement Polish Backlog
+
+- [ ] Minor underside clipping during jump timing
+- [ ] Fine tune moving platform feel
+- [ ] Validate movement with enemy knockback
+- [ ] Validate movement with combat hit-stop
+- [ ] Validate movement on production geometry
+- [ ] Validate movement against large bosses
