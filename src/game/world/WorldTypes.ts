@@ -15,6 +15,8 @@ export interface CircleWorldCollider {
   radius: number;
   interaction: 'solid' | 'traversable' | 'hazard';
   clearanceHeight?: number;
+  minimumY?: number;
+  maximumY?: number;
   label: string;
 }
 
@@ -26,6 +28,8 @@ export interface BoxWorldCollider {
   halfDepth: number;
   interaction: 'solid' | 'traversable' | 'hazard';
   clearanceHeight?: number;
+  minimumY?: number;
+  maximumY?: number;
   label: string;
 }
 

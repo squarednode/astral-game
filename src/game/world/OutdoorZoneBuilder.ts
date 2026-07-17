@@ -67,6 +67,8 @@ export function buildOutdoorZone(
     depth: number,
     interaction: 'solid' | 'traversable' | 'hazard' = 'solid',
     clearanceHeight = 0.65,
+    minimumY?: number,
+    maximumY?: number,
   ): void => {
     colliders.push({
       kind: 'box',
@@ -77,6 +79,8 @@ export function buildOutdoorZone(
       halfDepth: depth / 2,
       interaction,
       clearanceHeight,
+      minimumY,
+      maximumY,
     });
   };
 
@@ -87,6 +91,8 @@ export function buildOutdoorZone(
     radius: number,
     interaction: 'solid' | 'traversable' | 'hazard' = 'solid',
     clearanceHeight = 0.65,
+    minimumY?: number,
+    maximumY?: number,
   ): void => {
     colliders.push({
       kind: 'circle',
@@ -960,41 +966,34 @@ export function buildOutdoorZone(
       return stairRise * (stepIndex + 1);
     },
   });
-  worldVolumes.push(
-    {
-      id: 'course-stairs-west-side',
-      label: 'Course Stairs West Side',
-      kind: 'constraint',
-      footprint: {
-        shape: 'box', centerX: -2.72, centerZ: stairsZ,
-        halfWidth: 0.22, halfDepth: stairCount * stairDepth / 2,
-      },
-      minimumY: 0,
-      maximumY: 1.5,
-    },
-    {
-      id: 'course-stairs-east-side',
-      label: 'Course Stairs East Side',
-      kind: 'constraint',
-      footprint: {
-        shape: 'box', centerX: 2.72, centerZ: stairsZ,
-        halfWidth: 0.22, halfDepth: stairCount * stairDepth / 2,
-      },
-      minimumY: 0,
-      maximumY: 1.5,
-    },
-    {
-      id: 'course-stairs-back',
-      label: 'Course Stairs Back',
-      kind: 'constraint',
-      footprint: {
-        shape: 'box', centerX: 0,
-        centerZ: stairsZ + stairCount * stairDepth / 2 + 0.18,
-        halfWidth: 2.7, halfDepth: 0.2,
-      },
-      minimumY: 0,
-      maximumY: 1.5,
-    },
+  // Permanent stair geometry uses solid authored collision on its closed
+  // sides and rear. The front remains open for normal stair entry.
+  addBoxCollider(
+    'course-stairs-west-wall',
+    -2.82,
+    stairsZ,
+    0.24,
+    stairCount * stairDepth,
+    'solid',
+  );
+  addBoxCollider(
+    'course-stairs-east-wall',
+    2.82,
+    stairsZ,
+    0.24,
+    stairCount * stairDepth,
+    'solid',
+  );
+  addBoxCollider(
+    'course-stairs-back-wall',
+    0,
+    stairsZ + stairCount * stairDepth / 2 + 0.12,
+    5.9,
+    0.24,
+    'solid',
+    0.65,
+    0,
+    0.55,
   );
 
   // 4. Hill — continuous sampled height across authored visual terraces.
@@ -1031,40 +1030,34 @@ export function buildOutdoorZone(
       return 1.5 * (1 - normalized * normalized);
     },
   });
-  worldVolumes.push(
-    {
-      id: 'course-hill-west-side',
-      label: 'Course Hill West Side',
-      kind: 'constraint',
-      footprint: {
-        shape: 'box', centerX: -3.22, centerZ: hillZ,
-        halfWidth: 0.22, halfDepth: hillHalfDepth,
-      },
-      minimumY: 0,
-      maximumY: 1.8,
-    },
-    {
-      id: 'course-hill-east-side',
-      label: 'Course Hill East Side',
-      kind: 'constraint',
-      footprint: {
-        shape: 'box', centerX: 3.22, centerZ: hillZ,
-        halfWidth: 0.22, halfDepth: hillHalfDepth,
-      },
-      minimumY: 0,
-      maximumY: 1.8,
-    },
-    {
-      id: 'course-hill-back',
-      label: 'Course Hill Back',
-      kind: 'constraint',
-      footprint: {
-        shape: 'box', centerX: 0, centerZ: hillZ + hillHalfDepth + 0.18,
-        halfWidth: 3.2, halfDepth: 0.2,
-      },
-      minimumY: 0,
-      maximumY: 1.8,
-    },
+  // Closed hill sides and rear use solid collision so the actor cannot walk
+  // beneath the terrace visuals. The front remains open.
+  addBoxCollider(
+    'course-hill-west-wall',
+    -3.12,
+    hillZ,
+    0.24,
+    hillHalfDepth * 2,
+    'solid',
+  );
+  addBoxCollider(
+    'course-hill-east-wall',
+    3.12,
+    hillZ,
+    0.24,
+    hillHalfDepth * 2,
+    'solid',
+  );
+  addBoxCollider(
+    'course-hill-back-wall',
+    0,
+    hillZ + hillHalfDepth + 0.12,
+    6.4,
+    0.24,
+    'solid',
+    0.65,
+    0,
+    0.45,
   );
 
   // 5. Narrow beam — intentionally no guided behavior or edge retention.

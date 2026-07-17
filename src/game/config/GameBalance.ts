@@ -19,7 +19,7 @@ export const GameBalance = {
     minX: -37.0,
     maxX: 37.0,
     minZ: -25.0,
-    maxZ: 122.0,
+    maxZ: 145.0,
   },
   worldVolumes: {
     shallowWaterSpeedMultiplier: 0.65,

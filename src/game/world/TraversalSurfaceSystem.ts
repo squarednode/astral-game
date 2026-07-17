@@ -41,17 +41,22 @@ interface GuidedProjection {
 
 export class TraversalSurfaceSystem {
   enabled = true;
+  private currentSupportSurfaceId: string | null = null;
 
   constructor(
     private readonly surfaces: ReadonlyArray<TraversalSurface>,
   ) {}
 
   reset(): void {
-    // Continuous support stores no traversal state.
+    this.currentSupportSurfaceId = null;
   }
 
   releaseForBlink(): void {
-    // Support is recalculated from Blink's destination.
+    this.currentSupportSurfaceId = null;
+  }
+
+  getCurrentSupportSurfaceId(): string | null {
+    return this.currentSupportSurfaceId;
   }
 
   /**
@@ -74,6 +79,26 @@ export class TraversalSurfaceSystem {
       return this.groundResolution(desired);
     }
 
+    const ownedSurface = this.currentSupportSurfaceId
+      ? this.surfaces.find(
+          surface => surface.id === this.currentSupportSurfaceId,
+        )
+      : undefined;
+
+    // Keep exactly one support owner while the actor remains inside its true
+    // footprint. Padding is never used for an already-owned support.
+    if (grounded && ownedSurface) {
+      const ownedResolution = this.evaluateOwnedSurface(
+        ownedSurface,
+        desired,
+        currentSupportHeight,
+      );
+
+      if (ownedResolution) {
+        return ownedResolution;
+      }
+    }
+
     const candidates = this.surfaces
       .map(surface =>
         this.evaluateSurface(
@@ -93,37 +118,19 @@ export class TraversalSurfaceSystem {
       .sort((a, b) => b.supportHeight - a.supportHeight);
 
     if (candidates[0]) {
+      this.currentSupportSurfaceId = candidates[0].surfaceId;
       return candidates[0];
     }
 
-    // A free surface must not block the actor with its own collider when the
-    // actor leaves an edge. Ignore that collider for the release frame and
-    // lower support normally so gravity can take over.
-    const releasingSurface = this.surfaces.find(surface => {
-      if (surface.mode !== 'free') return false;
-
-      const priorHeight = this.sampleHeight(
-        surface,
-        previous.x,
-        previous.z,
-      );
-
-      return (
-        grounded &&
-        Math.abs(
-          currentSupportHeight - priorHeight,
-        ) <= GameBalance.movement.groundSnapDistance &&
-        this.isInsideFree(surface, previous, 0) &&
-        !this.isInsideFree(surface, desired, 0)
-      );
-    });
-
-    if (releasingSurface) {
+    // Release the prior owner immediately and ignore only its collider during
+    // the release frame. This prevents edge oscillation and partial embedding.
+    if (ownedSurface) {
+      this.currentSupportSurfaceId = null;
       return {
         position: desired.clone(),
         supportHeight: 0,
         ignoredColliderLabels: new Set([
-          releasingSurface.colliderLabel,
+          ownedSurface.colliderLabel,
         ]),
         surfaceId: null,
         mode: 'ground',
@@ -131,7 +138,69 @@ export class TraversalSurfaceSystem {
       };
     }
 
+    this.currentSupportSurfaceId = null;
     return this.groundResolution(desired);
+  }
+
+  private evaluateOwnedSurface(
+    surface: TraversalSurface,
+    desired: Vector3,
+    currentSupportHeight: number,
+  ): SurfaceResolution | null {
+    if (
+      (surface.slopeDegrees ?? 0) >
+      GameBalance.movement.maximumWalkableSlopeDegrees
+    ) {
+      return null;
+    }
+
+    if (surface.mode === 'guided') {
+      const projection = this.projectOntoGuided(surface, desired);
+      if (
+        projection.progress < 0 ||
+        projection.progress > 1 ||
+        projection.lateralDistance > surface.guideHalfWidth
+      ) {
+        return null;
+      }
+    } else if (!this.isInsideFree(surface, desired, 0)) {
+      return null;
+    }
+
+    const supportHeight = this.sampleHeight(
+      surface,
+      desired.x,
+      desired.z,
+    );
+
+    // A large height mismatch means ownership is stale and must be released.
+    if (
+      Math.abs(currentSupportHeight - supportHeight) >
+      Math.max(
+        GameBalance.movement.maximumJumpOntoHeight,
+        GameBalance.movement.groundSnapDistance,
+      )
+    ) {
+      return null;
+    }
+
+    const frameDelta =
+      surface.frameDelta?.clone() ?? Vector3.Zero();
+    const position = desired.clone();
+    position.x += frameDelta.x;
+    position.z += frameDelta.z;
+
+    this.currentSupportSurfaceId = surface.id;
+    return {
+      position,
+      supportHeight,
+      ignoredColliderLabels: new Set([
+        surface.colliderLabel,
+      ]),
+      surfaceId: surface.id,
+      mode: surface.mode,
+      surfaceDelta: frameDelta,
+    };
   }
 
   private evaluateSurface(

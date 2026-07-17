@@ -1160,6 +1160,108 @@ validation course.
 11. Recheck the conveyor.
 12. Walk through the connected wind station.
 
+# Astral 0.5.3.2 — Support Ownership Final Test
+
+This is the final movement-course correction pass before moving into the
+engine-core roadmap.
+
+## Support ownership
+
+`TraversalSurfaceSystem` now tracks one explicit support owner:
+
+```text
+currentSupportSurfaceId
+```
+
+While grounded:
+
+- The current surface remains the owner only while the actor center remains
+  inside its true footprint.
+- Entry padding is not used to retain an existing support.
+- Leaving the footprint immediately releases that support.
+- The released surface's collider is ignored for that one frame.
+- Another valid surface may take ownership during the same frame.
+- If no valid support exists, ground support is selected and gravity begins.
+
+This prevents alternating support decisions at stair and hill edges, which
+caused partial embedding and stuck states.
+
+Blink and developer teleports clear support ownership.
+
+## Stairs and hill
+
+The temporary side and rear constraint volumes were removed.
+
+Permanent authored structures now use:
+
+```text
+Visual geometry
+Support surface
+Solid collision
+```
+
+The stairs and hill have solid side collision and height-aware rear collision.
+
+Rear collision prevents walking underneath from ground level but permits the
+player to leave from the supported upper surface. This preserves course
+progression while closing the visible underside.
+
+## Height-aware world collision
+
+World colliders now optionally support:
+
+```ts
+minimumY
+maximumY
+```
+
+This allows solid geometry to block at ground level without creating infinitely
+tall invisible barriers above a structure.
+
+Existing colliders remain unchanged when these fields are omitted.
+
+## Final station access
+
+The movement-course world bound was extended:
+
+```text
+maxZ: 122
+→
+maxZ: 145
+```
+
+Station 12 is centered near `Z = 130`, so the former player bound was the
+invisible blocker shown before the crosswind test.
+
+## Modified files
+
+- `src/game/world/TraversalSurfaceSystem.ts`
+- `src/game/world/WorldTypes.ts`
+- `src/game/world/WorldCollisionSystem.ts`
+- `src/game/world/OutdoorZoneBuilder.ts`
+- `src/game/config/GameBalance.ts`
+
+## Final validation route
+
+Run the full 12-station course:
+
+1. Walk onto and off the `0.22` step from all sides.
+2. Jump onto the step near each edge.
+3. Confirm no partial embedding or stuck state.
+4. Traverse the stairs from bottom to top and back down.
+5. Push against both stair sides and the rear from ground level.
+6. Leave the stair top toward the hill.
+7. Jump from stairs to hill repeatedly at the left, center, and right.
+8. Traverse both hill slopes and test every outer edge.
+9. Confirm the player cannot walk beneath the hill terraces.
+10. Retest beam, bridge, shallow water, and deep water.
+11. Stand beside the horizontal platform and confirm it pushes the player.
+12. Stand under the elevator and confirm it resolves contact.
+13. Confirm conveyor behavior remains correct.
+14. Continue beyond the conveyor and reach the crosswind station.
+15. Cross the full wind area in both directions.
+16. Repeat the route with collision, support, and volume debug displays active.
+
 
 
 ### Validate

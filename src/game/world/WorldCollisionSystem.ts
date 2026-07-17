@@ -142,6 +142,18 @@ export class WorldCollisionSystem {
   ): boolean {
     return this.colliders.some(collider => {
       if (ignoredColliderLabels.has(collider.label)) return false;
+      if (
+        collider.minimumY !== undefined &&
+        position.y < collider.minimumY
+      ) {
+        return false;
+      }
+      if (
+        collider.maximumY !== undefined &&
+        position.y > collider.maximumY
+      ) {
+        return false;
+      }
       if (solidOnly && collider.interaction !== 'solid') return false;
       if (!includeHazards && collider.interaction === 'hazard') {
         return false;
