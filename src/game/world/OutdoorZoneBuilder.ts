@@ -604,17 +604,52 @@ export function buildOutdoorZone(
     0.45,
   );
 
-  addLog('stream-log-crossing', -11, 2, 5.5, Math.PI / 2, true);
+  // Side constraints act as invisible bridge rails. The north and south ends
+  // remain open for normal entry and exit.
+  worldVolumes.push(
+    {
+      id: 'old-bridge-west-side-constraint',
+      label: 'Old Bridge West Side Rail',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box',
+        centerX: 2.55,
+        centerZ: 2,
+        halfWidth: 0.25,
+        halfDepth: 2.35,
+      },
+      minimumY: 0.1,
+      maximumY: 0.9,
+    },
+    {
+      id: 'old-bridge-east-side-constraint',
+      label: 'Old Bridge East Side Rail',
+      kind: 'constraint',
+      footprint: {
+        shape: 'box',
+        centerX: 7.45,
+        centerZ: 2,
+        halfWidth: 0.25,
+        halfDepth: 2.35,
+      },
+      minimumY: 0.1,
+      maximumY: 0.9,
+    },
+  );
+
+  // River crossing uses the exact same authored log setup as the proven
+  // entrance log. Only its world position and orientation differ.
+  addLog('river-entry-style-log', -11, 2, 6.2, Math.PI / 2, true);
   addFreeBoxTraversalSurface(
-    'stream-log-surface',
-    'Stream Log Crossing',
-    'stream-log-crossing',
+    'river-entry-style-log-surface',
+    'River Entry-Style Log',
+    'river-entry-style-log',
     new Vector3(-11, 0.58, 2),
     0.52,
-    2.85,
+    3.1,
     0.58,
-    0.25,
-    0.72,
+    0.62,
+    0.8,
   );
 
   // Entrance traversal lesson: jump or go around. The traversal direction is
