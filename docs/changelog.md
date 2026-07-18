@@ -3158,7 +3158,166 @@ src/main.ts
 README.md
 ```
 
+# Astral 0.5.6.1 — Developer HUD and UI Manager Foundation
+
+This milestone begins the player-experience phase by separating developer diagnostics from the gameplay HUD and creating the UI structure needed for upcoming HUD, controls, menus, and quality-of-life work.
+
+## Browser-safe toggle
+
+Press:
+
+```text
+U
+```
+
+to open or close the engine diagnostics panel.
+
+The existing developer control console remains on `P`. The two tools now have separate purposes:
+
+```text
+U  Engine diagnostics
+P  Developer controls
+```
+
+## Compact engine status
+
+The former full-height diagnostics column has been removed from the always-visible layout.
+
+A compact status control now remains in the lower-right corner and reports:
+
+```text
+ENGINE
+FPS
+HEALTHY / ISSUE COUNT
+```
+
+Green indicates that the tracked validation values are clear. The control turns red when event errors, asset failures, definition errors, or rejected state transitions are present.
+
+Clicking the compact control also opens the full diagnostics panel.
+
+## Tabbed diagnostics
+
+The full panel is scrollable and contains focused pages:
+
+```text
+Overview
+Entities
+Events
+Resources
+State Machines
+Movement
+```
+
+Only one page is displayed at a time, preventing the panel from continuously growing as new engine systems are added.
+
+### Overview
+
+The overview reports the high-value health checks:
+
+```text
+FPS
+Entities
+Enemies
+Event errors
+Asset failures
+Definition errors
+Rejected transitions
+```
+
+### Entities
+
+Contains entity counts, lifecycle state, enemy registration, and created/destroyed totals.
+
+### Events
+
+Contains queue, emission, dispatch, handler, subscriber, error, and last-event diagnostics.
+
+### Resources
+
+Combines the current asset and definition registry diagnostics.
+
+### State Machines
+
+Contains the validation cube, elevator, and standard-enemy state-machine diagnostics.
+
+### Movement
+
+The existing movement debug overlay now renders inside the Movement page rather than occupying a separate always-visible card.
+
+## UI Manager foundation
+
+New structure:
+
+```text
+src/ui/core/UIManager.ts
+src/ui/UIManager.css
+src/ui/developer/DeveloperHud.ts
+src/ui/developer/DeveloperHud.css
+```
+
+`UIManager` establishes independent layers for:
+
+```text
+gameplay
+notifications
+menus
+developer
+```
+
+Only the developer layer is migrated in this milestone. The remaining layers are intentionally present so the next builds can move the gameplay HUD, notifications, pause menu, settings, and controls into the same managed structure without replacing the foundation.
+
+## Input changes
+
+The input framework now includes:
+
+```text
+toggleDeveloperHud
+```
+
+with the default binding:
+
+```text
+KeyU
+```
+
+No function keys are used.
+
+## Preserved behavior
+
+This build does not change:
+
+- Movement or collision
+- Camera behavior
+- Combat values
+- Enemy AI
+- State-machine behavior
+- Entity lifecycle
+- Event processing
+- Assets or definitions
+- Party and inventory behavior
+- Ability bindings
+- Developer control-console behavior
+
+## Files added
+
+```text
+src/ui/core/UIManager.ts
+src/ui/UIManager.css
+src/ui/developer/DeveloperHud.ts
+src/ui/developer/DeveloperHud.css
+```
+## Files modified
+```text
+src/main.ts
+src/engine/input/InputBindings.ts
+src/engine/input/InputTypes.ts
+README.md
+```
+
+
+
 ### Validate
 ```bash
 npm run build
 npm run dev
+```

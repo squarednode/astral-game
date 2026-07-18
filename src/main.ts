@@ -1,6 +1,8 @@
 import './style.css';
 import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
+import './ui/UIManager.css';
+import './ui/developer/DeveloperHud.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -36,6 +38,8 @@ import type {
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
+import { UIManager } from './ui/core/UIManager';
+import { DeveloperHud } from './ui/developer/DeveloperHud';
 import { CombatSystem } from './game/combat/CombatSystem';
 import { DamageNumberManager } from './game/combat/DamageNumberManager';
 import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController';
@@ -527,39 +531,10 @@ waterStatus.style.cssText = [
 ].join(';');
 document.body.appendChild(waterStatus);
 
-const developerHud = document.createElement('div');
-developerHud.id = 'developer-hud';
-developerHud.style.cssText = [
-  'position:fixed',
-  'right:12px',
-  'bottom:12px',
-  'z-index:1000',
-  'display:flex',
-  'flex-direction:column',
-  'align-items:stretch',
-  'gap:8px',
-  'width:min(270px,calc(100vw - 24px))',
-  'max-height:calc(100vh - 24px)',
-  'pointer-events:none',
-].join(';');
-document.body.appendChild(developerHud);
-
-const entityStatus = document.createElement('div');
-entityStatus.id = 'entity-status';
-entityStatus.style.cssText = [
-  'position:relative',
-  'width:100%',
-  'box-sizing:border-box',
-  'padding:8px 10px',
-  'border:1px solid rgba(255,255,255,.18)',
-  'border-radius:6px',
-  'background:rgba(5,8,14,.72)',
-  'color:#d8e6ff',
-  'font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace',
-  'white-space:pre',
-  'pointer-events:none',
-].join(';');
-developerHud.appendChild(entityStatus);
+const ui = new UIManager();
+const developerHud = new DeveloperHud(
+  ui.getLayer('developer'),
+);
 
 const movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
@@ -589,7 +564,9 @@ const playerCamera = new PlayerCameraController(
   playerRoot,
   () => movement.getVelocity(),
 );
-const movementDebug = new MovementDebugOverlay(developerHud);
+const movementDebug = new MovementDebugOverlay(
+  developerHud.getPageContent('movement'),
+);
 const damageNumbers = new DamageNumberManager(scene, camera, engine);
 const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
@@ -1593,6 +1570,9 @@ scene.onBeforeRenderObservable.add(() => {
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);
   validationStateMachine.update(realDt);
+  if (input.consumePressed('toggleDeveloperHud')) {
+    developerHud.toggle();
+  }
   if (input.consumePressed('toggleDeveloperConsole')) {
     developerConsole.toggle();
   }
@@ -1957,63 +1937,103 @@ scene.onBeforeRenderObservable.add(() => {
         0,
       );
 
-    entityStatus.textContent = [
-      'ENGINE FRAMEWORK',
-      'Entities',
-      `  Total       ${stats.total}`,
-      `  Active      ${stats.active}`,
-      `  Disabled    ${stats.disabled}`,
-      `  Pending     ${stats.destroyPending}`,
-      `  Enemies     ${registeredEnemies}`,
-      `  Created     ${entityCreatedCount}`,
-      `  Destroyed   ${entityDestroyedCount}`,
-      'Events',
-      `  Queued      ${eventStats.queued}`,
-      `  Emitted     ${eventStats.emitted}`,
-      `  Dispatched  ${eventStats.dispatched}`,
-      `  Handled     ${eventStats.handled}`,
-      `  Subscribers ${eventStats.subscribers}`,
-      `  Errors      ${eventStats.errors}`,
-      `  Last        ${eventStats.lastEventType ?? 'none'}`,
-      'Assets',
-      `  Total       ${assetStats.total}`,
-      `  Ready       ${assetStats.ready}`,
-      `  Loading     ${assetStats.loading}`,
-      `  Failed      ${assetStats.failed}`,
-      `  References  ${assetStats.references}`,
-      `  Materials   ${assetStats.byKind.material}`,
-      `  Data        ${assetStats.byKind.data}`,
-      `  Validation  ${assetErrors.length}`,
-      'Definitions',
-      `  Total       ${definitionStats.total}`,
-      `  Kinds       ${definitionStats.kinds}`,
-      `  Characters  ${definitionStats.byKind.character ?? 0}`,
-      `  Deprecated  ${definitionStats.deprecated}`,
-      `  Validation  ${definitionErrors.length}`,
-      'State Machine · Validation',
-      `  ID          ${validationStateMachine.id}`,
-      `  Current     ${validationStateMachine.getCurrentStateId() ?? 'none'}`,
-      `  Previous    ${validationStateMachine.getPreviousStateId() ?? 'none'}`,
-      `  Time        ${validationStateMachine.getTimeInState().toFixed(2)}s`,
-      `  Transitions ${validationStateMachine.snapshot().transitionCount}`,
-      `  Rejected    ${validationStateMachine.snapshot().rejectedTransitionCount}`,
-      'State Machine · Elevator',
-      `  ID          ${outdoorZone.getElevatorStateSnapshot().id}`,
-      `  Current     ${outdoorZone.getElevatorStateSnapshot().currentState ?? 'none'}`,
-      `  Previous    ${outdoorZone.getElevatorStateSnapshot().previousState ?? 'none'}`,
-      `  Time        ${outdoorZone.getElevatorStateSnapshot().timeInState.toFixed(2)}s`,
-      `  Transitions ${outdoorZone.getElevatorStateSnapshot().transitionCount}`,
-      `  Rejected    ${outdoorZone.getElevatorStateSnapshot().rejectedTransitionCount}`,
-      'State Machine · Standard Enemies',
-      `  Machines    ${standardEnemyMachines.length}`,
-      `  Idle        ${standardEnemyStateCounts.idle}`,
-      `  Chase       ${standardEnemyStateCounts.chase}`,
-      `  Windup      ${standardEnemyStateCounts['attack-windup']}`,
-      `  Recover     ${standardEnemyStateCounts.recover}`,
-      `  Dead        ${standardEnemyStateCounts.dead}`,
-      `  Rejected    ${standardEnemyRejected}`,
-      '  Elites      legacy behavior',
-    ].join('\n');
+    const validationSnapshot = validationStateMachine.snapshot();
+    const elevatorSnapshot = outdoorZone.getElevatorStateSnapshot();
+    const rejectedTransitions =
+      validationSnapshot.rejectedTransitionCount +
+      elevatorSnapshot.rejectedTransitionCount +
+      standardEnemyRejected;
+
+    developerHud.updateOverview({
+      fps: engine.getFps(),
+      entities: stats.total,
+      enemies: registeredEnemies,
+      eventErrors: eventStats.errors,
+      assetFailures: assetStats.failed,
+      definitionErrors: definitionErrors.length,
+      rejectedTransitions,
+    });
+
+    developerHud.setPageText(
+      'entities',
+      [
+        'ENTITIES',
+        `Total       ${stats.total}`,
+        `Active      ${stats.active}`,
+        `Disabled    ${stats.disabled}`,
+        `Pending     ${stats.destroyPending}`,
+        `Enemies     ${registeredEnemies}`,
+        `Created     ${entityCreatedCount}`,
+        `Destroyed   ${entityDestroyedCount}`,
+      ].join('\n'),
+    );
+
+    developerHud.setPageText(
+      'events',
+      [
+        'EVENT BUS',
+        `Queued      ${eventStats.queued}`,
+        `Emitted     ${eventStats.emitted}`,
+        `Dispatched  ${eventStats.dispatched}`,
+        `Handled     ${eventStats.handled}`,
+        `Subscribers ${eventStats.subscribers}`,
+        `Errors      ${eventStats.errors}`,
+        `Last        ${eventStats.lastEventType ?? 'none'}`,
+      ].join('\n'),
+    );
+
+    developerHud.setPageText(
+      'resources',
+      [
+        'ASSETS',
+        `Total       ${assetStats.total}`,
+        `Ready       ${assetStats.ready}`,
+        `Loading     ${assetStats.loading}`,
+        `Failed      ${assetStats.failed}`,
+        `References  ${assetStats.references}`,
+        `Materials   ${assetStats.byKind.material}`,
+        `Data        ${assetStats.byKind.data}`,
+        `Validation  ${assetErrors.length}`,
+        '',
+        'DEFINITIONS',
+        `Total       ${definitionStats.total}`,
+        `Kinds       ${definitionStats.kinds}`,
+        `Characters  ${definitionStats.byKind.character ?? 0}`,
+        `Deprecated  ${definitionStats.deprecated}`,
+        `Validation  ${definitionErrors.length}`,
+      ].join('\n'),
+    );
+
+    developerHud.setPageText(
+      'states',
+      [
+        'VALIDATION',
+        `ID          ${validationStateMachine.id}`,
+        `Current     ${validationStateMachine.getCurrentStateId() ?? 'none'}`,
+        `Previous    ${validationStateMachine.getPreviousStateId() ?? 'none'}`,
+        `Time        ${validationStateMachine.getTimeInState().toFixed(2)}s`,
+        `Transitions ${validationSnapshot.transitionCount}`,
+        `Rejected    ${validationSnapshot.rejectedTransitionCount}`,
+        '',
+        'ELEVATOR',
+        `ID          ${elevatorSnapshot.id}`,
+        `Current     ${elevatorSnapshot.currentState ?? 'none'}`,
+        `Previous    ${elevatorSnapshot.previousState ?? 'none'}`,
+        `Time        ${elevatorSnapshot.timeInState.toFixed(2)}s`,
+        `Transitions ${elevatorSnapshot.transitionCount}`,
+        `Rejected    ${elevatorSnapshot.rejectedTransitionCount}`,
+        '',
+        'STANDARD ENEMIES',
+        `Machines    ${standardEnemyMachines.length}`,
+        `Idle        ${standardEnemyStateCounts.idle}`,
+        `Chase       ${standardEnemyStateCounts.chase}`,
+        `Windup      ${standardEnemyStateCounts['attack-windup']}`,
+        `Recover     ${standardEnemyStateCounts.recover}`,
+        `Dead        ${standardEnemyStateCounts.dead}`,
+        `Rejected    ${standardEnemyRejected}`,
+        'Elites      legacy behavior',
+      ].join('\n'),
+    );
   }
 
   flushFrameInfrastructure();
@@ -2037,6 +2057,7 @@ window.addEventListener('beforeunload', () => {
   definitions.clear();
   stateValidationMesh.dispose();
   assets.clear();
-  developerHud.remove();
+  developerHud.dispose();
+  ui.dispose();
   waterStatus.remove();
 });
