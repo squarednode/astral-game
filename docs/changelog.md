@@ -4484,6 +4484,104 @@ Can Cast     yes
 Position     hold
 Reason       in selected ability range
 ```
+# Astral 0.6.1.2 — Enemy Combat Polish & Starter World Enemy Set
+
+This mini-update closes the first enemy-archetype validation gaps and prepares the initial world enemy roster.
+
+## Engagement fixes
+
+Archer and assassin decisions now use explicit role priorities before weighted fallback.
+
+### Archer
+
+- Uses the primary ranged attack whenever it is available.
+- Uses retreat when the player enters its close-pressure range.
+- Advances only until its selected projectile is valid.
+- Stops moving while a valid shot is available.
+
+### Assassin
+
+- Uses Dash as the preferred gap closer outside melee range.
+- Uses Melee Strike after closing.
+- Uses Retreat as a fallback disengage action.
+- Dash, Charge, and Leap now share the supported enemy movement-executor path.
+
+## Hover enemy targeting
+
+Moving the mouse over an enemy now:
+
+- Makes it the inspected enemy.
+- Adds a visible outline.
+- Updates the top enemy health display with the correct name and health.
+- Updates the Developer HUD AI inspector to the hovered enemy.
+
+When no enemy is hovered, the display falls back to the active elite or boss.
+
+## Enemy families
+
+New reusable family definitions:
+
+```text
+enemy-family.humanoid
+enemy-family.crab
+enemy-family.wolf
+enemy-family.boss
+```
+
+Families provide shared tags and an alert radius. The wolf family uses that alert radius for basic pack aggro.
+
+## Starter world enemies
+
+### Crab
+
+- Slow, durable close-range enemy.
+- Pinch and Heavy Slam usage records.
+
+### Wolf
+
+- Fast skirmisher.
+- Bite and Lunge usage records.
+- Alerts nearby wolf-family enemies when damaged.
+
+### Mother Wolf
+
+- Leader-class wolf variant.
+- Bite, Lunge, and Howl.
+- Howl restores some health and alerts nearby wolves.
+- Appears every third wave during validation.
+
+### Boss
+
+- Boss-policy validation enemy.
+- Heavy Slam, Leap, Magic Missile, and Roar.
+- Boss casts remain committed once chosen.
+- Appears every fifth wave during validation.
+
+## Spawn classes
+
+Enemy definitions now declare:
+
+```text
+common
+leader
+boss
+```
+
+Random wave spawning draws only from `common`. Leaders and bosses are inserted intentionally.
+
+## Developer AI inspector
+
+The inspector now includes:
+
+- Display name
+- Role
+- Family
+- Hover state
+- Pack-alert state
+- Current state and ability
+- Range band
+- Cast validity and positioning reason
+- Commitment and decision count
 
 ### Validate
 ```bash

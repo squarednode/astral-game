@@ -110,6 +110,18 @@ const aiUsageSeeds: readonly AiUsageSeed[] = [
   ['usage.fire-mage-pool', 'Fire Mage Ground Fire', 'ability.ground-fire', 3, 4, 18, 14, 0.55],
   ['usage.frost-mage-bolt', 'Frost Mage Bolt', 'ability.ice-bolt', 7, 5, 24, 20, 0.65],
   ['usage.frost-mage-nova', 'Frost Mage Nova', 'ability.frost-nova', 4, 0, 6, 3, 0.50],
+  ['usage.assassin-strike', 'Assassin Strike', 'ability.melee-strike', 9, 0, 2.6, 1.6, 0.60],
+  ['usage.assassin-dash', 'Assassin Dash', 'ability.dash', 6, 3, 14, 7, 0.45],
+  ['usage.assassin-retreat', 'Assassin Retreat', 'ability.retreat', 3, 0, 3.5, 2.5, 0.45],
+  ['usage.crab-pinch', 'Crab Pinch', 'ability.melee-strike', 8, 0, 2.3, 1.4, 0.70],
+  ['usage.crab-slam', 'Crab Slam', 'ability.heavy-slam', 3, 0, 3.4, 2.1, 0.60],
+  ['usage.wolf-bite', 'Wolf Bite', 'ability.melee-strike', 9, 0, 2.5, 1.5, 0.55],
+  ['usage.wolf-lunge', 'Wolf Lunge', 'ability.charge', 5, 3, 12, 6, 0.40],
+  ['usage.mother-wolf-howl', 'Mother Wolf Howl', 'ability.barrier', 3, 0, 10, 4, 0.30],
+  ['usage.boss-slam', 'Boss Slam', 'ability.heavy-slam', 7, 0, 4.5, 2.5, 0.00],
+  ['usage.boss-leap', 'Boss Leap', 'ability.leap', 4, 5, 18, 10, 0.00],
+  ['usage.boss-projectile', 'Boss Projectile', 'ability.magic-missile', 4, 6, 26, 16, 0.00],
+  ['usage.boss-roar', 'Boss Roar', 'ability.barrier', 2, 0, 12, 6, 0.00],
 ];
 export const aiAbilityUsageDefinitions: readonly AiAbilityUsageDefinition[] = aiUsageSeeds.map(([id, name, abilityId, weight, minimumRange, maximumRange, preferredRange, commitmentThreshold]) => ({
   id,

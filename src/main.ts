@@ -52,9 +52,11 @@ import {
   validateCombatLibraryReferences,
   ENEMY_DEFINITION_SCHEMA_VERSION,
   enemyDefinitions,
+  enemyFamilyDefinitions,
   enemyVariantDefinitions,
   eliteModifierDefinitions,
   validateEnemyDefinition,
+  validateEnemyFamilyDefinition,
   validateEnemyVariantDefinition,
   validateEliteModifierDefinition,
 } from './game/definitions';
@@ -69,6 +71,7 @@ import type {
   CombatTagDefinition,
   AiAbilityUsageDefinition,
   EnemyDefinition,
+  EnemyFamilyDefinition,
   EnemyVariantDefinition,
   EliteModifierDefinition,
   EnemyCombatRole,
@@ -157,6 +160,8 @@ interface EnemyBlackboard {
   positioningIntent: 'advance' | 'hold' | 'retreat' | 'none';
   homePosition: Vector3;
   decisionCount: number;
+  familyId: string;
+  packAlerted: boolean;
 }
 
 interface EnemyStateContext {
@@ -166,6 +171,8 @@ interface EnemyStateContext {
 interface Enemy {
   entityId: string;
   definition: Readonly<EnemyDefinition>;
+  family: Readonly<EnemyFamilyDefinition>;
+  displayName: string;
   variant: Readonly<EnemyVariantDefinition>;
   modifier: Readonly<EliteModifierDefinition>;
   healthComponent: HealthComponent;
@@ -270,6 +277,12 @@ definitions.registerKind<AbilityDefinition>(
 );
 definitions.registerMany(abilityDefinitions);
 definitions.registerMany(aiAbilityUsageDefinitions);
+definitions.registerKind<EnemyFamilyDefinition>(
+  'enemy-family',
+  ENEMY_DEFINITION_SCHEMA_VERSION,
+  validateEnemyFamilyDefinition,
+);
+definitions.registerMany(enemyFamilyDefinitions);
 definitions.registerKind<EnemyDefinition>(
   'enemy',
   ENEMY_DEFINITION_SCHEMA_VERSION,
@@ -684,6 +697,7 @@ let wave = 1;
 let kills = 0;
 let lootId = 1;
 let enemies: Enemy[] = [];
+let hoveredEnemy: Enemy | null = null;
 let loot: LootItem[] = [];
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
 let scheduledWave: number | null = null;
@@ -931,13 +945,11 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
           }
         : undefined;
     })(),
-    boss: elite
-      ? {
-          name: 'Elite Enemy',
-          hp: elite.hp,
-          maxHp: elite.maxHp,
-        }
-      : undefined,
+    boss: hoveredEnemy && enemies.includes(hoveredEnemy)
+      ? { name: hoveredEnemy.displayName, hp: hoveredEnemy.hp, maxHp: hoveredEnemy.maxHp }
+      : elite
+        ? { name: elite.displayName, hp: elite.hp, maxHp: elite.maxHp }
+        : undefined,
   };
 }
 
@@ -1114,12 +1126,41 @@ function chooseWeightedUsage(
   return candidates[candidates.length - 1].usage;
 }
 
+function findReadyEnemyUsage(
+  enemy: Enemy,
+  role: EnemyDefinition['abilityUsage'][number]['role'],
+): Readonly<AiAbilityUsageDefinition> | null {
+  for (const reference of enemy.definition.abilityUsage) {
+    if (reference.role !== role) continue;
+    const usage = definitions.get<AiAbilityUsageDefinition>(reference.usageId);
+    if (!usage) continue;
+    if ((enemy.abilityCooldowns.get(usage.abilityId) ?? 0) > 0) continue;
+    return usage;
+  }
+  return null;
+}
+
 function selectEnemyUsage(enemy: Enemy): Readonly<AiAbilityUsageDefinition> | null {
   const distance = Vector3.Distance(
     enemy.mesh.position,
     playerRoot.position,
   );
   const healthPercent = Math.max(0, enemy.hp / enemy.maxHp);
+
+  // Roles with strong positioning identities choose a tactical category first.
+  // This prevents archers and assassins from selecting an unusable option and idling.
+  if (enemy.definition.role === 'archer') {
+    if (distance < 5) return findReadyEnemyUsage(enemy, 'escape') ?? findReadyEnemyUsage(enemy, 'primary');
+    return findReadyEnemyUsage(enemy, 'primary') ?? findReadyEnemyUsage(enemy, 'secondary');
+  }
+  if (enemy.definition.role === 'assassin') {
+    if (distance > 2.6) return findReadyEnemyUsage(enemy, 'secondary') ?? findReadyEnemyUsage(enemy, 'primary');
+    return findReadyEnemyUsage(enemy, 'primary') ?? findReadyEnemyUsage(enemy, 'escape');
+  }
+  if (enemy.definition.role === 'wolf' || enemy.definition.role === 'mother-wolf') {
+    if (distance > 2.5) return findReadyEnemyUsage(enemy, 'secondary') ?? findReadyEnemyUsage(enemy, 'primary');
+    return findReadyEnemyUsage(enemy, 'primary') ?? findReadyEnemyUsage(enemy, 'defensive');
+  }
 
   const candidates = enemy.definition.abilityUsage
     .map(reference => ({
@@ -1223,9 +1264,25 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
   } else if (ability.id === 'ability.retreat') {
     const away = enemy.mesh.position.subtract(playerRoot.position); away.y = 0;
     if (away.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(away.normalize().scale(ability.range));
-  } else if (ability.id === 'ability.charge') {
+  } else if (ability.id === 'ability.charge' || ability.id === 'ability.dash' || ability.id === 'ability.leap') {
     const toward = playerRoot.position.subtract(enemy.mesh.position); toward.y = 0;
-    if (toward.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(toward.normalize().scale(Math.min(ability.range, Math.max(0, distance - 1.5))));
+    if (toward.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(toward.normalize().scale(Math.min(ability.range, Math.max(0, distance - 1.35))));
+  }
+
+  if (ability.abilityTags.includes('defensive')) {
+    const restore = Math.max(8, power * 0.5);
+    enemy.hp = Math.min(enemy.maxHp, enemy.hp + restore);
+    enemy.healthComponent.current = enemy.hp;
+
+    if (enemy.definition.role === 'mother-wolf') {
+      for (const ally of enemies) {
+        if (ally === enemy || ally.definition.familyId !== 'wolf') continue;
+        if (Vector3.Distance(ally.mesh.position, enemy.mesh.position) > enemy.family.alertRadius) continue;
+        ally.attackCd = 0;
+        ally.stateMachine.blackboard.set('packAlerted', true);
+        ally.stateMachine.request('evaluate', 'mother-wolf-howl');
+      }
+    }
   }
 
   const resolvedDistance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
@@ -1278,6 +1335,8 @@ function createEnemyStateMachine(
       positioningIntent: 'none',
       homePosition: enemy.mesh.position.clone(),
       decisionCount: 0,
+      familyId: enemy.definition.familyId,
+      packAlerted: false,
     },
   );
 
@@ -1412,9 +1471,10 @@ function spawnEnemy(
   modifierId?: EliteModifierId,
 ): void {
   const archetypes = definitions.all<EnemyDefinition>('enemy');
+  const commonArchetypes = archetypes.filter(candidate => candidate.spawnClass === 'common');
   const definition = definitionId
     ? definitions.require<EnemyDefinition>(definitionId)
-    : archetypes[Math.floor(Math.random() * archetypes.length)];
+    : commonArchetypes[Math.floor(Math.random() * commonArchetypes.length)];
   const variants = definitions.all<EnemyVariantDefinition>('enemy-variant');
   const variant = variantId
     ? definitions.require<EnemyVariantDefinition>(`enemy-variant.${variantId}`)
@@ -1422,12 +1482,17 @@ function spawnEnemy(
   const resolvedModifierId = modifierId ?? (elite ? ['frozen', 'burning', 'fast', 'heavy', 'arcane', 'shielded'][Math.floor(Math.random() * 6)] as EliteModifierId : 'none');
   const modifier = definitions.require<EliteModifierDefinition>(`elite-modifier.${resolvedModifierId}`);
 
+  const family = definitions.require<EnemyFamilyDefinition>(`enemy-family.${definition.familyId}`);
+  const displayName = `${elite && modifier.modifierId !== 'none' ? modifier.name + ' ' : ''}${definition.familyId === 'humanoid' ? variant.name + ' ' : ''}${definition.name}`;
+
   const angle = Math.random() * Math.PI * 2;
   const radius = 10 + Math.random() * 4;
-  const mesh = definition.role === 'brute'
-    ? MeshBuilder.CreateIcoSphere('enemy-brute', { radius: elite ? 1.1 : 0.9, subdivisions: 2 }, scene)
-    : MeshBuilder.CreateCapsule(`enemy-${definition.role}`, { height: definition.role.includes('mage') || definition.role === 'frost-caster' ? 1.8 : 1.5, radius: elite ? 0.56 : 0.46 }, scene);
-  const y = definition.role === 'brute' ? (elite ? 1.1 : 0.9) : 0.75;
+  const mesh = definition.role === 'brute' || definition.role === 'boss'
+    ? MeshBuilder.CreateIcoSphere(`enemy-${definition.role}`, { radius: definition.role === 'boss' ? 1.45 : elite ? 1.1 : 0.9, subdivisions: 2 }, scene)
+    : definition.role === 'crab'
+      ? MeshBuilder.CreateBox('enemy-crab', { width: 1.5, height: 0.55, depth: 1.05 }, scene)
+      : MeshBuilder.CreateCapsule(`enemy-${definition.role}`, { height: definition.role.includes('mage') || definition.role === 'frost-caster' || definition.role === 'mother-wolf' ? 1.8 : 1.5, radius: definition.role === 'wolf' ? 0.40 : elite ? 0.56 : 0.46 }, scene);
+  const y = definition.role === 'boss' ? 1.45 : definition.role === 'brute' ? (elite ? 1.1 : 0.9) : definition.role === 'crab' ? 0.3 : 0.75;
   mesh.position.set(spawnPosition?.x ?? Math.cos(angle) * radius, y, spawnPosition?.z ?? Math.sin(angle) * radius);
   const [r, g, b] = definition.color;
   const [mr, mg, mb] = modifier.colorShift;
@@ -1438,18 +1503,21 @@ function spawnEnemy(
   const hp = definition.maxHp * variant.hpMultiplier * modifier.hpMultiplier * waveScale;
   const healthComponent: HealthComponent = { current: hp, maximum: hp };
   const enemyEntity = entities.create({
-    name: `${elite ? modifier.name + ' ' : ''}${variant.name} ${definition.name}`,
+    name: displayName,
     tags: ['actor', 'enemy', elite ? 'elite' : 'standard', `role:${definition.role}`, `variant:${variant.variantId}`, 'entity-owned-transform'],
   })
     .setComponent<TransformComponent>(EntityComponentKeys.transform, { node: mesh })
     .setComponent<MetadataComponent>(EntityComponentKeys.metadata, { archetype: definition.id, persistent: false })
     .setComponent<HealthComponent>(EntityComponentKeys.health, healthComponent)
     .setComponent<EnemyComponent>(EntityComponentKeys.enemy, { elite, spawnWave: wave });
+  mesh.metadata = { enemyEntityId: enemyEntity.id };
 
   const enemy = {} as Enemy;
   Object.assign(enemy, {
     entityId: enemyEntity.id,
     definition,
+    family,
+    displayName,
     variant,
     modifier,
     healthComponent,
@@ -1473,8 +1541,10 @@ function startWave(): void {
   if (!developerState.wavesEnabled) return;
   const count = Math.min(6 + wave * 2, 24);
   for (let i = 0; i < count; i++) setTimeout(() => spawnEnemy(false), i * 170);
-  if (wave % 2 === 0) setTimeout(() => spawnEnemy(true), 500);
-  feed(`Wave ${wave}: ${count}${wave % 2 === 0 ? ' plus an elite' : ''}.`);
+  if (wave % 3 === 0) setTimeout(() => spawnEnemy(true, undefined, 'enemy.mother-wolf', 'astral', 'none'), 550);
+  else if (wave % 2 === 0) setTimeout(() => spawnEnemy(true), 500);
+  if (wave % 5 === 0) setTimeout(() => spawnEnemy(true, undefined, 'enemy.world-boss', 'astral', 'none'), 900);
+  feed(`Wave ${wave}: ${count}${wave % 3 === 0 ? ' plus a Mother Wolf' : wave % 2 === 0 ? ' plus an elite' : ''}${wave % 5 === 0 ? ' and a boss' : ''}.`);
 }
 startWave();
 
@@ -1510,6 +1580,15 @@ function damageEnemy(
       combat.applyEnemyHit({ target: e, damage: chainDamage, element: 'lightning', worldPosition: e.mesh.position, sourcePosition: enemy.mesh.position, weight: 'light' });
       vfxRing(e.mesh.position, active.color, 1.1, 0.2);
     });
+  }
+
+  if (enemy.definition.familyId === 'wolf') {
+    for (const ally of enemies) {
+      if (ally === enemy || ally.definition.familyId !== 'wolf') continue;
+      if (Vector3.Distance(ally.mesh.position, enemy.mesh.position) > enemy.family.alertRadius) continue;
+      ally.stateMachine.blackboard.set('packAlerted', true);
+      ally.stateMachine.request('evaluate', 'pack-alert');
+    }
   }
 
   enemy.hp -= final;
@@ -1935,6 +2014,7 @@ function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
 }
 
 function killEnemy(enemy: Enemy): void {
+  if (hoveredEnemy === enemy) hoveredEnemy = null;
   if (
     enemy.stateMachine.getCurrentStateId() !== 'dead'
   ) {
@@ -2020,6 +2100,7 @@ const developerActions: DeveloperActions = {
       entities.destroy(enemy.entityId);
     }
     enemies = [];
+    hoveredEnemy = null;
     refreshHud();
     feed('Developer: all enemies removed.');
   },
@@ -2085,6 +2166,26 @@ const developerConsole = new DeveloperConsole(
   developerActions,
 );
 
+function updateHoveredEnemyFromCursor(): void {
+  const pick = scene.pick(
+    scene.pointerX,
+    scene.pointerY,
+    mesh => enemies.some(enemy => enemy.mesh === mesh),
+  );
+  const next = pick?.hit
+    ? enemies.find(enemy => enemy.mesh === pick.pickedMesh) ?? null
+    : null;
+  if (hoveredEnemy === next) return;
+  if (hoveredEnemy) hoveredEnemy.mesh.renderOutline = false;
+  hoveredEnemy = next;
+  if (hoveredEnemy) {
+    hoveredEnemy.mesh.renderOutline = true;
+    hoveredEnemy.mesh.outlineColor = new Color3(1, 0.88, 0.35);
+    hoveredEnemy.mesh.outlineWidth = 0.06;
+  }
+  refreshHud();
+}
+
 function updatePointerWorldFromCursor(): boolean {
   const pick = scene.pick(
     scene.pointerX,
@@ -2129,6 +2230,7 @@ scene.onPointerObservable.add((pi: any) => {
 
   if (pi.type === PointerEventTypes.POINTERMOVE) {
     updatePointerWorldFromCursor();
+    updateHoveredEnemyFromCursor();
   }
 
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
@@ -2722,7 +2824,7 @@ scene.onBeforeRenderObservable.add(() => {
       ].join('\n'),
     );
 
-    const inspectedEnemy = enemies[0];
+    const inspectedEnemy = hoveredEnemy && enemies.includes(hoveredEnemy) ? hoveredEnemy : enemies[0];
     const enemyRoleCounts = enemyDefinitions.reduce<Record<string, number>>((counts, definition) => {
       counts[definition.role] = enemies.filter(enemy => enemy.definition.role === definition.role).length;
       return counts;
@@ -2739,8 +2841,11 @@ scene.onBeforeRenderObservable.add(() => {
         '',
         inspectedEnemy ? 'LIVE INSPECTOR' : 'LIVE INSPECTOR\nNo active enemy.',
         ...(inspectedEnemy ? [
-          `Name         ${inspectedEnemy.variant.name} ${inspectedEnemy.definition.name}`,
+          `Name         ${inspectedEnemy.displayName}`,
           `Role         ${inspectedEnemy.definition.role}`,
+          `Family       ${inspectedEnemy.family.name}`,
+          `Hovered      ${hoveredEnemy === inspectedEnemy ? 'yes' : 'no'}`,
+          `Pack Alert   ${inspectedEnemy.stateMachine.blackboard.get('packAlerted') ? 'yes' : 'no'}`,
           `Policy       ${inspectedEnemy.elite ? 'elite' : inspectedEnemy.definition.policy}`,
           `Modifier     ${inspectedEnemy.modifier.name}`,
           `State        ${inspectedEnemy.stateMachine.getCurrentStateId() ?? 'none'}`,

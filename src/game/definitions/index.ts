@@ -54,9 +54,11 @@ export type {
 export {
   ENEMY_DEFINITION_SCHEMA_VERSION,
   enemyDefinitions,
+  enemyFamilyDefinitions,
   enemyVariantDefinitions,
   eliteModifierDefinitions,
   validateEnemyDefinition,
+  validateEnemyFamilyDefinition,
   validateEnemyVariantDefinition,
   validateEliteModifierDefinition,
 } from './EnemyDefinitions';
@@ -65,6 +67,9 @@ export type {
   EnemyBehaviorPolicy,
   EnemyCombatRole,
   EnemyDefinition,
+  EnemyFamilyDefinition,
+  EnemyFamilyId,
+  EnemySpawnClass,
   EnemyVariantDefinition,
   EnemyVariantId,
   EliteModifierDefinition,
