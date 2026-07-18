@@ -66,6 +66,7 @@ export type {
   EnemyAbilityReference,
   EnemyBehaviorPolicy,
   EnemyCombatRole,
+  EnemyMovementStyle,
   EnemyDefinition,
   EnemyFamilyDefinition,
   EnemyFamilyId,

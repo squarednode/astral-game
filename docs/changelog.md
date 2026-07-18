@@ -4583,6 +4583,116 @@ The inspector now includes:
 - Cast validity and positioning reason
 - Commitment and decision count
 
+# Astral 0.6.1c - Enemy Archetype Audit
+
+This mini-update performs a complete behavior audit across every current enemy archetype. The primary correction is that an enemy no longer loses all movement intent merely because its preferred attacks are on cooldown.
+
+## Core correction
+
+The previous decision flow selected only abilities that were ready. When every ability was cooling down, the enemy entered recovery without retaining an ability or positioning objective. This was most visible on melee classes, which could remain stationary outside attack range.
+
+The audited flow is now:
+
+```text
+Evaluate
+  -> select a ready ability when available
+  -> otherwise retain a fallback combat ability
+  -> position for that ability while its cooldown recovers
+  -> cast as soon as it is both ready and in range
+```
+
+## Explicit movement styles
+
+Every enemy definition now declares one movement policy:
+
+```text
+pressure
+hold-range
+skirmish
+hit-and-run
+tank
+leader
+boss
+```
+
+Current assignments:
+
+| Archetype | Movement style | Expected behavior |
+|---|---|---|
+| Grunt | pressure | Advance into melee range, attack, and maintain pressure. |
+| Brute | tank | Advance deliberately, hold close range, and use heavy attacks. |
+| Archer | hold-range | Advance into firing range, hold while firing, retreat when too close. |
+| Fire Mage | hold-range | Maintain spell range and retreat from close pressure. |
+| Frost Caster | hold-range | Maintain spell range, use nova or retreat when pressured. |
+| Assassin | hit-and-run | Dash or advance, strike, orbit or disengage during downtime. |
+| Crab | tank | Slow advance, hold ground, and use pinch or slam. |
+| Wolf | skirmish | Lunge or advance, bite, then orbit during cooldown. |
+| Mother Wolf | leader | Advance with the pack, attack, and use howl support. |
+| Boss | boss | Position for selected mechanics and complete committed attacks. |
+
+## Cooldown-aware positioning
+
+Enemies now keep a fallback selected ability even when it is cooling down.
+
+- Too far: advance toward the selected ability's maximum range.
+- Too close: ranged and hit-and-run roles retreat.
+- In range and ready: cast immediately.
+- In range and cooling:
+  - pressure, tank, leader, boss, and hold-range roles hold their useful band;
+  - skirmish and hit-and-run roles orbit the player.
+
+This ensures melee actors continue closing distance instead of idling while attacks recover.
+
+## Casting safety
+
+The casting state now verifies the selected ability cooldown again before beginning its telegraph. If the ability is still cooling down, the enemy returns to tactical positioning instead of entering a broken cast state.
+
+## AI inspector additions
+
+The live AI inspector now reports:
+
+```text
+Movement style
+Selected ability ready
+Cooldown remaining
+Positioning intent
+Movement reason
+Cast reason
+```
+
+These values make it possible to distinguish an intentional hold from a missing movement state.
+
+## Validation checklist
+
+### Melee pressure
+
+1. Grunt spawns outside melee range and advances.
+2. Grunt attacks when inside its selected ability band.
+3. Grunt does not stop outside melee range while attacks cool down.
+4. Brute advances and alternates between Heavy Slam and Charge when available.
+5. Crab advances slowly and attacks at close range.
+
+### Ranged
+
+1. Archer advances until Arrow Shot or Piercing Shot is valid.
+2. Archer stops and fires while in range.
+3. Archer retreats when inside its minimum range.
+4. Fire Mage and Frost Caster maintain range and display projectiles.
+
+### Mobile melee
+
+1. Assassin uses Dash or advances toward the target.
+2. Assassin attacks at melee range.
+3. Assassin circles or disengages during cooldown instead of freezing.
+4. Wolf advances or lunges, bites, and circles during cooldown.
+
+### Leader and boss
+
+1. Mother Wolf advances, attacks, and uses Howl.
+2. Boss positions for melee, leap, projectile, and defensive mechanics.
+3. Boss casts remain committed once started.
+
+
 ### Validate
 ```bash
 npm run build
