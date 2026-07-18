@@ -4,6 +4,7 @@ import './ui/party/PartyManagementScreen.css';
 import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
+import './ui/menus/SettingsMenu.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -23,6 +24,7 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import { InputManager } from './engine/input/InputManager';
+import { SettingsManager } from './engine/settings';
 import { EventBus } from './engine/events';
 import { StateMachine } from './engine/state';
 import { AssetRegistry } from './engine/assets';
@@ -42,6 +44,7 @@ import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
 import { UIManager } from './ui/core/UIManager';
 import { DeveloperHud } from './ui/developer/DeveloperHud';
 import { GameplayHud } from './ui/gameplay';
+import { SettingsMenu } from './ui/menus';
 import type { GameplayHudSnapshot } from './ui/gameplay';
 import { CombatSystem } from './game/combat/CombatSystem';
 import { DamageNumberManager } from './game/combat/DamageNumberManager';
@@ -490,7 +493,9 @@ facingMarker.parent = playerRoot;
 facingMarker.position.set(0, 0.45, 0.75);
 facingMarker.material = mat('facing', Color3.White(), 0.35);
 
+const settings = new SettingsManager();
 const input = new InputManager(window);
+input.applySettings(settings.get().input);
 let pointerWorld = new Vector3(0, 0, 4);
 let swapInputCooldown = 0;
 let inventoryOpen = false;
@@ -539,8 +544,28 @@ const gameplayHud = new GameplayHud(
   ui.getLayer('gameplay'),
   ui.getLayer('notifications'),
 );
+let movement: PlayerMovementController;
 
-const movement = new PlayerMovementController(input, playerRoot, {
+const settingsMenu = new SettingsMenu(
+  ui.getLayer('menus'),
+  settings,
+  input,
+  {
+    onVisibilityChanged: open => {
+      input.setContext(open ? 'settings' : 'gameplay');
+      movement?.endPointerMovement();
+    },
+  },
+);
+const unsubscribeSettings = settings.subscribe(current => {
+  input.applySettings(current.input);
+  ui.getRoot().style.setProperty(
+    '--ui-scale',
+    String(current.accessibility.uiScale),
+  );
+});
+
+movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
   getMoveSpeed: () => active.speed * worldMovementMultiplier,
   canDodge: () =>
@@ -579,6 +604,7 @@ const combat = new CombatSystem(damageNumbers, hitFeedback, playerCamera);
 const partyManagement = new PartyManagementScreen(inventoryEl, {
   close: () => {
     inventoryOpen = false;
+    input.setContext('gameplay');
     partyManagement.setOpen(false);
   },
   equip: equipItemToCharacter,
@@ -665,7 +691,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
     abilities: [
       {
         id: 'basic',
-        binding: 'RMB',
+        binding: input.getBindingLabel('primaryAttack'),
         name: 'Basic',
         cooldown: active.cooldowns.attack,
         cooldownMaximum: active.attackCooldown,
@@ -673,7 +699,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
       },
       ...([1, 2, 3, 4] as AbilitySlot[]).map(slot => ({
         id: `ability-${slot}`,
-        binding: String(slot),
+        binding: input.getBindingLabel(`ability${slot}` as 'ability1' | 'ability2' | 'ability3' | 'ability4'),
         name: skillName(slot),
         cooldown: skillCooldown(slot),
         cooldownMaximum: skillMaximum(slot),
@@ -681,7 +707,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
       })),
       {
         id: 'dodge',
-        binding: 'R',
+        binding: input.getBindingLabel('dodge'),
         name: 'Dodge',
         cooldown: active.cooldowns.dodge,
         cooldownMaximum: GameBalance.movement.dodgeCooldown,
@@ -689,7 +715,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
       },
       {
         id: 'jump',
-        binding: 'Space',
+        binding: input.getBindingLabel('jump'),
         name: 'Jump',
         cooldown: 0,
         cooldownMaximum: 0,
@@ -1577,6 +1603,7 @@ function updatePointerWorldFromCursor(): boolean {
 
 scene.onPointerObservable.add((pi: any) => {
   if (pi.type === PointerEventTypes.POINTERDOWN) {
+    if (input.getContext() !== 'gameplay') return;
     input.notifyPointerDown(pi.event.button);
 
     if (pi.event.button === 0) {
@@ -1614,6 +1641,7 @@ window.addEventListener('keydown', event => {
 });
 document.querySelector('#closeInventory')?.addEventListener('click', () => {
   inventoryOpen = false;
+  input.setContext('gameplay');
   partyManagement.setOpen(false);
 });
 
@@ -1638,14 +1666,34 @@ scene.onBeforeRenderObservable.add(() => {
   const now = performance.now();
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  input.update();
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);
   validationStateMachine.update(realDt);
+
+  if (input.consumePressed('toggleSettings')) {
+    if (developerConsole.isOpen()) {
+      developerConsole.close();
+      input.setContext('gameplay');
+    } else {
+      settingsMenu.toggle();
+    }
+  }
+
+  settingsMenu.update();
+
   if (input.consumePressed('toggleDeveloperHud')) {
     developerHud.toggle();
   }
   if (input.consumePressed('toggleDeveloperConsole')) {
     developerConsole.toggle();
+    input.setContext(developerConsole.isOpen() ? 'developer' : 'gameplay');
+  }
+
+  if (settingsMenu.isOpen()) {
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
   }
 
   if (developerConsole.isOpen()) {
@@ -1660,12 +1708,24 @@ scene.onBeforeRenderObservable.add(() => {
     return;
   }
 
-  if (inventoryOpen || gameOver) { flushFrameInfrastructure(); input.endFrame(); return; }
+  if (gameOver) {
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
+  }
 
   if (input.consumePressed('toggleInventory')) {
     inventoryOpen = !inventoryOpen;
+    input.setContext(inventoryOpen ? 'inventory' : 'gameplay');
+    movement.endPointerMovement();
     partyManagement.setOpen(inventoryOpen);
     renderPartyManagement();
+  }
+
+  if (inventoryOpen) {
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
   }
   if (input.consumePressed('dodge')) movement.requestDodge();
   if (input.consumePressed('jump') && !worldJumpDisabled) {
@@ -1679,11 +1739,26 @@ scene.onBeforeRenderObservable.add(() => {
   if (input.consumePressed('partyPrevious')) cycleControl(-1);
   const wheelDirection = input.consumeWheelDirection();
   if (wheelDirection !== 0) cycleControl(wheelDirection);
-  if (input.consumePointerPressed('right') || input.isPointerHeld('right')) basicAttack();
+  if (
+    input.consumePressed('primaryAttack') ||
+    input.isHeld('primaryAttack') ||
+    input.consumePointerPressed('right') ||
+    input.isPointerHeld('right')
+  ) basicAttack();
 
   // Repick every frame while held. This keeps steering responsive even when
   // the browser coalesces pointer-move events or the cursor moves across VFX.
   if (input.isPointerHeld('left')) updatePointerWorldFromCursor();
+
+  const gamepadAim = input.getAimAxes();
+  if (input.hasGamepadAim()) {
+    pointerWorld.copyFrom(
+      playerRoot.position.add(
+        new Vector3(gamepadAim.x, 0, gamepadAim.y).scale(8),
+      ),
+    );
+    movement.setPointerWorld(pointerWorld);
+  }
 
   outdoorZone.update(dt);
 
@@ -1863,7 +1938,10 @@ scene.onBeforeRenderObservable.add(() => {
   wasInDeepWater = volumeResult.inDeepWater;
 
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
-  if (face.lengthSquared() > .01) playerRoot.rotation.y = Math.atan2(face.x, face.z);
+  if (
+    input.shouldFaceAimDirection() &&
+    face.lengthSquared() > .01
+  ) playerRoot.rotation.y = Math.atan2(face.x, face.z);
   playerCamera.update(dt);
   movementDebug.update(dt, engine.getFps(), movement.getDebugState());
   swapInputCooldown = Math.max(0, swapInputCooldown - dt);
@@ -2068,6 +2146,14 @@ scene.onBeforeRenderObservable.add(() => {
         `Characters  ${definitionStats.byKind.character ?? 0}`,
         `Deprecated  ${definitionStats.deprecated}`,
         `Validation  ${definitionErrors.length}`,
+        '',
+        'PLAYER INPUT',
+        `Context     ${input.getDiagnostics().context}`,
+        `Device      ${input.getDiagnostics().device}`,
+        `Controller  ${input.getDiagnostics().gamepadConnected ? 'connected' : 'not connected'}`,
+        `Movement    ${input.getDiagnostics().movementScheme}`,
+        `Move axes   ${input.getDiagnostics().moveAxes.x.toFixed(2)}, ${input.getDiagnostics().moveAxes.y.toFixed(2)}`,
+        `Aim axes    ${input.getDiagnostics().aimAxes.x.toFixed(2)}, ${input.getDiagnostics().aimAxes.y.toFixed(2)}`,
       ].join('\n'),
     );
 
@@ -2112,6 +2198,7 @@ refreshHud();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener('resize', () => engine.resize());
 window.addEventListener('beforeunload', () => {
+  unsubscribeSettings();
   input.dispose();
   movementDebug.dispose();
   damageNumbers.dispose();
@@ -2125,6 +2212,7 @@ window.addEventListener('beforeunload', () => {
   stateValidationMesh.dispose();
   assets.clear();
   developerHud.dispose();
+  settingsMenu.dispose();
   gameplayHud.dispose();
   ui.dispose();
   waterStatus.remove();

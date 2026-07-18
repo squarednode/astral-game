@@ -1,0 +1,98 @@
+.settings-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 7, 12, .72);
+  backdrop-filter: blur(5px);
+  pointer-events: auto;
+}
+
+.settings-menu-panel {
+  width: min(760px, calc(100vw - 36px));
+  max-height: min(760px, calc(100vh - 36px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-border, rgba(255,255,255,.18));
+  border-radius: 16px;
+  background: var(--ui-panel-strong, rgba(12,18,28,.97));
+  color: var(--ui-text, white);
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+.settings-menu-header,
+.settings-menu-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  background: rgba(255,255,255,.035);
+}
+
+.settings-menu-header small {
+  display: block;
+  margin-top: 3px;
+  color: var(--ui-muted, #9ca8b7);
+}
+
+.settings-menu-body {
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.settings-section {
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+}
+
+.settings-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ui-accent, #63c8ff);
+}
+
+.settings-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid rgba(255,255,255,.055);
+}
+
+.settings-section h3 + .settings-row { border-top: 0; }
+.settings-row select { max-width: 360px; }
+.settings-range-control { display: flex; align-items: center; gap: 10px; }
+.settings-range-control output { min-width: 38px; text-align: right; color: var(--ui-muted, #9ca8b7); }
+.settings-binding-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px 16px;
+}
+.settings-binding-grid kbd {
+  min-width: 52px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: rgba(255,255,255,.08);
+}
+.settings-menu-panel button,
+.settings-menu-panel select {
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,.075);
+  color: inherit;
+}

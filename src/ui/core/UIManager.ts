@@ -28,6 +28,10 @@ export class UIManager {
     parent.appendChild(this.root);
   }
 
+  getRoot(): HTMLDivElement {
+    return this.root;
+  }
+
   getLayer(layerId: UiLayerId): HTMLDivElement {
     const layer = this.layers.get(layerId);
     if (!layer) {

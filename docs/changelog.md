@@ -3534,6 +3534,201 @@ src/main.ts
 src/engine/events/EventTypes.ts
 README.md
 ```
+# Astral 0.5.6.3 — Player Input & Configuration Framework
+
+This milestone replaces device-specific gameplay checks with a unified player
+input layer supporting keyboard, mouse, and standard browser gamepads.
+
+## Core architecture
+
+```text
+Keyboard + Mouse ─┐
+                  ├─> InputManager ─> Input Actions ─> Gameplay
+Gamepad ──────────┘
+```
+
+Gameplay continues to consume actions such as `ability1`, `dodge`, and
+`primaryAttack`; it does not need to know which device produced them.
+
+## New and expanded engine modules
+
+```text
+src/engine/input/
+  InputBindings.ts
+  InputManager.ts
+  InputTypes.ts
+  index.ts
+
+src/engine/settings/
+  SettingsManager.ts
+  SettingsTypes.ts
+  index.ts
+
+src/ui/menus/
+  SettingsMenu.ts
+  SettingsMenu.css
+  index.ts
+```
+
+## Input contexts
+
+The player input system now tracks:
+
+```text
+gameplay
+inventory
+settings
+developer
+```
+
+Gameplay actions are suppressed outside the gameplay context. Switching
+contexts clears held movement and pointer input to prevent stuck actions.
+
+## Movement control schemes
+
+The settings menu supports:
+
+```text
+Hybrid: WASD + click-to-move
+Click-to-move
+Screen-relative WASD
+Mouse-relative WASD
+```
+
+Mouse-relative WASD uses the cursor direction as forward:
+
+```text
+W  move toward cursor
+S  move away from cursor
+A  strafe left
+D  strafe right
+```
+
+Controller movement remains analog and screen-relative through the left stick.
+Controller aiming uses the right stick.
+
+## Default controller mapping
+
+The implementation uses the standard Gamepad API layout:
+
+```text
+Left Stick    Move
+Right Stick   Aim
+RT / R2       Primary attack
+X / Square    Ability 1
+Y / Triangle  Ability 2
+B / Circle    Ability 3
+Left Stick    Ability 4
+A / Cross     Dodge
+Right Stick   Jump
+LB / L1       Previous character
+RB / R1       Next character
+View          Inventory
+Menu          Settings
+```
+
+Controller hot-plug and disconnect are supported. The active input device
+changes automatically when keyboard, mouse, or controller activity is detected.
+
+## Dynamic HUD prompts
+
+The gameplay HUD no longer hardcodes `RMB`, `1`, `2`, `3`, `4`, `R`, and
+`Space`. It asks the input manager for the active binding label.
+
+When the active device changes, the HUD displays the matching keyboard/mouse or
+controller prompts on the next HUD refresh.
+
+## Gamepad tuning
+
+The settings menu includes:
+
+```text
+Stick deadzone
+Aim sensitivity
+Trigger threshold
+```
+
+Stick values use a radial deadzone rather than independent axis clipping.
+
+## Player settings persistence
+
+Settings are saved to local storage under:
+
+```text
+astral.player-settings.v1
+```
+
+Persisted values include:
+
+- Movement control scheme
+- Click-to-attack preference
+- Face-aim-direction preference
+- Controller deadzone
+- Controller trigger threshold
+- Controller aim sensitivity
+- UI scale
+- Damage-number preference
+- Screen-shake preference
+- Telegraph intensity
+- Notification duration
+
+Restricted or private browser contexts gracefully fall back to in-memory
+defaults if local storage is unavailable.
+
+## Settings menu
+
+Press:
+
+```text
+Esc       Keyboard
+Menu      Controller
+```
+
+The settings screen provides movement, controller, and accessibility controls.
+It also shows whether a controller is connected and which input device is
+currently active.
+
+## Browser input recovery
+
+The input manager clears held actions when:
+
+- The browser window loses focus
+- The document becomes hidden
+- The active input context changes
+- A controller disconnects
+
+This prevents stuck WASD, pointer movement, and gamepad actions after Alt+Tab or
+focus loss.
+
+## Developer diagnostics
+
+The Resources diagnostic page now includes:
+
+```text
+PLAYER INPUT
+Context
+Device
+Controller
+Movement
+Move axes
+Aim axes
+```
+
+## Existing behavior retained
+
+This milestone does not change:
+
+- Collision resolution
+- Support ownership
+- Jump or dodge physics
+- Combat damage and cooldown values
+- Enemy behavior
+- State machines
+- Assets or definitions
+- Loot and wave progression
+
+The movement controller still owns movement resolution. The new input layer only
+provides requested movement and aim data.
 
 
 ### Validate

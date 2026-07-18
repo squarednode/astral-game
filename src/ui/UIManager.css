@@ -15,3 +15,6 @@
 .ui-layer[data-ui-layer='developer'] {
   z-index: 40;
 }
+
+#ui-root { transform-origin: top left; }
+#ui-root > .ui-layer { font-size: calc(1rem * var(--ui-scale, 1)); }
