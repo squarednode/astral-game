@@ -62,7 +62,7 @@ export interface EliteModifierDefinition extends DefinitionBase {
 export const ENEMY_DEFINITION_SCHEMA_VERSION = 1;
 const metadata = (kind: string): DefinitionMetadata => ({
   schemaVersion: ENEMY_DEFINITION_SCHEMA_VERSION,
-  contentVersion: '0.6.1',
+  contentVersion: '0.6.1e',
   source: 'src/game/definitions/EnemyDefinitions.ts',
   tags: ['enemy', kind, 'phase-2'],
 });

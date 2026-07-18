@@ -80,7 +80,7 @@ import type {
   EliteModifierId,
 } from './game/definitions';
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
-import { EnemyTacticalController } from './game/enemies/runtime';
+import { EnemyRuntimeWatchdog, EnemyTacticalController } from './game/enemies/runtime';
 import type { EnemyRuntimeActor } from './game/enemies/runtime';
 import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
@@ -169,6 +169,11 @@ interface EnemyBlackboard {
   decisionCount: number;
   familyId: string;
   packAlerted: boolean;
+  castResolved: boolean;
+  recoveryCount: number;
+  lastRecoveryReason: string;
+  watchdogStatus: string;
+  stationaryTime: number;
 }
 
 interface EnemyStateContext {
@@ -317,6 +322,7 @@ if (combatLibraryValidation.errors.length > 0) {
 }
 
 const enemyTactics = new EnemyTacticalController(definitions);
+const enemyRuntimeWatchdog = new EnemyRuntimeWatchdog();
 
 function mat(
   name: string,
@@ -1241,6 +1247,22 @@ function applyEnemyPlanToBlackboard(
   blackboard.set('movementStyle', enemy.definition.movementStyle);
 }
 
+function resolveEnemyCast(
+  enemy: Enemy,
+  usage: Readonly<AiAbilityUsageDefinition>,
+  reason: string,
+): void {
+  const machine = enemy.stateMachine;
+  if (machine.blackboard.get('castResolved')) return;
+  machine.blackboard.set('castResolved', true);
+  machine.blackboard.set('committed', true);
+  machine.blackboard.set('castReason', reason);
+  executeEnemyAbility(enemy, usage);
+  if (machine.getCurrentStateId() === 'casting') {
+    machine.request('recover', reason);
+  }
+}
+
 function createEnemyStateMachine(
   enemy: Enemy,
 ): StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard> {
@@ -1275,6 +1297,11 @@ function createEnemyStateMachine(
       decisionCount: 0,
       familyId: enemy.definition.familyId,
       packAlerted: false,
+      castResolved: false,
+      recoveryCount: 0,
+      lastRecoveryReason: 'none',
+      watchdogStatus: 'runtime progressing',
+      stationaryTime: 0,
     },
   );
 
@@ -1375,6 +1402,7 @@ function createEnemyStateMachine(
           ? definitions.get<AbilityDefinition>(abilityId)
           : undefined;
         if (!usage || !ability) {
+          activeMachine.blackboard.set('lastRecoveryReason', 'casting entered without a resolvable ability');
           activeMachine.request('evaluate', 'missing-ability');
           return;
         }
@@ -1393,18 +1421,40 @@ function createEnemyStateMachine(
           return;
         }
 
+        activeMachine.blackboard.set('castResolved', false);
         activeMachine.blackboard.set('committed', enemy.definition.policy === 'boss');
-        enemyTelegraphs.begin(enemy.mesh, enemy.elite, () => {
+
+        // A stale recovery marker must never prevent the next cast from starting.
+        if (enemyTelegraphs.isBusy(enemy.mesh)) enemyTelegraphs.cancel(enemy.mesh);
+        const started = enemyTelegraphs.begin(enemy.mesh, enemy.elite, () => {
           if (enemy.hp <= 0 || !enemies.includes(enemy)) return;
-          activeMachine.blackboard.set('committed', true);
-          executeEnemyAbility(enemy, usage);
-          if (enemy.stateMachine.getCurrentStateId() === 'casting') {
-            enemy.stateMachine.request('recover', 'ability-resolved');
-          }
+          resolveEnemyCast(enemy, usage, 'ability-resolved');
         });
+
+        if (!started) {
+          activeMachine.blackboard.set('lastRecoveryReason', 'telegraph refused to start');
+          activeMachine.request('evaluate', 'telegraph-start-failed');
+        }
       },
       update: (_context, activeMachine) => {
-        if (enemy.hp <= 0) activeMachine.request('dead', 'health-depleted');
+        if (enemy.hp <= 0) {
+          activeMachine.request('dead', 'health-depleted');
+          return;
+        }
+
+        // Final in-state fallback. The frame watchdog also checks this path.
+        if (activeMachine.getTimeInState() > 1.75) {
+          const usageId = activeMachine.blackboard.get('currentUsageId');
+          const usage = usageId
+            ? definitions.get<AiAbilityUsageDefinition>(usageId)
+            : undefined;
+          if (usage) {
+            enemyTelegraphs.cancel(enemy.mesh);
+            resolveEnemyCast(enemy, usage, 'casting-timeout-recovery');
+          } else {
+            activeMachine.request('evaluate', 'casting-timeout-missing-usage');
+          }
+        }
       },
       exit: (_context, _machine, to) => {
         if (to === 'dead') enemyTelegraphs.cancel(enemy.mesh);
@@ -1423,6 +1473,59 @@ function createEnemyStateMachine(
       },
     })
     .addState({ id: 'dead', enter: () => enemyTelegraphs.cancel(enemy.mesh) });
+}
+
+function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
+  const machine = enemy.stateMachine;
+  const result = enemyRuntimeWatchdog.update(
+    {
+      entityId: enemy.entityId,
+      state: machine.getCurrentStateId(),
+      timeInState: machine.getTimeInState(),
+      position: enemy.mesh.position,
+      movementIntent: machine.blackboard.get('positioningIntent'),
+      recoverDuration: enemy.definition.recoverDuration,
+      hasSelectedAbility: Boolean(machine.blackboard.get('currentUsageId')),
+      telegraphBusy: enemyTelegraphs.isBusy(enemy.mesh),
+    },
+    dt,
+  );
+
+  machine.blackboard.set('watchdogStatus', result.reason);
+  machine.blackboard.set('stationaryTime', result.stationaryTime);
+  if (result.action === 'none') return;
+
+  machine.blackboard.set(
+    'recoveryCount',
+    machine.blackboard.get('recoveryCount') + 1,
+  );
+  machine.blackboard.set('lastRecoveryReason', result.reason);
+
+  if (result.action === 'force-execute') {
+    const usageId = machine.blackboard.get('currentUsageId');
+    const usage = usageId
+      ? definitions.get<AiAbilityUsageDefinition>(usageId)
+      : undefined;
+    enemyTelegraphs.cancel(enemy.mesh);
+    if (usage) resolveEnemyCast(enemy, usage, 'watchdog-force-execute');
+    else machine.request('evaluate', 'watchdog-missing-usage');
+    return;
+  }
+
+  if (result.action === 'replan-nudge') {
+    const toPlayer = playerRoot.position.subtract(enemy.mesh.position);
+    toPlayer.y = 0;
+    if (toPlayer.lengthSquared() > 0.001) {
+      toPlayer.normalize();
+      const tangent = new Vector3(-toPlayer.z, 0, toPlayer.x);
+      const direction = machine.blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
+      enemy.mesh.position.addInPlace(tangent.scale(0.35 * direction));
+    }
+    machine.request('evaluate', 'watchdog-replan-nudge');
+    return;
+  }
+
+  machine.request('evaluate', 'watchdog-force-evaluate');
 }
 
 function spawnEnemy(
@@ -1997,6 +2100,7 @@ function killEnemy(enemy: Enemy): void {
   generateLoot(enemy.elite);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
   enemies = enemies.filter(e => e !== enemy);
+  enemyRuntimeWatchdog.remove(enemy.entityId);
   entities.destroy(enemy.entityId);
   if (enemies.length === 0) {
     wave++;
@@ -2059,6 +2163,7 @@ const developerActions: DeveloperActions = {
   killAllEnemies: () => {
     for (const enemy of [...enemies]) {
       enemyTelegraphs.cancel(enemy.mesh);
+      enemyRuntimeWatchdog.remove(enemy.entityId);
       entities.destroy(enemy.entityId);
     }
     enemies = [];
@@ -2655,6 +2760,7 @@ scene.onBeforeRenderObservable.add(() => {
     }
     if (!developerState.enemyAiEnabled) return;
     e.stateMachine.update(dt);
+    updateEnemyRuntimeWatchdog(e, dt);
   });
   [...enemies].filter(e => e.hp <= 0).forEach(killEnemy);
 
@@ -2825,6 +2931,13 @@ scene.onBeforeRenderObservable.add(() => {
           `Move Reason  ${inspectedEnemy.stateMachine.blackboard.get('movementReason') ?? 'none'}`,
           `Cast Reason  ${inspectedEnemy.stateMachine.blackboard.get('castReason') ?? 'none'}`,
           `Committed    ${inspectedEnemy.stateMachine.blackboard.get('committed') ? 'yes' : 'no'}`,
+          `State Time   ${inspectedEnemy.stateMachine.getTimeInState().toFixed(2)}s`,
+          `Watchdog     ${inspectedEnemy.stateMachine.blackboard.get('watchdogStatus') ?? 'n/a'}`,
+          `Stationary   ${(inspectedEnemy.stateMachine.blackboard.get('stationaryTime') ?? 0).toFixed(2)}s`,
+          `Recoveries   ${inspectedEnemy.stateMachine.blackboard.get('recoveryCount') ?? 0}`,
+          `Last Recover ${inspectedEnemy.stateMachine.blackboard.get('lastRecoveryReason') ?? 'none'}`,
+          `Cast Resolved ${inspectedEnemy.stateMachine.blackboard.get('castResolved') ? 'yes' : 'no'}`,
+          `Telegraph    ${enemyTelegraphs.isBusy(inspectedEnemy.mesh) ? 'active' : 'none'}`,
           `Decisions    ${inspectedEnemy.stateMachine.blackboard.get('decisionCount') ?? 0}`,
         ] : []),
       ].join('\n'),
@@ -2888,6 +3001,7 @@ window.addEventListener('beforeunload', () => {
   damageNumbers.dispose();
   hitFeedback.dispose();
   enemyTelegraphs.dispose();
+  enemyRuntimeWatchdog.clear();
   for (const unsubscribe of eventUnsubscribers) unsubscribe();
   events.clearQueue();
   events.clearSubscriptions();

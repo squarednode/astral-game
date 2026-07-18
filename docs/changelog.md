@@ -4818,6 +4818,30 @@ It continues to show:
 - Cast reason
 - Commitment state
 
+# Changelog — 0.6.1e
+
+## Added
+
+- `EnemyRuntimeWatchdog`
+- Casting, movement, evaluate, and recovery watchdog rules
+- Automatic force-execute recovery for stalled casts
+- Automatic lateral nudge and replan for stalled movement
+- Runtime recovery counters and diagnostics
+
+## Changed
+
+- Enemy cast execution now uses a single idempotent resolver
+- Stale enemy telegraphs are cleared before new casts
+- Failed telegraph starts return enemies to evaluation
+- AI inspector now exposes watchdog and execution state
+
+## Fixed
+
+- Enemies remaining indefinitely in `casting`
+- Enemies becoming stuck after initially approaching
+- Stale telegraphs preventing later attacks
+- Movement states holding without displacement
+- Potential duplicate attacks during forced cast recovery
 
 ### Validate
 ```bash

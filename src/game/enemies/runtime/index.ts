@@ -8,3 +8,6 @@ export type {
   EnemyRuntimeActor,
   EnemyTacticalPlan,
 } from './EnemyRuntimeTypes';
+
+export { EnemyRuntimeWatchdog } from './EnemyRuntimeWatchdog';
+export type { EnemyRuntimeRecoveryAction, EnemyRuntimeWatchdogInput, EnemyRuntimeWatchdogResult } from './EnemyRuntimeWatchdog';
