@@ -80,6 +80,8 @@ import type {
   EliteModifierId,
 } from './game/definitions';
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
+import { EnemyTacticalController } from './game/enemies/runtime';
+import type { EnemyRuntimeActor } from './game/enemies/runtime';
 import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
@@ -313,6 +315,8 @@ if (combatLibraryValidation.errors.length > 0) {
     `Combat library validation failed:\n- ${combatLibraryValidation.errors.join('\n- ')}`,
   );
 }
+
+const enemyTactics = new EnemyTacticalController(definitions);
 
 function mat(
   name: string,
@@ -1112,140 +1116,6 @@ function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   return ring;
 }
 
-function chooseWeightedUsage(
-  candidates: readonly {
-    usage: Readonly<AiAbilityUsageDefinition>;
-    effectiveWeight: number;
-  }[],
-): Readonly<AiAbilityUsageDefinition> | null {
-  if (candidates.length === 0) return null;
-  const total = candidates.reduce(
-    (sum, candidate) => sum + candidate.effectiveWeight,
-    0,
-  );
-  let roll = Math.random() * total;
-  for (const candidate of candidates) {
-    roll -= candidate.effectiveWeight;
-    if (roll <= 0) return candidate.usage;
-  }
-  return candidates[candidates.length - 1].usage;
-}
-
-function findEnemyUsage(
-  enemy: Enemy,
-  role: EnemyDefinition['abilityUsage'][number]['role'],
-  readyOnly = true,
-): Readonly<AiAbilityUsageDefinition> | null {
-  for (const reference of enemy.definition.abilityUsage) {
-    if (reference.role !== role) continue;
-    const usage = definitions.get<AiAbilityUsageDefinition>(reference.usageId);
-    if (!usage) continue;
-    if (readyOnly && (enemy.abilityCooldowns.get(usage.abilityId) ?? 0) > 0) continue;
-    return usage;
-  }
-  return null;
-}
-
-function findReadyEnemyUsage(
-  enemy: Enemy,
-  role: EnemyDefinition['abilityUsage'][number]['role'],
-): Readonly<AiAbilityUsageDefinition> | null {
-  return findEnemyUsage(enemy, role, true);
-}
-
-function selectFallbackEnemyUsage(
-  enemy: Enemy,
-): Readonly<AiAbilityUsageDefinition> | null {
-  return (
-    findEnemyUsage(enemy, 'primary', false) ??
-    findEnemyUsage(enemy, 'secondary', false) ??
-    findEnemyUsage(enemy, 'defensive', false) ??
-    findEnemyUsage(enemy, 'escape', false)
-  );
-}
-
-function selectEnemyUsage(enemy: Enemy): Readonly<AiAbilityUsageDefinition> | null {
-  const distance = Vector3.Distance(
-    enemy.mesh.position,
-    playerRoot.position,
-  );
-  const healthPercent = Math.max(0, enemy.hp / enemy.maxHp);
-
-  // Roles with strong positioning identities choose a tactical category first.
-  // This prevents archers and assassins from selecting an unusable option and idling.
-  if (enemy.definition.role === 'archer') {
-    if (distance < 5) return findReadyEnemyUsage(enemy, 'escape') ?? findReadyEnemyUsage(enemy, 'primary');
-    return findReadyEnemyUsage(enemy, 'primary') ?? findReadyEnemyUsage(enemy, 'secondary');
-  }
-  if (enemy.definition.role === 'assassin') {
-    if (distance > 2.6) return findReadyEnemyUsage(enemy, 'secondary') ?? findReadyEnemyUsage(enemy, 'primary');
-    return findReadyEnemyUsage(enemy, 'primary') ?? findReadyEnemyUsage(enemy, 'escape');
-  }
-  if (enemy.definition.role === 'wolf' || enemy.definition.role === 'mother-wolf') {
-    if (distance > 2.5) return findReadyEnemyUsage(enemy, 'secondary') ?? findReadyEnemyUsage(enemy, 'primary');
-    return findReadyEnemyUsage(enemy, 'primary') ?? findReadyEnemyUsage(enemy, 'defensive');
-  }
-
-  const candidates = enemy.definition.abilityUsage
-    .map(reference => ({
-      reference,
-      usage: definitions.get<AiAbilityUsageDefinition>(
-        reference.usageId,
-      ),
-    }))
-    .filter((candidate): candidate is {
-      reference: EnemyDefinition['abilityUsage'][number];
-      usage: Readonly<AiAbilityUsageDefinition>;
-    } => Boolean(candidate.usage))
-    .filter(({ usage }) =>
-      healthPercent >= usage.minimumHealthPercent &&
-      healthPercent <= usage.maximumHealthPercent &&
-      (enemy.abilityCooldowns.get(usage.abilityId) ?? 0) <= 0
-    )
-    .filter(({ reference, usage }) =>
-      reference.role !== 'escape' || distance <= usage.maximumRange
-    )
-    .map(candidate => {
-      const inRange =
-        distance >= candidate.usage.minimumRange &&
-        distance <= candidate.usage.maximumRange;
-      const rangeError = inRange
-        ? 0
-        : distance < candidate.usage.minimumRange
-          ? candidate.usage.minimumRange - distance
-          : distance - candidate.usage.maximumRange;
-      const roleMultiplier =
-        candidate.reference.role === 'escape' &&
-        distance < enemy.definition.preferredRange * 0.45
-          ? 5
-          : candidate.reference.role === 'defensive' &&
-              healthPercent < 0.45
-            ? 3
-            : candidate.reference.role === 'primary'
-              ? 1.35
-              : 1;
-      return {
-        ...candidate,
-        inRange,
-        rangeError,
-        effectiveWeight:
-          candidate.usage.weight *
-          roleMultiplier *
-          (inRange ? 3 : 1 / (1 + rangeError * 0.15)),
-      };
-    });
-
-  const inRange = candidates.filter(candidate => candidate.inRange);
-  if (inRange.length > 0) return chooseWeightedUsage(inRange);
-
-  // Select a real combat ability first, then let positioning move into its band.
-  // This prevents ranged archetypes from wandering without a tactical purpose.
-  const positionable = candidates.filter(
-    candidate => candidate.reference.role !== 'escape',
-  );
-  return chooseWeightedUsage(positionable.length > 0 ? positionable : candidates);
-}
-
 function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
   const ability = definitions.require<AbilityDefinition>(usage.abilityId);
   const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
@@ -1331,6 +1201,46 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
   enemy.attackCd = 0.2;
 }
 
+function toEnemyRuntimeActor(enemy: Enemy): EnemyRuntimeActor {
+  return {
+    definition: enemy.definition,
+    position: enemy.mesh.position,
+    speed: enemy.speed,
+    hp: enemy.hp,
+    maxHp: enemy.maxHp,
+    abilityCooldowns: enemy.abilityCooldowns,
+  };
+}
+
+function applyEnemyPlanToBlackboard(
+  enemy: Enemy,
+  activeMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>,
+  distance: number,
+  usage: Readonly<AiAbilityUsageDefinition>,
+  ready: boolean,
+  cooldownRemaining: number,
+  canCast: boolean,
+  castReason: string,
+  positioningIntent: EnemyBlackboard['positioningIntent'],
+  movementReason: string,
+): void {
+  const blackboard = activeMachine.blackboard;
+  blackboard.set('distanceToTarget', distance);
+  blackboard.set('lastSeenPosition', playerRoot.position.clone());
+  blackboard.set('currentAbilityId', usage.abilityId);
+  blackboard.set('currentUsageId', usage.id);
+  blackboard.set('desiredRange', usage.preferredRange);
+  blackboard.set('minimumRange', usage.minimumRange);
+  blackboard.set('maximumRange', usage.maximumRange);
+  blackboard.set('selectedAbilityReady', ready);
+  blackboard.set('cooldownRemaining', cooldownRemaining);
+  blackboard.set('canCast', canCast);
+  blackboard.set('castReason', castReason);
+  blackboard.set('positioningIntent', positioningIntent);
+  blackboard.set('movementReason', movementReason);
+  blackboard.set('movementStyle', enemy.definition.movementStyle);
+}
+
 function createEnemyStateMachine(
   enemy: Enemy,
 ): StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard> {
@@ -1358,7 +1268,7 @@ function createEnemyStateMachine(
       castReason: 'no ability selected',
       positioningIntent: 'none',
       movementStyle: enemy.definition.movementStyle,
-      movementReason: 'awaiting first decision',
+      movementReason: 'awaiting tactical controller',
       selectedAbilityReady: false,
       cooldownRemaining: 0,
       homePosition: enemy.mesh.position.clone(),
@@ -1375,77 +1285,25 @@ function createEnemyStateMachine(
         const blackboard = activeMachine.blackboard;
         blackboard.set('decisionCount', blackboard.get('decisionCount') + 1);
         const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
-        blackboard.set('distanceToTarget', distance);
-        blackboard.set('lastSeenPosition', playerRoot.position.clone());
+        const plan = enemyTactics.plan(toEnemyRuntimeActor(enemy), distance);
 
-        // Prefer a ready ability, but always retain a fallback combat ability.
-        // This prevents melee actors from standing still while every attack is cooling down.
-        const readyUsage = selectEnemyUsage(enemy);
-        const usage = readyUsage ?? selectFallbackEnemyUsage(enemy);
-        if (!usage) {
-          blackboard.set('currentAbilityId', null);
-          blackboard.set('currentUsageId', null);
-          blackboard.set('canCast', false);
-          blackboard.set('selectedAbilityReady', false);
-          blackboard.set('cooldownRemaining', 0);
-          blackboard.set('castReason', 'enemy has no valid ability usage');
-          blackboard.set('positioningIntent', 'hold');
-          blackboard.set('movementReason', 'definition has no usable ability');
-          activeMachine.request('recover', 'no-valid-ability');
-          return;
-        }
-
-        const cooldownRemaining = enemy.abilityCooldowns.get(usage.abilityId) ?? 0;
-        const selectedAbilityReady = cooldownRemaining <= 0;
-        const inRange = distance >= usage.minimumRange && distance <= usage.maximumRange;
-
-        blackboard.set('currentAbilityId', usage.abilityId);
-        blackboard.set('currentUsageId', usage.id);
-        blackboard.set('desiredRange', usage.preferredRange);
-        blackboard.set('minimumRange', usage.minimumRange);
-        blackboard.set('maximumRange', usage.maximumRange);
-        blackboard.set('selectedAbilityReady', selectedAbilityReady);
-        blackboard.set('cooldownRemaining', cooldownRemaining);
-        blackboard.set('canCast', selectedAbilityReady && inRange);
-        blackboard.set(
-          'castReason',
-          !selectedAbilityReady
-            ? `selected ability cooling down (${cooldownRemaining.toFixed(2)}s)`
-            : inRange
-              ? 'ready and in selected ability range'
-              : distance < usage.minimumRange
-                ? 'too close for selected ability'
-                : 'too far for selected ability',
+        applyEnemyPlanToBlackboard(
+          enemy,
+          activeMachine,
+          distance,
+          plan.ability.usage,
+          plan.ability.ready,
+          plan.ability.cooldownRemaining,
+          plan.movement.canCast,
+          plan.ability.reason,
+          plan.movement.intent,
+          `tactical controller: ${plan.movement.reason}`,
         );
 
-        if (selectedAbilityReady && inRange) {
-          blackboard.set('positioningIntent', 'hold');
-          blackboard.set('movementReason', 'cast is valid now');
-          activeMachine.request('casting', 'ability-ready');
-          return;
-        }
-
-        blackboard.set(
-          'positioningIntent',
-          distance > usage.maximumRange
-            ? 'advance'
-            : distance < usage.minimumRange
-              ? enemy.definition.movementStyle === 'hold-range' ||
-                enemy.definition.movementStyle === 'hit-and-run'
-                ? 'retreat'
-                : 'hold'
-              : enemy.definition.movementStyle === 'skirmish' ||
-                  enemy.definition.movementStyle === 'hit-and-run'
-                ? 'circle'
-                : 'hold',
+        activeMachine.request(
+          plan.movement.canCast ? 'casting' : 'reposition',
+          plan.movement.canCast ? 'tactical-plan-cast' : 'tactical-plan-position',
         );
-        blackboard.set(
-          'movementReason',
-          selectedAbilityReady
-            ? 'positioning for selected ability'
-            : 'maintaining combat pressure while cooldown recovers',
-        );
-        activeMachine.request('reposition', 'audit-position-for-ability');
       },
     })
     .addState({
@@ -1457,12 +1315,6 @@ function createEnemyStateMachine(
         }
 
         const blackboard = activeMachine.blackboard;
-        const toPlayer = playerRoot.position.subtract(enemy.mesh.position);
-        toPlayer.y = 0;
-        const distance = toPlayer.length();
-        blackboard.set('distanceToTarget', distance);
-        blackboard.set('lastSeenPosition', playerRoot.position.clone());
-
         const usageId = blackboard.get('currentUsageId');
         const usage = usageId
           ? definitions.get<AiAbilityUsageDefinition>(usageId)
@@ -1472,104 +1324,83 @@ function createEnemyStateMachine(
           return;
         }
 
-        const minimum = usage.minimumRange;
-        const maximum = usage.maximumRange;
-        const cooldownRemaining = enemy.abilityCooldowns.get(usage.abilityId) ?? 0;
-        const selectedAbilityReady = cooldownRemaining <= 0;
-        const inRange = distance >= minimum && distance <= maximum;
+        const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+        const actor = toEnemyRuntimeActor(enemy);
+        const ability = enemyTactics.abilities.inspect(actor, usage, distance);
+        const movement = enemyTactics.movement.decide(actor, ability, distance);
+
+        applyEnemyPlanToBlackboard(
+          enemy,
+          activeMachine,
+          distance,
+          usage,
+          ability.ready,
+          ability.cooldownRemaining,
+          movement.canCast,
+          ability.reason,
+          movement.intent,
+          `movement controller: ${movement.reason}`,
+        );
+
+        if (movement.canCast) {
+          activeMachine.request('casting', 'movement-plan-cast-ready');
+          return;
+        }
+
         const slow = (enemy.statuses.frost ?? 0) > 0 ? 0.58 : 1;
-        const moveStep = enemy.speed * dt * slow;
+        const orbitDirection = blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
+        enemyTactics.movement.apply(
+          enemy.mesh.position,
+          playerRoot.position,
+          movement,
+          enemy.speed * slow,
+          dt,
+          orbitDirection,
+        );
 
-        blackboard.set('minimumRange', minimum);
-        blackboard.set('maximumRange', maximum);
-        blackboard.set('selectedAbilityReady', selectedAbilityReady);
-        blackboard.set('cooldownRemaining', cooldownRemaining);
-        blackboard.set('canCast', selectedAbilityReady && inRange);
-
-        if (selectedAbilityReady && inRange) {
-          blackboard.set('castReason', 'ready after tactical positioning');
-          blackboard.set('positioningIntent', 'hold');
-          blackboard.set('movementReason', 'selected ability can execute');
-          activeMachine.request('casting', 'selected-ability-ready-in-range');
-          return;
+        if (activeMachine.getTimeInState() >= 0.45) {
+          activeMachine.request('evaluate', 'tactical-replan');
         }
-
-        if (toPlayer.lengthSquared() <= 0.001) {
-          blackboard.set('positioningIntent', 'hold');
-          blackboard.set('movementReason', 'target direction is unresolved');
-          return;
-        }
-
-        const forward = toPlayer.normalize();
-        if (distance > maximum) {
-          blackboard.set('castReason', 'too far for selected ability');
-          blackboard.set('positioningIntent', 'advance');
-          blackboard.set('movementReason', `${enemy.definition.movementStyle}: closing to ${maximum.toFixed(1)}m`);
-          enemy.mesh.position.addInPlace(forward.scale(moveStep));
-          return;
-        }
-
-        if (distance < minimum) {
-          const retreats =
-            enemy.definition.movementStyle === 'hold-range' ||
-            enemy.definition.movementStyle === 'hit-and-run';
-          blackboard.set('castReason', 'too close for selected ability');
-          blackboard.set('positioningIntent', retreats ? 'retreat' : 'hold');
-          blackboard.set(
-            'movementReason',
-            retreats
-              ? `${enemy.definition.movementStyle}: restoring minimum range`
-              : `${enemy.definition.movementStyle}: maintaining pressure`,
-          );
-          if (retreats) enemy.mesh.position.addInPlace(forward.scale(-moveStep));
-          return;
-        }
-
-        // The selected ability is in range but still cooling down.
-        // Mobile melee roles keep moving so they remain visually active,
-        // while pressure/tank/ranged roles hold their useful combat band.
-        if (
-          enemy.definition.movementStyle === 'skirmish' ||
-          enemy.definition.movementStyle === 'hit-and-run'
-        ) {
-          const tangent = new Vector3(-forward.z, 0, forward.x);
-          const direction = blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
-          blackboard.set('positioningIntent', 'circle');
-          blackboard.set('movementReason', `${enemy.definition.movementStyle}: orbiting during cooldown`);
-          blackboard.set('castReason', `in range; cooldown ${cooldownRemaining.toFixed(2)}s`);
-          enemy.mesh.position.addInPlace(tangent.scale(moveStep * 0.65 * direction));
-          return;
-        }
-
-        blackboard.set('positioningIntent', 'hold');
-        blackboard.set('movementReason', `${enemy.definition.movementStyle}: holding valid combat range`);
-        blackboard.set('castReason', `in range; cooldown ${cooldownRemaining.toFixed(2)}s`);
       },
     })
     .addState({
       id: 'casting',
       enter: (_context, activeMachine) => {
         const usageId = activeMachine.blackboard.get('currentUsageId');
-        const usage = usageId ? definitions.get<AiAbilityUsageDefinition>(usageId) : undefined;
+        const usage = usageId
+          ? definitions.get<AiAbilityUsageDefinition>(usageId)
+          : undefined;
         const abilityId = activeMachine.blackboard.get('currentAbilityId');
-        const ability = abilityId ? definitions.get<AbilityDefinition>(abilityId) : undefined;
-        if (!usage || !ability) { activeMachine.request('evaluate', 'missing-ability'); return; }
-        const cooldownRemaining = enemy.abilityCooldowns.get(ability.id) ?? 0;
-        if (cooldownRemaining > 0) {
-          activeMachine.blackboard.set('selectedAbilityReady', false);
-          activeMachine.blackboard.set('cooldownRemaining', cooldownRemaining);
-          activeMachine.blackboard.set('castReason', `cast blocked by cooldown (${cooldownRemaining.toFixed(2)}s)`);
-          activeMachine.request('reposition', 'selected-ability-cooling-down');
+        const ability = abilityId
+          ? definitions.get<AbilityDefinition>(abilityId)
+          : undefined;
+        if (!usage || !ability) {
+          activeMachine.request('evaluate', 'missing-ability');
           return;
         }
-        activeMachine.blackboard.set('selectedAbilityReady', true);
-        activeMachine.blackboard.set('cooldownRemaining', 0);
+
+        const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+        const decision = enemyTactics.abilities.inspect(
+          toEnemyRuntimeActor(enemy),
+          usage,
+          distance,
+        );
+        if (!decision.ready || !decision.inRange) {
+          activeMachine.blackboard.set('selectedAbilityReady', decision.ready);
+          activeMachine.blackboard.set('cooldownRemaining', decision.cooldownRemaining);
+          activeMachine.blackboard.set('castReason', decision.reason);
+          activeMachine.request('reposition', 'cast-precondition-changed');
+          return;
+        }
+
         activeMachine.blackboard.set('committed', enemy.definition.policy === 'boss');
         enemyTelegraphs.begin(enemy.mesh, enemy.elite, () => {
           if (enemy.hp <= 0 || !enemies.includes(enemy)) return;
           activeMachine.blackboard.set('committed', true);
           executeEnemyAbility(enemy, usage);
-          if (enemy.stateMachine.getCurrentStateId() === 'casting') enemy.stateMachine.request('recover', 'ability-resolved');
+          if (enemy.stateMachine.getCurrentStateId() === 'casting') {
+            enemy.stateMachine.request('recover', 'ability-resolved');
+          }
         });
       },
       update: (_context, activeMachine) => {
@@ -1582,7 +1413,11 @@ function createEnemyStateMachine(
     .addState({
       id: 'recover',
       duration: () => enemy.definition.recoverDuration,
-      timeout: { to: 'evaluate', reason: 'recovery-complete', guard: () => enemy.hp > 0 },
+      timeout: {
+        to: 'evaluate',
+        reason: 'recovery-complete',
+        guard: () => enemy.hp > 0,
+      },
       update: (_context, activeMachine) => {
         if (enemy.hp <= 0) activeMachine.request('dead', 'health-depleted');
       },
@@ -2975,6 +2810,7 @@ scene.onBeforeRenderObservable.add(() => {
           `Pack Alert   ${inspectedEnemy.stateMachine.blackboard.get('packAlerted') ? 'yes' : 'no'}`,
           `Policy       ${inspectedEnemy.elite ? 'elite' : inspectedEnemy.definition.policy}`,
           `Move Style   ${inspectedEnemy.definition.movementStyle}`,
+          'Runtime      tactical > movement > ability',
           `Modifier     ${inspectedEnemy.modifier.name}`,
           `State        ${inspectedEnemy.stateMachine.getCurrentStateId() ?? 'none'}`,
           `HP           ${Math.max(0, inspectedEnemy.hp).toFixed(0)} / ${inspectedEnemy.maxHp.toFixed(0)}`,

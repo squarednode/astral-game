@@ -4692,6 +4692,132 @@ These values make it possible to distinguish an intentional hold from a missing 
 2. Boss positions for melee, leap, projectile, and defensive mechanics.
 3. Boss casts remain committed once started.
 
+# Astral 0.6.1d - Enemy Runtime Refactor
+
+This milestone replaces the monolithic enemy decision path with three focused
+runtime controllers.
+
+```text
+Enemy Definition
+      |
+      v
+Tactical Controller
+      |
+      +--> Ability Controller
+      |
+      +--> Movement Controller
+      |
+      v
+Enemy State Machine
+```
+
+## Why this refactor was required
+
+Variant-specific failures were appearing across unrelated combinations such as
+Skeleton melee, Bandit Fire Mage, and Astral Assassin. Because variants only
+change stat multipliers, those failures pointed to the shared interpreter rather
+than the individual definitions.
+
+The previous state machine selected abilities, evaluated cooldowns, inferred
+role behavior, calculated movement, and executed state transitions in one
+large block. The new runtime gives each concern one owner.
+
+## New runtime modules
+
+```text
+src/game/enemies/runtime/
+  EnemyAbilityController.ts
+  EnemyMovementController.ts
+  EnemyTacticalController.ts
+  EnemyRuntimeTypes.ts
+  index.ts
+```
+
+### Tactical Controller
+
+Creates one complete combat plan:
+
+- Select an ability.
+- Determine whether it can cast now.
+- Request advance, retreat, circle, or hold.
+
+### Ability Controller
+
+Owns:
+
+- Ability-usage lookup.
+- Health requirements.
+- Cooldown readiness.
+- Ability-role preference.
+- Range validity.
+- Stable scoring across movement styles.
+
+No logic depends on enemy variant. Skeleton, Bandit, Goblin, and Astral variants
+therefore run through the same path for a given archetype.
+
+### Movement Controller
+
+Owns:
+
+- Advance.
+- Retreat.
+- Circle.
+- Hold.
+- Actual position updates.
+
+It never selects abilities or starts casts.
+
+## Shared state flow
+
+Every current archetype now uses:
+
+```text
+evaluate
+  -> tactical plan
+  -> reposition when required
+  -> cast when ready and in range
+  -> recover
+  -> evaluate
+```
+
+The selected ability remains stable while repositioning. A tactical re-plan
+occurs every 0.45 seconds so an enemy cannot remain attached indefinitely to an
+obsolete choice.
+
+## Expected archetype behavior
+
+| Archetype | Expected runtime behavior |
+|---|---|
+| Grunt | Advance, strike, maintain pressure |
+| Brute | Advance, slam or charge, hold ground |
+| Archer | Advance into range, shoot, retreat when crowded |
+| Fire Mage | Advance into range, cast, hold range |
+| Frost Caster | Advance into range, cast, retreat when crowded |
+| Assassin | Dash or advance, strike, circle or retreat during downtime |
+| Crab | Slow advance, pinch or slam, hold pressure |
+| Wolf | Lunge or advance, bite, circle during downtime |
+| Mother Wolf | Pack-leader pressure plus howl |
+| Boss | Position for a selected mechanic and commit to execution |
+
+## Developer diagnostics
+
+The AI inspector now explicitly identifies the ownership chain:
+
+```text
+Runtime tactical > movement > ability
+```
+
+It continues to show:
+
+- Selected ability
+- Readiness and cooldown
+- Current range band
+- Cast validity
+- Positioning intent
+- Movement reason
+- Cast reason
+- Commitment state
+
 
 ### Validate
 ```bash
