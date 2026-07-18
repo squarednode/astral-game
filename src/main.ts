@@ -50,6 +50,13 @@ import {
   validateCombatTagDefinition,
   validateAiAbilityUsageDefinition,
   validateCombatLibraryReferences,
+  ENEMY_DEFINITION_SCHEMA_VERSION,
+  enemyDefinitions,
+  enemyVariantDefinitions,
+  eliteModifierDefinitions,
+  validateEnemyDefinition,
+  validateEnemyVariantDefinition,
+  validateEliteModifierDefinition,
 } from './game/definitions';
 import type {
   CharacterDefinition,
@@ -61,6 +68,12 @@ import type {
   DamageProfileDefinition,
   CombatTagDefinition,
   AiAbilityUsageDefinition,
+  EnemyDefinition,
+  EnemyVariantDefinition,
+  EliteModifierDefinition,
+  EnemyCombatRole,
+  EnemyVariantId,
+  EliteModifierId,
 } from './game/definitions';
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
 import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
@@ -122,20 +135,34 @@ interface CharacterState extends CharacterDef {
   shieldRemaining: number;
 }
 
-type StandardEnemyStateId =
-  | 'idle'
-  | 'chase'
-  | 'attack-windup'
+type EnemyStateId =
+  | 'evaluate'
+  | 'reposition'
+  | 'casting'
   | 'recover'
   | 'dead';
 
-interface StandardEnemyStateContext {
+interface EnemyBlackboard {
+  targetId: string;
+  distanceToTarget: number;
+  lastSeenPosition: Vector3;
+  desiredRange: number;
+  currentAbilityId: string | null;
+  currentUsageId: string | null;
+  committed: boolean;
+  homePosition: Vector3;
+  decisionCount: number;
+}
+
+interface EnemyStateContext {
   enemy: Enemy;
-  recoverDuration: number;
 }
 
 interface Enemy {
   entityId: string;
+  definition: Readonly<EnemyDefinition>;
+  variant: Readonly<EnemyVariantDefinition>;
+  modifier: Readonly<EliteModifierDefinition>;
   healthComponent: HealthComponent;
   mesh: Mesh;
   hp: number;
@@ -144,12 +171,10 @@ interface Enemy {
   damage: number;
   elite: boolean;
   attackCd: number;
+  abilityCooldowns: Map<string, number>;
   statuses: Partial<Record<Element, number>>;
   knockbackVelocity: Vector3;
-  stateMachine?: StateMachine<
-    StandardEnemyStateContext,
-    StandardEnemyStateId
-  >;
+  stateMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>;
 }
 
 interface LootItem {
@@ -240,6 +265,24 @@ definitions.registerKind<AbilityDefinition>(
 );
 definitions.registerMany(abilityDefinitions);
 definitions.registerMany(aiAbilityUsageDefinitions);
+definitions.registerKind<EnemyDefinition>(
+  'enemy',
+  ENEMY_DEFINITION_SCHEMA_VERSION,
+  validateEnemyDefinition,
+);
+definitions.registerKind<EnemyVariantDefinition>(
+  'enemy-variant',
+  ENEMY_DEFINITION_SCHEMA_VERSION,
+  validateEnemyVariantDefinition,
+);
+definitions.registerKind<EliteModifierDefinition>(
+  'elite-modifier',
+  ENEMY_DEFINITION_SCHEMA_VERSION,
+  validateEliteModifierDefinition,
+);
+definitions.registerMany(enemyDefinitions);
+definitions.registerMany(enemyVariantDefinitions);
+definitions.registerMany(eliteModifierDefinitions);
 
 const combatLibraryValidation = validateCombatLibraryReferences(definitions);
 if (combatLibraryValidation.errors.length > 0) {
@@ -1039,286 +1082,235 @@ function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   return ring;
 }
 
-function createStandardEnemyStateMachine(
+function weightedEnemyUsage(enemy: Enemy): AiAbilityUsageDefinition | null {
+  const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+  const healthPercent = Math.max(0, enemy.hp / enemy.maxHp);
+  const candidates = enemy.definition.abilityUsage
+    .map(reference => ({
+      reference,
+      usage: definitions.get<AiAbilityUsageDefinition>(reference.usageId),
+    }))
+    .filter((candidate): candidate is {
+      reference: EnemyDefinition['abilityUsage'][number];
+      usage: Readonly<AiAbilityUsageDefinition>;
+    } => Boolean(candidate.usage))
+    .filter(({ usage }) =>
+      distance >= usage.minimumRange &&
+      distance <= usage.maximumRange &&
+      healthPercent >= usage.minimumHealthPercent &&
+      healthPercent <= usage.maximumHealthPercent &&
+      (enemy.abilityCooldowns.get(usage.abilityId) ?? 0) <= 0
+    )
+    .map(candidate => ({
+      ...candidate,
+      effectiveWeight: candidate.usage.weight * (
+        candidate.reference.role === 'escape' && distance < enemy.definition.preferredRange * 0.45 ? 4 :
+        candidate.reference.role === 'defensive' && healthPercent < 0.45 ? 3 :
+        candidate.reference.role === 'primary' ? 1.35 : 1
+      ),
+    }));
+
+  if (candidates.length === 0) return null;
+  const total = candidates.reduce((sum, candidate) => sum + candidate.effectiveWeight, 0);
+  let roll = Math.random() * total;
+  for (const candidate of candidates) {
+    roll -= candidate.effectiveWeight;
+    if (roll <= 0) return candidate.usage;
+  }
+  return candidates[candidates.length - 1].usage;
+}
+
+function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
+  const ability = definitions.require<AbilityDefinition>(usage.abilityId);
+  const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+  const power = (ability.power ?? ability.damage ?? enemy.damage) * usage.powerMultiplier;
+
+  if (ability.id === 'ability.retreat') {
+    const away = enemy.mesh.position.subtract(playerRoot.position); away.y = 0;
+    if (away.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(away.normalize().scale(ability.range));
+  } else if (ability.id === 'ability.charge') {
+    const toward = playerRoot.position.subtract(enemy.mesh.position); toward.y = 0;
+    if (toward.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(toward.normalize().scale(Math.min(ability.range, Math.max(0, distance - 1.5))));
+  }
+
+  const resolvedDistance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+  const hitRange = Math.max(ability.range, usage.maximumRange) + 0.75;
+  if (resolvedDistance <= hitRange && !ability.abilityTags.includes('defensive')) {
+    hurtActive(Math.max(enemy.damage, power));
+  }
+
+  const color = ability.element === 'fire'
+    ? new Color3(1, 0.28, 0.08)
+    : ability.element === 'frost'
+      ? new Color3(0.45, 0.85, 1)
+      : ability.element === 'lightning'
+        ? new Color3(0.75, 0.65, 1)
+        : new Color3(1, 0.55, 0.2);
+  vfxRing(enemy.mesh.position, color, Math.max(1.5, ability.radius ?? 2.2), 0.28);
+  enemy.abilityCooldowns.set(ability.id, ability.cooldown * usage.cooldownMultiplier);
+  enemy.attackCd = 0.2;
+}
+
+function createEnemyStateMachine(
   enemy: Enemy,
-): StateMachine<
-  StandardEnemyStateContext,
-  StandardEnemyStateId
-> {
+): StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard> {
   const machineId = `enemy-${enemy.entityId}`;
-  const context: StandardEnemyStateContext = {
-    enemy,
-    recoverDuration: 0.35,
-  };
-
-  return new StateMachine<
-    StandardEnemyStateContext,
-    StandardEnemyStateId
-  >(
+  const machine = new StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>(
     machineId,
-    context,
+    { enemy },
     {
-      onEntered: (state, from) => {
-        events.emit('state.entered', {
-          machineId,
-          state,
-          from,
-        });
-      },
-      onExited: (state, to) => {
-        events.emit('state.exited', {
-          machineId,
-          state,
-          to,
-        });
-      },
-      onChanged: (from, to, reason) => {
-        events.emit('state.changed', {
-          machineId,
-          from,
-          to,
-          reason,
-        });
-      },
-      onRejected: result => {
-        events.emit('state.transitionRejected', {
-          machineId,
-          from: result.from,
-          to: result.to,
-          rejectedBy: result.rejectedBy ?? 'unknown',
-        });
-      },
+      onEntered: (state, from) => events.emit('state.entered', { machineId, state, from }),
+      onExited: (state, to) => events.emit('state.exited', { machineId, state, to }),
+      onChanged: (from, to, reason) => events.emit('state.changed', { machineId, from, to, reason }),
+      onRejected: result => events.emit('state.transitionRejected', { machineId, from: result.from, to: result.to, rejectedBy: result.rejectedBy ?? 'unknown' }),
     },
-  )
+    {
+      targetId: 'player',
+      distanceToTarget: 0,
+      lastSeenPosition: playerRoot.position.clone(),
+      desiredRange: enemy.definition.preferredRange,
+      currentAbilityId: null,
+      currentUsageId: null,
+      committed: enemy.definition.policy === 'boss',
+      homePosition: enemy.mesh.position.clone(),
+      decisionCount: 0,
+    },
+  );
+
+  return machine
     .addState({
-      id: 'idle',
-      update: (stateContext, machine) => {
-        if (stateContext.enemy.hp <= 0) {
-          machine.request('dead', 'health-depleted');
-          return;
+      id: 'evaluate',
+      enter: (_context, activeMachine) => {
+        const blackboard = activeMachine.blackboard;
+        blackboard.set('decisionCount', blackboard.get('decisionCount') + 1);
+        const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+        blackboard.set('distanceToTarget', distance);
+        blackboard.set('lastSeenPosition', playerRoot.position.clone());
+        const usage = weightedEnemyUsage(enemy);
+        if (usage) {
+          blackboard.set('currentAbilityId', usage.abilityId);
+          blackboard.set('currentUsageId', usage.id);
+          blackboard.set('desiredRange', usage.preferredRange);
+          activeMachine.request('casting', 'ability-selected');
+        } else {
+          activeMachine.request('reposition', 'no-valid-ability');
         }
-
-        const distance = Vector3.Distance(
-          stateContext.enemy.mesh.position,
-          playerRoot.position,
-        );
-
-        if (
-          distance <= GameBalance.combat.enemyAttackRange &&
-          stateContext.enemy.attackCd <= 0
-        ) {
-          machine.request(
-            'attack-windup',
-            'player-in-attack-range',
-          );
-          return;
-        }
-
-        machine.request('chase', 'acquire-player');
       },
     })
     .addState({
-      id: 'chase',
-      update: (stateContext, machine, dt) => {
-        const target = stateContext.enemy;
-
-        if (target.hp <= 0) {
-          machine.request('dead', 'health-depleted');
-          return;
-        }
-
-        const toPlayer = playerRoot.position.subtract(
-          target.mesh.position,
-        );
-        toPlayer.y = 0;
+      id: 'reposition',
+      update: (_context, activeMachine, dt) => {
+        if (enemy.hp <= 0) { activeMachine.request('dead', 'health-depleted'); return; }
+        const toPlayer = playerRoot.position.subtract(enemy.mesh.position); toPlayer.y = 0;
         const distance = toPlayer.length();
-
-        if (
-          distance <= GameBalance.combat.enemyAttackRange &&
-          target.attackCd <= 0
-        ) {
-          machine.request(
-            'attack-windup',
-            'player-in-attack-range',
-          );
-          return;
-        }
-
-        if (
-          distance > 0.001 &&
-          !enemyTelegraphs.isBusy(target.mesh)
-        ) {
-          const slow =
-            (target.statuses.frost ?? 0) > 0 ? 0.58 : 1;
-          target.mesh.position.addInPlace(
-            toPlayer.normalize().scale(
-              target.speed * dt * slow,
-            ),
-          );
+        activeMachine.blackboard.set('distanceToTarget', distance);
+        const desired = activeMachine.blackboard.get('desiredRange');
+        const slow = (enemy.statuses.frost ?? 0) > 0 ? 0.58 : 1;
+        if (distance > desired + 1.25 && toPlayer.lengthSquared() > 0.001) {
+          enemy.mesh.position.addInPlace(toPlayer.normalize().scale(enemy.speed * dt * slow));
+        } else if (distance < desired - 1.25 && desired > 5 && toPlayer.lengthSquared() > 0.001) {
+          enemy.mesh.position.addInPlace(toPlayer.normalize().scale(-enemy.speed * dt * slow));
+        } else {
+          activeMachine.request('evaluate', 'position-reached');
         }
       },
     })
     .addState({
-      id: 'attack-windup',
-      interactions: [
-        {
-          type: 'attack-resolved',
-          to: 'recover',
-          reason: 'attack-resolved',
-        },
-      ],
-      enter: stateContext => {
-        const target = stateContext.enemy;
-
-        enemyTelegraphs.begin(
-          target.mesh,
-          false,
-          () => {
-            if (
-              target.hp <= 0 ||
-              !enemies.includes(target)
-            ) {
-              return;
-            }
-
-            const strikeDistance = Vector3.Distance(
-              target.mesh.position,
-              playerRoot.position,
-            );
-
-            if (
-              strikeDistance <=
-              GameBalance.combat.enemyAttackRange + 0.35
-            ) {
-              hurtActive(target.damage);
-            }
-
-            target.attackCd = 1.55;
-
-            if (
-              target.stateMachine?.getCurrentStateId() ===
-              'attack-windup'
-            ) {
-              target.stateMachine.interact(
-                'attack-resolved',
-              );
-            }
-          },
-        );
+      id: 'casting',
+      enter: (_context, activeMachine) => {
+        const usageId = activeMachine.blackboard.get('currentUsageId');
+        const usage = usageId ? definitions.get<AiAbilityUsageDefinition>(usageId) : undefined;
+        const abilityId = activeMachine.blackboard.get('currentAbilityId');
+        const ability = abilityId ? definitions.get<AbilityDefinition>(abilityId) : undefined;
+        if (!usage || !ability) { activeMachine.request('evaluate', 'missing-ability'); return; }
+        activeMachine.blackboard.set('committed', enemy.definition.policy === 'boss');
+        enemyTelegraphs.begin(enemy.mesh, enemy.elite, () => {
+          if (enemy.hp <= 0 || !enemies.includes(enemy)) return;
+          activeMachine.blackboard.set('committed', true);
+          executeEnemyAbility(enemy, usage);
+          if (enemy.stateMachine.getCurrentStateId() === 'casting') enemy.stateMachine.request('recover', 'ability-resolved');
+        });
       },
-      update: (stateContext, machine) => {
-        if (stateContext.enemy.hp <= 0) {
-          machine.request('dead', 'health-depleted');
-        }
+      update: (_context, activeMachine) => {
+        if (enemy.hp <= 0) activeMachine.request('dead', 'health-depleted');
       },
-      exit: (stateContext, _machine, to) => {
-        if (to === 'dead') {
-          enemyTelegraphs.cancel(
-            stateContext.enemy.mesh,
-          );
-        }
+      exit: (_context, _machine, to) => {
+        if (to === 'dead') enemyTelegraphs.cancel(enemy.mesh);
       },
     })
     .addState({
       id: 'recover',
-      duration: stateContext => stateContext.recoverDuration,
-      timeout: {
-        to: 'chase',
-        reason: 'recovery-complete',
-        guard: stateContext => stateContext.enemy.hp > 0,
-      },
-      update: (stateContext, machine) => {
-        if (stateContext.enemy.hp <= 0) {
-          machine.request('dead', 'health-depleted');
-        }
+      duration: () => enemy.definition.recoverDuration,
+      timeout: { to: 'evaluate', reason: 'recovery-complete', guard: () => enemy.hp > 0 },
+      update: (_context, activeMachine) => {
+        if (enemy.hp <= 0) activeMachine.request('dead', 'health-depleted');
       },
     })
-    .addState({
-      id: 'dead',
-      enter: stateContext => {
-        enemyTelegraphs.cancel(
-          stateContext.enemy.mesh,
-        );
-      },
-    });
+    .addState({ id: 'dead', enter: () => enemyTelegraphs.cancel(enemy.mesh) });
 }
 
-function spawnEnemy(elite = false, spawnPosition?: Vector3): void {
+function spawnEnemy(
+  elite = false,
+  spawnPosition?: Vector3,
+  definitionId?: string,
+  variantId?: EnemyVariantId,
+  modifierId?: EliteModifierId,
+): void {
+  const archetypes = definitions.all<EnemyDefinition>('enemy');
+  const definition = definitionId
+    ? definitions.require<EnemyDefinition>(definitionId)
+    : archetypes[Math.floor(Math.random() * archetypes.length)];
+  const variants = definitions.all<EnemyVariantDefinition>('enemy-variant');
+  const variant = variantId
+    ? definitions.require<EnemyVariantDefinition>(`enemy-variant.${variantId}`)
+    : variants[Math.floor(Math.random() * variants.length)];
+  const resolvedModifierId = modifierId ?? (elite ? ['frozen', 'burning', 'fast', 'heavy', 'arcane', 'shielded'][Math.floor(Math.random() * 6)] as EliteModifierId : 'none');
+  const modifier = definitions.require<EliteModifierDefinition>(`elite-modifier.${resolvedModifierId}`);
+
   const angle = Math.random() * Math.PI * 2;
   const radius = 10 + Math.random() * 4;
-  const mesh = elite
-    ? MeshBuilder.CreateIcoSphere('elite', { radius: 0.95, subdivisions: 2 }, scene)
-    : MeshBuilder.CreateCapsule('enemy', { height: 1.5, radius: 0.46 }, scene);
-  if (spawnPosition) {
-    mesh.position.set(
-      spawnPosition.x,
-      elite ? 0.95 : 0.75,
-      spawnPosition.z,
-    );
-  } else {
-    mesh.position.set(
-      Math.cos(angle) * radius,
-      elite ? 0.95 : 0.75,
-      Math.sin(angle) * radius,
-    );
-  }
-  mesh.material = mat(elite ? 'elite' : 'enemy', elite ? new Color3(0.68, 0.2, 0.58) : new Color3(0.34, 0.5, 0.34), elite ? 0.2 : 0.03);
+  const mesh = definition.role === 'brute'
+    ? MeshBuilder.CreateIcoSphere('enemy-brute', { radius: elite ? 1.1 : 0.9, subdivisions: 2 }, scene)
+    : MeshBuilder.CreateCapsule(`enemy-${definition.role}`, { height: definition.role.includes('mage') || definition.role === 'frost-caster' ? 1.8 : 1.5, radius: elite ? 0.56 : 0.46 }, scene);
+  const y = definition.role === 'brute' ? (elite ? 1.1 : 0.9) : 0.75;
+  mesh.position.set(spawnPosition?.x ?? Math.cos(angle) * radius, y, spawnPosition?.z ?? Math.sin(angle) * radius);
+  const [r, g, b] = definition.color;
+  const [mr, mg, mb] = modifier.colorShift;
+  mesh.material = mat(`enemy-${definition.role}-${variant.variantId}-${modifier.modifierId}`, new Color3(Math.min(1, r + mr), Math.min(1, g + mg), Math.min(1, b + mb)), elite ? 0.2 : 0.04);
   shadows.addShadowCaster(mesh);
-  const hp = (elite ? 280 : 58) * (1 + (wave - 1) * 0.18);
-  const healthComponent: HealthComponent = {
-    current: hp,
-    maximum: hp,
-  };
-  const enemyEntity = entities
-    .create({
-      name: elite ? 'Elite Enemy' : 'Enemy',
-      tags: [
-        'actor',
-        'enemy',
-        elite ? 'elite' : 'standard',
-        'entity-owned-transform',
-      ],
-    })
-    .setComponent<TransformComponent>(
-      EntityComponentKeys.transform,
-      { node: mesh },
-    )
-    .setComponent<MetadataComponent>(
-      EntityComponentKeys.metadata,
-      {
-        archetype: elite ? 'enemy-elite' : 'enemy-standard',
-        persistent: false,
-      },
-    )
-    .setComponent<HealthComponent>(
-      EntityComponentKeys.health,
-      healthComponent,
-    )
-    .setComponent<EnemyComponent>(
-      EntityComponentKeys.enemy,
-      { elite, spawnWave: wave },
-    );
 
-  const enemy: Enemy = {
+  const waveScale = 1 + (wave - 1) * 0.18;
+  const hp = definition.maxHp * variant.hpMultiplier * modifier.hpMultiplier * waveScale;
+  const healthComponent: HealthComponent = { current: hp, maximum: hp };
+  const enemyEntity = entities.create({
+    name: `${elite ? modifier.name + ' ' : ''}${variant.name} ${definition.name}`,
+    tags: ['actor', 'enemy', elite ? 'elite' : 'standard', `role:${definition.role}`, `variant:${variant.variantId}`, 'entity-owned-transform'],
+  })
+    .setComponent<TransformComponent>(EntityComponentKeys.transform, { node: mesh })
+    .setComponent<MetadataComponent>(EntityComponentKeys.metadata, { archetype: definition.id, persistent: false })
+    .setComponent<HealthComponent>(EntityComponentKeys.health, healthComponent)
+    .setComponent<EnemyComponent>(EntityComponentKeys.enemy, { elite, spawnWave: wave });
+
+  const enemy = {} as Enemy;
+  Object.assign(enemy, {
     entityId: enemyEntity.id,
+    definition,
+    variant,
+    modifier,
     healthComponent,
     mesh,
     hp,
     maxHp: hp,
-    speed: elite ? 2.1 : 2.65 + Math.random() * 0.7,
-    damage: (elite ? 19 : 8) * (1 + wave * 0.08),
+    speed: definition.movementSpeed * variant.speedMultiplier * modifier.speedMultiplier,
+    damage: definition.baseDamage * variant.damageMultiplier * modifier.damageMultiplier * (1 + wave * 0.08),
     elite,
     attackCd: Math.random(),
+    abilityCooldowns: new Map<string, number>(),
     statuses: {},
     knockbackVelocity: Vector3.Zero(),
-  };
-
-  if (!elite) {
-    enemy.stateMachine =
-      createStandardEnemyStateMachine(enemy);
-    enemy.stateMachine.start('idle', 'enemy-spawned');
-  }
-
+  });
+  enemy.stateMachine = createEnemyStateMachine(enemy);
+  enemy.stateMachine.start('evaluate', 'enemy-spawned');
   enemies.push(enemy);
 }
 
@@ -1787,8 +1779,6 @@ function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
 
 function killEnemy(enemy: Enemy): void {
   if (
-    !enemy.elite &&
-    enemy.stateMachine &&
     enemy.stateMachine.getCurrentStateId() !== 'dead'
   ) {
     enemy.stateMachine.request(
@@ -2410,50 +2400,11 @@ scene.onBeforeRenderObservable.add(() => {
     });
     e.attackCd -= dt;
 
+    for (const [abilityId, remaining] of e.abilityCooldowns) {
+      e.abilityCooldowns.set(abilityId, Math.max(0, remaining - dt));
+    }
     if (!developerState.enemyAiEnabled) return;
-
-    if (!e.elite && e.stateMachine) {
-      e.stateMachine.update(dt);
-      return;
-    }
-
-    // Elite enemies remain on the original behavior path for A/B validation.
-    const toPlayer = playerRoot.position.subtract(
-      e.mesh.position,
-    );
-    toPlayer.y = 0;
-    const dist = toPlayer.length();
-
-    if (dist > GameBalance.combat.enemyAttackRange) {
-      if (!enemyTelegraphs.isBusy(e.mesh)) {
-        e.mesh.position.addInPlace(
-          toPlayer.normalize().scale(
-            e.speed *
-              dt *
-              ((e.statuses.frost ?? 0) > 0
-                ? 0.58
-                : 1),
-          ),
-        );
-      }
-    } else if (
-      e.attackCd <= 0 &&
-      !enemyTelegraphs.isBusy(e.mesh)
-    ) {
-      enemyTelegraphs.begin(e.mesh, true, () => {
-        const strikeDistance = Vector3.Distance(
-          e.mesh.position,
-          playerRoot.position,
-        );
-        if (
-          strikeDistance <=
-          GameBalance.combat.enemyAttackRange + 0.8
-        ) {
-          hurtActive(e.damage);
-        }
-        e.attackCd = 1.15;
-      });
-    }
+    e.stateMachine.update(dt);
   });
   [...enemies].filter(e => e.hp <= 0).forEach(killEnemy);
 
@@ -2478,7 +2429,7 @@ scene.onBeforeRenderObservable.add(() => {
       .map(enemy => enemy.stateMachine!);
     const standardEnemyStateCounts =
       standardEnemyMachines.reduce<
-        Record<StandardEnemyStateId, number>
+        Record<EnemyStateId, number>
       >(
         (counts, machine) => {
           const state = machine.getCurrentStateId();
@@ -2486,9 +2437,9 @@ scene.onBeforeRenderObservable.add(() => {
           return counts;
         },
         {
-          idle: 0,
-          chase: 0,
-          'attack-windup': 0,
+          evaluate: 0,
+          reposition: 0,
+          casting: 0,
           recover: 0,
           dead: 0,
         },
@@ -2568,6 +2519,9 @@ scene.onBeforeRenderObservable.add(() => {
         `Statuses    ${definitionStats.byKind['status-effect'] ?? 0}`,
         `Telegraphs  ${definitionStats.byKind.telegraph ?? 0}`,
         `AI usage    ${definitionStats.byKind['ai-ability-usage'] ?? 0}`,
+        `Enemies     ${definitionStats.byKind.enemy ?? 0}`,
+        `Variants    ${definitionStats.byKind['enemy-variant'] ?? 0}`,
+        `Modifiers   ${definitionStats.byKind['elite-modifier'] ?? 0}`,
         `Deprecated  ${definitionStats.deprecated}`,
         `Validation  ${definitionErrors.length}`,
         `Warnings    ${combatLibraryValidation.warnings.length}`,
@@ -2579,6 +2533,38 @@ scene.onBeforeRenderObservable.add(() => {
         `Movement    ${input.getDiagnostics().movementScheme}`,
         `Move axes   ${input.getDiagnostics().moveAxes.x.toFixed(2)}, ${input.getDiagnostics().moveAxes.y.toFixed(2)}`,
         `Aim axes    ${input.getDiagnostics().aimAxes.x.toFixed(2)}, ${input.getDiagnostics().aimAxes.y.toFixed(2)}`,
+      ].join('\n'),
+    );
+
+    const inspectedEnemy = enemies[0];
+    const enemyRoleCounts = enemyDefinitions.reduce<Record<string, number>>((counts, definition) => {
+      counts[definition.role] = enemies.filter(enemy => enemy.definition.role === definition.role).length;
+      return counts;
+    }, {});
+    developerHud.setPageText(
+      'ai',
+      [
+        'ENEMY ARCHETYPES',
+        ...enemyDefinitions.map(definition => `${definition.name.padEnd(14)} ${enemyRoleCounts[definition.role] ?? 0}`),
+        '',
+        `Elites       ${enemies.filter(enemy => enemy.elite).length}`,
+        `Variants     ${enemyVariantDefinitions.length}`,
+        `Modifiers    ${eliteModifierDefinitions.length}`,
+        '',
+        inspectedEnemy ? 'LIVE INSPECTOR' : 'LIVE INSPECTOR\nNo active enemy.',
+        ...(inspectedEnemy ? [
+          `Name         ${inspectedEnemy.variant.name} ${inspectedEnemy.definition.name}`,
+          `Role         ${inspectedEnemy.definition.role}`,
+          `Policy       ${inspectedEnemy.elite ? 'elite' : inspectedEnemy.definition.policy}`,
+          `Modifier     ${inspectedEnemy.modifier.name}`,
+          `State        ${inspectedEnemy.stateMachine.getCurrentStateId() ?? 'none'}`,
+          `HP           ${Math.max(0, inspectedEnemy.hp).toFixed(0)} / ${inspectedEnemy.maxHp.toFixed(0)}`,
+          `Distance     ${inspectedEnemy.stateMachine.blackboard.get('distanceToTarget')?.toFixed(1) ?? 'n/a'}`,
+          `Desired      ${inspectedEnemy.stateMachine.blackboard.get('desiredRange')?.toFixed(1) ?? 'n/a'}`,
+          `Ability      ${inspectedEnemy.stateMachine.blackboard.get('currentAbilityId') ?? 'none'}`,
+          `Committed    ${inspectedEnemy.stateMachine.blackboard.get('committed') ? 'yes' : 'no'}`,
+          `Decisions    ${inspectedEnemy.stateMachine.blackboard.get('decisionCount') ?? 0}`,
+        ] : []),
       ].join('\n'),
     );
 
@@ -2603,13 +2589,13 @@ scene.onBeforeRenderObservable.add(() => {
         '',
         'STANDARD ENEMIES',
         `Machines    ${standardEnemyMachines.length}`,
-        `Idle        ${standardEnemyStateCounts.idle}`,
-        `Chase       ${standardEnemyStateCounts.chase}`,
-        `Windup      ${standardEnemyStateCounts['attack-windup']}`,
+        `Evaluate    ${standardEnemyStateCounts.evaluate}`,
+        `Reposition  ${standardEnemyStateCounts.reposition}`,
+        `Casting     ${standardEnemyStateCounts.casting}`,
         `Recover     ${standardEnemyStateCounts.recover}`,
         `Dead        ${standardEnemyStateCounts.dead}`,
         `Rejected    ${standardEnemyRejected}`,
-        'Elites      legacy behavior',
+        `Elites      ${enemies.filter(enemy => enemy.elite).length}`,
       ].join('\n'),
     );
 

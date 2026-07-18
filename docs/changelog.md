@@ -4284,6 +4284,121 @@ Ice Spear
 No player movement, cast commitment, queueing, cooldown, or combat values were
 changed by this milestone.
 
+# Astral 0.6.1 — Enemy Archetypes
+
+This milestone turns the Combat Library into definition-driven enemies.
+
+## Validation passes
+
+### Pass 1 — Combat roles
+
+- Grunt
+- Brute
+- Archer
+- Fire Mage
+- Frost Caster
+- Assassin
+
+Each role owns stats, preferred range, recovery timing, and references to shared AI ability-usage definitions.
+
+### Pass 2 — Reusable variants
+
+- Goblin
+- Skeleton
+- Bandit
+- Astral
+
+Variants apply HP, movement-speed, and damage multipliers without duplicating AI or abilities.
+
+### Pass 3 — Elite modifiers
+
+- Frozen
+- Burning
+- Fast
+- Heavy
+- Arcane
+- Shielded
+
+Elite modifiers layer additional multipliers and presentation changes over any role and variant.
+
+## Enemy decision flow
+
+```text
+Evaluate
+  → select a valid weighted ability
+  → Reposition when no ability is valid
+  → Casting
+  → Recover
+  → Evaluate
+```
+
+Enemy blackboards track:
+
+- target
+- target distance
+- last seen position
+- desired range
+- selected ability and usage record
+- commitment
+- home position
+- decision count
+
+## Ability selection
+
+Enemy definitions reference `ai-ability-usage` records. The AI filters by:
+
+- range
+- health percentage
+- cooldown
+- line-of-sight-ready metadata
+
+It then applies role-aware weighting:
+
+- primary abilities receive a modest preference
+- escape abilities become strongly preferred when the target is too close
+- defensive abilities become preferred at low health
+
+The shared ability definition remains the source of power, range, cast timing, cooldown, projectile, telegraph, status, and tags.
+
+## Anti-bait behavior
+
+Once an enemy begins a telegraphed cast, normal range changes do not reset it. Standard and elite enemies finish the selected action, supporting the combat rule documented in `GameDesign.md`:
+
+> Players should beat mechanics, not AI indecision.
+
+Ranged enemy usage records extend slightly beyond comparable player ranges, reducing repeated edge-of-range cast baiting.
+
+## Developer HUD
+
+The AI page now shows:
+
+- live counts by archetype
+- elite, variant, and modifier totals
+- live inspection of an active enemy
+- role and behavior policy
+- current state
+- health
+- current and desired range
+- selected ability
+- commitment state
+- decision count
+
+## Files added
+
+```text
+src/game/definitions/EnemyDefinitions.ts
+```
+
+## Files modified
+
+```text
+src/game/definitions/index.ts
+src/main.ts
+README.md
+CHANGELOG.md
+FILES_CHANGED.md
+MIGRATION.md
+```
 
 
 ### Validate

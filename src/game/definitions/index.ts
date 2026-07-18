@@ -51,3 +51,22 @@ export type {
   TelegraphDefinition,
   TelegraphShape,
 } from './combat';
+export {
+  ENEMY_DEFINITION_SCHEMA_VERSION,
+  enemyDefinitions,
+  enemyVariantDefinitions,
+  eliteModifierDefinitions,
+  validateEnemyDefinition,
+  validateEnemyVariantDefinition,
+  validateEliteModifierDefinition,
+} from './EnemyDefinitions';
+export type {
+  EnemyAbilityReference,
+  EnemyBehaviorPolicy,
+  EnemyCombatRole,
+  EnemyDefinition,
+  EnemyVariantDefinition,
+  EnemyVariantId,
+  EliteModifierDefinition,
+  EliteModifierId,
+} from './EnemyDefinitions';
