@@ -23,6 +23,16 @@ import { InputManager } from './engine/input/InputManager';
 import { EventBus } from './engine/events';
 import { StateMachine } from './engine/state';
 import { AssetRegistry } from './engine/assets';
+import { DefinitionRegistry } from './engine/definitions';
+import {
+  CHARACTER_DEFINITION_SCHEMA_VERSION,
+  characterDefinitions,
+  validateCharacterDefinition,
+} from './game/definitions';
+import type {
+  CharacterDefinition,
+  CharacterElement,
+} from './game/definitions';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
@@ -57,28 +67,14 @@ import type {
   PartyManagementModel,
 } from './ui/party/PartyManagementTypes';
 
-type Element = 'physical' | 'fire' | 'frost' | 'lightning' | 'arcane';
+type Element = CharacterElement;
 type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
 type ItemFamily = GearFamily;
 type ItemSlot = GearSlot;
 type SkillKey = 'Q' | 'E';
 type AbilitySlot = 1 | 2 | 3 | 4;
 
-interface CharacterDef {
-  id: string;
-  name: string;
-  role: string;
-  element: Element;
-  color: Color3;
-  maxHp: number;
-  speed: number;
-  attackDamage: number;
-  attackRange: number;
-  attackCooldown: number;
-  qName: string;
-  eName: string;
-  preferredFamily: ItemFamily;
-}
+type CharacterDef = CharacterDefinition;
 
 interface CharacterState extends CharacterDef {
   hp: number;
@@ -154,6 +150,14 @@ shadows.useBlurExponentialShadowMap = true;
 shadows.blurKernel = 18;
 
 const assets = new AssetRegistry();
+const definitions = new DefinitionRegistry();
+
+definitions.registerKind<CharacterDefinition>(
+  'character',
+  CHARACTER_DEFINITION_SCHEMA_VERSION,
+  validateCharacterDefinition,
+);
+definitions.registerMany(characterDefinitions);
 
 function mat(
   name: string,
@@ -409,11 +413,11 @@ entities.onDestroyed(entity => {
   transform?.node.dispose();
 });
 
-const defs: CharacterDef[] = [
-  { id: 'vanguard', name: 'Vanguard', role: 'Shatter bruiser', preferredFamily: 'agile', element: 'physical', color: new Color3(0.85, 0.28, 0.22), maxHp: 170, speed: 7.0, attackDamage: 24, attackRange: 2.2, attackCooldown: 0.52, qName: 'Ground Breaker', eName: 'War Cry' },
-  { id: 'warden', name: 'Warden', role: 'Frost support', preferredFamily: 'fortified', element: 'frost', color: new Color3(0.28, 0.72, 1), maxHp: 130, speed: 6.5, attackDamage: 16, attackRange: 7.0, attackCooldown: 0.72, qName: 'Frost Field', eName: 'Ice Barrier' },
-  { id: 'tempest', name: 'Tempest', role: 'Lightning assassin', preferredFamily: 'focused', element: 'lightning', color: new Color3(0.72, 0.42, 1), maxHp: 115, speed: 8.2, attackDamage: 19, attackRange: 3.0, attackCooldown: 0.36, qName: 'Chain Arc', eName: 'Blink Strike' },
-];
+const defs = definitions.all<CharacterDefinition>('character');
+
+if (defs.length !== characterDefinitions.length) {
+  throw new Error('Character definition bridge validation failed.');
+}
 const party: CharacterState[] = defs.map(d => ({
   ...d,
   hp: d.maxHp,
@@ -1923,6 +1927,8 @@ scene.onBeforeRenderObservable.add(() => {
     const eventStats = events.stats();
     const assetStats = assets.stats();
     const assetErrors = assets.validate();
+    const definitionStats = definitions.stats();
+    const definitionErrors = definitions.validate();
     const standardEnemyMachines = enemies
       .filter(enemy => !enemy.elite && enemy.stateMachine)
       .map(enemy => enemy.stateMachine!);
@@ -1978,6 +1984,12 @@ scene.onBeforeRenderObservable.add(() => {
       `  Materials   ${assetStats.byKind.material}`,
       `  Data        ${assetStats.byKind.data}`,
       `  Validation  ${assetErrors.length}`,
+      'Definitions',
+      `  Total       ${definitionStats.total}`,
+      `  Kinds       ${definitionStats.kinds}`,
+      `  Characters  ${definitionStats.byKind.character ?? 0}`,
+      `  Deprecated  ${definitionStats.deprecated}`,
+      `  Validation  ${definitionErrors.length}`,
       'State Machine · Validation',
       `  ID          ${validationStateMachine.id}`,
       `  Current     ${validationStateMachine.getCurrentStateId() ?? 'none'}`,
@@ -2022,6 +2034,7 @@ window.addEventListener('beforeunload', () => {
   events.clearQueue();
   events.clearSubscriptions();
   entities.clear();
+  definitions.clear();
   stateValidationMesh.dispose();
   assets.clear();
   developerHud.remove();

@@ -2986,6 +2986,177 @@ were changed.
 10. Confirm event-bus `Errors` remains `0`.
 11. Reload the page and confirm shutdown does not report disposal errors.
 
+# Astral 0.5.5.2 — Definition Registry Foundation
+
+This milestone adds a typed, read-only registry for gameplay definitions and migrates the existing playable character data into it without changing gameplay behavior.
+
+## New engine package
+
+```text
+src/engine/definitions/
+  DefinitionRegistry.ts
+  DefinitionTypes.ts
+  index.ts
+```
+
+## New gameplay definition package
+
+```text
+src/game/definitions/
+  CharacterDefinitions.ts
+  index.ts
+```
+
+## Definition contract
+
+Every definition now has:
+
+```text
+id
+kind
+metadata.schemaVersion
+metadata.contentVersion
+metadata.source
+metadata.tags
+metadata.deprecated
+```
+
+The registry rejects:
+
+- Empty IDs
+- Duplicate IDs
+- Empty kinds
+- Unregistered kinds
+- Missing content versions
+- Invalid schema versions
+- Definition-specific validation failures
+
+## Registry API
+
+```ts
+definitions.registerKind(...);
+definitions.register(...);
+definitions.registerMany(...);
+definitions.get(id);
+definitions.require(id);
+definitions.all(kind);
+definitions.withTag(tag);
+definitions.validate();
+definitions.stats();
+```
+
+Definitions are shallow-frozen when registered. Metadata and tag arrays are also frozen so gameplay systems receive read-only configuration rather than mutable runtime state.
+
+## Character definition bridge
+
+The previous hardcoded character array in `main.ts` has moved to:
+
+```text
+src/game/definitions/CharacterDefinitions.ts
+```
+
+Registered definitions:
+
+```text
+vanguard
+warden
+tempest
+```
+
+The party is now created from:
+
+```ts
+const defs = definitions.all<CharacterDefinition>('character');
+```
+
+All existing character values are unchanged:
+
+- Names and roles
+- Elements and colors
+- Health
+- Movement speed
+- Attack damage
+- Attack range
+- Attack cooldown
+- Q and E ability names
+- Preferred equipment family
+
+Runtime state such as current health, cooldowns, equipment, and skill-slot assignment is still created separately. Definitions remain configuration only.
+
+## Character validation
+
+Character definitions validate:
+
+- Non-empty name and role
+- Positive maximum health
+- Positive movement speed
+- Non-negative attack damage
+- Positive attack range
+- Positive attack cooldown
+- Non-empty Q and E ability names
+
+The character definition schema is currently:
+
+```text
+character schema version 1
+content version 0.5.5.2
+```
+
+## Developer diagnostics
+
+The framework HUD now includes:
+
+```text
+Definitions
+  Total
+  Kinds
+  Characters
+  Deprecated
+  Validation
+```
+
+Expected initial values:
+
+```text
+Total       3
+Kinds       1
+Characters  3
+Deprecated  0
+Validation  0
+```
+
+## Existing systems retained
+
+This milestone does not alter:
+
+- Player behavior
+- Character balance
+- Movement or collision
+- Combat
+- Enemy state machines
+- Elevator state machine
+- Entity lifecycle
+- Event bus
+- Asset registry behavior
+- UI behavior
+- Loot or equipment behavior
+
+## Files added
+
+```text
+src/engine/definitions/DefinitionRegistry.ts
+src/engine/definitions/DefinitionTypes.ts
+src/engine/definitions/index.ts
+src/game/definitions/CharacterDefinitions.ts
+src/game/definitions/index.ts
+```
+
+## Files modified
+
+```text
+src/main.ts
+README.md
+```
 
 ### Validate
 ```bash
