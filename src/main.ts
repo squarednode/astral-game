@@ -603,9 +603,8 @@ const combat = new CombatSystem(damageNumbers, hitFeedback, playerCamera);
 
 const partyManagement = new PartyManagementScreen(inventoryEl, {
   close: () => {
-    inventoryOpen = false;
+    closeInventory();
     input.setContext('gameplay');
-    partyManagement.setOpen(false);
   },
   equip: equipItemToCharacter,
   destroyItems: destroyLootItems,
@@ -1636,17 +1635,39 @@ scene.onPointerObservable.add((pi: any) => {
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
-window.addEventListener('keydown', event => {
-  if (event.code === 'Escape' && developerConsole.isOpen()) {
-    event.preventDefault();
-    developerConsole.close();
-  }
-});
 document.querySelector('#closeInventory')?.addEventListener('click', () => {
-  inventoryOpen = false;
+  closeInventory();
   input.setContext('gameplay');
-  partyManagement.setOpen(false);
 });
+
+function closeInventory(): void {
+  if (!inventoryOpen) return;
+  inventoryOpen = false;
+  partyManagement.setOpen(false);
+  movement.endPointerMovement();
+}
+
+function handleMenuToggleRequest(): void {
+  if (settingsMenu.isOpen()) {
+    settingsMenu.setOpen(false);
+    input.setContext('gameplay');
+    return;
+  }
+
+  if (developerConsole.isOpen()) {
+    developerConsole.close();
+    input.setContext('gameplay');
+    return;
+  }
+
+  if (inventoryOpen) {
+    closeInventory();
+    input.setContext('gameplay');
+    return;
+  }
+
+  settingsMenu.setOpen(true);
+}
 
 function flushFrameInfrastructure(): void {
   entities.flushDestroyed();
@@ -1674,13 +1695,11 @@ scene.onBeforeRenderObservable.add(() => {
   enemyTelegraphs.update(realDt);
   validationStateMachine.update(realDt);
 
-  if (input.consumePressed('toggleSettings')) {
-    if (developerConsole.isOpen()) {
-      developerConsole.close();
-      input.setContext('gameplay');
-    } else {
-      settingsMenu.toggle();
-    }
+  if (
+    input.consumeEscapePressed() ||
+    input.consumePressed('toggleSettings')
+  ) {
+    handleMenuToggleRequest();
   }
 
   settingsMenu.update();

@@ -77,7 +77,7 @@
 .settings-binding-grid {
   margin-top: 10px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(92px, auto);
   gap: 7px 16px;
 }
 .settings-binding-grid kbd {
@@ -138,4 +138,22 @@
 .settings-menu-panel select optgroup {
   background: #111923;
   color: #f5f7fb;
+}
+
+
+.settings-binding-button {
+  min-width: 92px;
+  cursor: pointer;
+  font: 600 12px/1 system-ui, sans-serif;
+  text-align: center;
+}
+
+.settings-binding-button:hover,
+.settings-binding-button:focus-visible {
+  background: rgba(99, 200, 255, .18);
+  border-color: var(--ui-accent, #63c8ff);
+}
+
+.settings-reset-bindings {
+  margin-top: 12px;
 }

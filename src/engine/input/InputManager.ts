@@ -50,7 +50,8 @@ export class InputManager {
   private context: InputContext = 'gameplay';
   private activeDevice: InputDevice = 'keyboard-mouse';
   private settings: InputSettings = { ...DEFAULT_INPUT_SETTINGS };
-  private profile: InputBindingProfile = DEFAULT_INPUT_PROFILE;
+  private profile: InputBindingProfile = cloneProfile(DEFAULT_INPUT_PROFILE);
+  private escapePressed = false;
   private gamepadMove: InputVector2 = { x: 0, y: 0 };
   private gamepadAim: InputVector2 = { x: 0, y: 0 };
   private gamepadConnected = false;
@@ -63,6 +64,7 @@ export class InputManager {
     this.target.addEventListener('gamepadconnected', this.onGamepadConnected);
     this.target.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.profile = this.loadProfile();
   }
 
   dispose(): void {
@@ -89,8 +91,61 @@ export class InputManager {
   }
 
   setProfile(profile: InputBindingProfile): void {
-    this.profile = profile;
+    this.profile = cloneProfile(profile);
+    this.persistProfile();
     this.reset();
+  }
+
+  getProfile(): InputBindingProfile {
+    return cloneProfile(this.profile);
+  }
+
+  getKeyboardBinding(action: InputAction): string | undefined {
+    return Object.entries(this.profile.keyboard)
+      .find(([, mapped]) => mapped === action)?.[0];
+  }
+
+  rebindKeyboard(action: InputAction, code: string): void {
+    if (!code || code === 'Escape') return;
+
+    const keyboard = { ...this.profile.keyboard };
+    const previousCode = Object.entries(keyboard)
+      .find(([, mapped]) => mapped === action)?.[0];
+    const displacedAction = keyboard[code];
+
+    if (previousCode) delete keyboard[previousCode];
+    delete keyboard[code];
+    keyboard[code] = action;
+
+    // Swap the displaced action onto the selected action's prior key when
+    // possible so keyboard-only players do not silently lose a control.
+    if (
+      displacedAction &&
+      displacedAction !== action &&
+      previousCode &&
+      previousCode !== code
+    ) {
+      keyboard[previousCode] = displacedAction;
+    }
+
+    this.profile = {
+      keyboard,
+      gamepadButtons: { ...this.profile.gamepadButtons },
+    };
+    this.persistProfile();
+    this.reset();
+  }
+
+  resetBindings(): void {
+    this.profile = cloneProfile(DEFAULT_INPUT_PROFILE);
+    this.persistProfile();
+    this.reset();
+  }
+
+  consumeEscapePressed(): boolean {
+    if (!this.escapePressed) return false;
+    this.escapePressed = false;
+    return true;
   }
 
   setContext(context: InputContext): void {
@@ -241,6 +296,7 @@ export class InputManager {
   }
 
   endFrame(): void {
+    this.escapePressed = false;
     this.pressedActions.clear();
     this.releasedActions.clear();
     this.pressedPointerButtons.clear();
@@ -350,6 +406,12 @@ export class InputManager {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     this.activeDevice = 'keyboard-mouse';
 
+    if (event.code === 'Escape') {
+      event.preventDefault();
+      if (!event.repeat) this.escapePressed = true;
+      return;
+    }
+
     if (event.code === 'Tab') {
       event.preventDefault();
       if (!event.repeat) {
@@ -364,7 +426,6 @@ export class InputManager {
     if (!action) return;
     if (
       event.code === 'Space' ||
-      event.code === 'Escape' ||
       event.code.startsWith('Digit')
     ) event.preventDefault();
     if (!event.repeat) this.pressedActions.add(action);
@@ -379,6 +440,35 @@ export class InputManager {
   };
 
   private readonly onBlur = (): void => { this.reset(); };
+
+  private loadProfile(): InputBindingProfile {
+    try {
+      const raw = window.localStorage.getItem('astral.input-profile.v1');
+      if (!raw) return cloneProfile(DEFAULT_INPUT_PROFILE);
+      const parsed = JSON.parse(raw) as Partial<InputBindingProfile>;
+      return {
+        keyboard: parsed.keyboard
+          ? { ...parsed.keyboard }
+          : { ...DEFAULT_INPUT_PROFILE.keyboard },
+        gamepadButtons: parsed.gamepadButtons
+          ? { ...parsed.gamepadButtons }
+          : { ...DEFAULT_INPUT_PROFILE.gamepadButtons },
+      };
+    } catch {
+      return cloneProfile(DEFAULT_INPUT_PROFILE);
+    }
+  }
+
+  private persistProfile(): void {
+    try {
+      window.localStorage.setItem(
+        'astral.input-profile.v1',
+        JSON.stringify(this.profile),
+      );
+    } catch {
+      // Binding persistence is optional in restricted browser contexts.
+    }
+  }
   private readonly onVisibilityChange = (): void => {
     if (document.hidden) this.reset();
   };
@@ -392,6 +482,13 @@ export class InputManager {
     this.priorGamepadButtons.clear();
     this.gamepadMove = { x: 0, y: 0 };
     this.gamepadAim = { x: 0, y: 0 };
+  };
+}
+
+function cloneProfile(profile: InputBindingProfile): InputBindingProfile {
+  return {
+    keyboard: { ...profile.keyboard },
+    gamepadButtons: { ...profile.gamepadButtons },
   };
 }
 

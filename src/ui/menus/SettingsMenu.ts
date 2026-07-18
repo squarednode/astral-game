@@ -1,5 +1,6 @@
 import type { InputManager } from '../../engine/input/InputManager';
-import type { MovementControlScheme } from '../../engine/input/InputTypes';
+import { ACTION_LABELS } from '../../engine/input/InputBindings';
+import type { InputAction, MovementControlScheme } from '../../engine/input/InputTypes';
 import type { SettingsManager } from '../../engine/settings/SettingsManager';
 import './SettingsMenu.css';
 
@@ -13,6 +14,22 @@ export class SettingsMenu {
   private readonly deviceStatus: HTMLSpanElement;
   private readonly parentLayer: HTMLElement;
   private open = false;
+  private rebindingAction: InputAction | null = null;
+  private readonly onRebindKeyDown = (event: KeyboardEvent): void => {
+    if (!this.rebindingAction) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    if (event.code === 'Escape') {
+      this.rebindingAction = null;
+      this.rebuild();
+      return;
+    }
+
+    this.input.rebindKeyboard(this.rebindingAction, event.code);
+    this.rebindingAction = null;
+    this.rebuild();
+  };
 
   constructor(
     parent: HTMLElement,
@@ -81,6 +98,7 @@ export class SettingsMenu {
       if (event.target === this.element) this.setOpen(false);
     });
     parent.appendChild(this.element);
+    window.addEventListener('keydown', this.onRebindKeyDown, true);
   }
 
   isOpen(): boolean { return this.open; }
@@ -104,6 +122,7 @@ export class SettingsMenu {
 
   dispose(): void {
     this.parentLayer.classList.remove('ui-layer--interactive');
+    window.removeEventListener('keydown', this.onRebindKeyDown, true);
     this.element.remove();
   }
 
@@ -147,14 +166,56 @@ export class SettingsMenu {
 
     const bindings = document.createElement('div');
     bindings.className = 'settings-binding-grid';
-    for (const action of ['primaryAttack', 'ability1', 'ability2', 'ability3', 'ability4', 'dodge', 'jump', 'toggleInventory', 'toggleDeveloperHud'] as const) {
+    const actions: readonly InputAction[] = [
+      'moveUp',
+      'moveDown',
+      'moveLeft',
+      'moveRight',
+      'primaryAttack',
+      'ability1',
+      'ability2',
+      'ability3',
+      'ability4',
+      'dodge',
+      'jump',
+      'toggleInventory',
+      'toggleDeveloperHud',
+      'toggleDeveloperConsole',
+    ];
+
+    for (const action of actions) {
       const label = document.createElement('span');
-      label.textContent = action.replace(/([A-Z])/g, ' $1');
-      const value = document.createElement('kbd');
-      value.textContent = this.input.getBindingLabel(action);
-      bindings.append(label, value);
+      label.textContent = ACTION_LABELS[action];
+
+      const change = document.createElement('button');
+      change.type = 'button';
+      change.className = 'settings-binding-button';
+      change.dataset.action = action;
+      change.textContent = this.rebindingAction === action
+        ? 'Press a key…'
+        : this.input.getBindingLabel(action);
+      change.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.rebindingAction = action;
+        this.rebuild();
+      });
+
+      bindings.append(label, change);
     }
-    section.appendChild(bindings);
+
+    const resetBindings = document.createElement('button');
+    resetBindings.type = 'button';
+    resetBindings.className = 'settings-action-button settings-reset-bindings';
+    resetBindings.textContent = 'Reset Keyboard Bindings';
+    resetBindings.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.rebindingAction = null;
+      this.input.resetBindings();
+      this.rebuild();
+    });
+    section.append(bindings, resetBindings);
     return section;
   }
 
