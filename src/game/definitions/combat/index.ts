@@ -1,27 +1,4 @@
 export {
-  CHARACTER_DEFINITION_SCHEMA_VERSION,
-  characterDefinitions,
-  validateCharacterDefinition,
-} from './CharacterDefinitions';
-export type {
-  CharacterDefinition,
-  CharacterElement,
-} from './CharacterDefinitions';
-export {
-  ABILITY_DEFINITION_SCHEMA_VERSION,
-  abilityDefinitions,
-  validateAbilityDefinition,
-} from './abilities';
-export type {
-  AbilityCastStyle,
-  AbilityDefinition,
-  AbilityFamily,
-  AbilityQueueBehavior,
-  AbilityResourceType,
-  AbilityTag,
-  AbilityTargetingMode,
-} from './abilities';
-export {
   COMBAT_LIBRARY_SCHEMA_VERSION,
   aiAbilityUsageDefinitions,
   combatTagDefinitions,
@@ -29,6 +6,8 @@ export {
   projectileDefinitions,
   statusEffectDefinitions,
   telegraphDefinitions,
+} from './CombatLibraryDefinitions';
+export {
   validateAiAbilityUsageDefinition,
   validateCombatLibraryReferences,
   validateCombatTagDefinition,
@@ -36,7 +15,7 @@ export {
   validateProjectileDefinition,
   validateStatusEffectDefinition,
   validateTelegraphDefinition,
-} from './combat';
+} from './CombatLibraryTypes';
 export type {
   AiAbilityUsageDefinition,
   CombatLibraryDefinition,
@@ -50,4 +29,4 @@ export type {
   StatusStackingRule,
   TelegraphDefinition,
   TelegraphShape,
-} from './combat';
+} from './CombatLibraryTypes';

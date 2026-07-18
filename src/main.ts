@@ -36,11 +36,31 @@ import {
   ABILITY_DEFINITION_SCHEMA_VERSION,
   abilityDefinitions,
   validateAbilityDefinition,
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  projectileDefinitions,
+  statusEffectDefinitions,
+  telegraphDefinitions,
+  damageProfileDefinitions,
+  combatTagDefinitions,
+  aiAbilityUsageDefinitions,
+  validateProjectileDefinition,
+  validateStatusEffectDefinition,
+  validateTelegraphDefinition,
+  validateDamageProfileDefinition,
+  validateCombatTagDefinition,
+  validateAiAbilityUsageDefinition,
+  validateCombatLibraryReferences,
 } from './game/definitions';
 import type {
   CharacterDefinition,
   CharacterElement,
   AbilityDefinition,
+  ProjectileDefinition,
+  StatusEffectDefinition,
+  TelegraphDefinition,
+  DamageProfileDefinition,
+  CombatTagDefinition,
+  AiAbilityUsageDefinition,
 } from './game/definitions';
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
 import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
@@ -50,6 +70,7 @@ import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
 import { UIManager } from './ui/core/UIManager';
 import { DeveloperHud } from './ui/developer/DeveloperHud';
 import { AbilityDeveloperPanel } from './ui/developer/AbilityDeveloperPanel';
+import { CombatLibraryPanel } from './ui/developer/CombatLibraryPanel';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
 import type { GameplayHudSnapshot } from './ui/gameplay';
@@ -176,12 +197,56 @@ definitions.registerKind<CharacterDefinition>(
   validateCharacterDefinition,
 );
 definitions.registerMany(characterDefinitions);
+definitions.registerKind<ProjectileDefinition>(
+  'projectile',
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  validateProjectileDefinition,
+);
+definitions.registerKind<StatusEffectDefinition>(
+  'status-effect',
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  validateStatusEffectDefinition,
+);
+definitions.registerKind<TelegraphDefinition>(
+  'telegraph',
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  validateTelegraphDefinition,
+);
+definitions.registerKind<DamageProfileDefinition>(
+  'damage-profile',
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  validateDamageProfileDefinition,
+);
+definitions.registerKind<CombatTagDefinition>(
+  'combat-tag',
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  validateCombatTagDefinition,
+);
+definitions.registerKind<AiAbilityUsageDefinition>(
+  'ai-ability-usage',
+  COMBAT_LIBRARY_SCHEMA_VERSION,
+  validateAiAbilityUsageDefinition,
+);
+definitions.registerMany(projectileDefinitions);
+definitions.registerMany(statusEffectDefinitions);
+definitions.registerMany(telegraphDefinitions);
+definitions.registerMany(damageProfileDefinitions);
+definitions.registerMany(combatTagDefinitions);
+
 definitions.registerKind<AbilityDefinition>(
   'ability',
   ABILITY_DEFINITION_SCHEMA_VERSION,
   validateAbilityDefinition,
 );
 definitions.registerMany(abilityDefinitions);
+definitions.registerMany(aiAbilityUsageDefinitions);
+
+const combatLibraryValidation = validateCombatLibraryReferences(definitions);
+if (combatLibraryValidation.errors.length > 0) {
+  throw new Error(
+    `Combat library validation failed:\n- ${combatLibraryValidation.errors.join('\n- ')}`,
+  );
+}
 
 function mat(
   name: string,
@@ -662,6 +727,10 @@ const playerCamera = new PlayerCameraController(
 );
 const movementDebug = new MovementDebugOverlay(
   developerHud.getPageContent('movement'),
+);
+const combatLibraryPanel = new CombatLibraryPanel(
+  developerHud.getPageContent('combat'),
+  definitions,
 );
 const damageNumbers = new DamageNumberManager(scene, camera, engine);
 const hitFeedback = new HitFeedbackController(scene);
@@ -2400,7 +2469,10 @@ scene.onBeforeRenderObservable.add(() => {
     const assetStats = assets.stats();
     const assetErrors = assets.validate();
     const definitionStats = definitions.stats();
-    const definitionErrors = definitions.validate();
+    const definitionErrors = [
+      ...definitions.validate(),
+      ...combatLibraryValidation.errors,
+    ];
     const standardEnemyMachines = enemies
       .filter(enemy => !enemy.elite && enemy.stateMachine)
       .map(enemy => enemy.stateMachine!);
@@ -2491,8 +2563,14 @@ scene.onBeforeRenderObservable.add(() => {
         `Total       ${definitionStats.total}`,
         `Kinds       ${definitionStats.kinds}`,
         `Characters  ${definitionStats.byKind.character ?? 0}`,
+        `Abilities   ${definitionStats.byKind.ability ?? 0}`,
+        `Projectiles ${definitionStats.byKind.projectile ?? 0}`,
+        `Statuses    ${definitionStats.byKind['status-effect'] ?? 0}`,
+        `Telegraphs  ${definitionStats.byKind.telegraph ?? 0}`,
+        `AI usage    ${definitionStats.byKind['ai-ability-usage'] ?? 0}`,
         `Deprecated  ${definitionStats.deprecated}`,
         `Validation  ${definitionErrors.length}`,
+        `Warnings    ${combatLibraryValidation.warnings.length}`,
         '',
         'PLAYER INPUT',
         `Context     ${input.getDiagnostics().context}`,

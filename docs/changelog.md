@@ -4149,6 +4149,140 @@ The Abilities page now shows:
 - Queued action
 - Ability event history
 
+# Astral 0.6.0.3 — Combat Library
+
+This milestone creates the reusable combat vocabulary used by future enemy,
+elite, and boss definitions.
+
+## Relationship model
+
+```text
+Enemy Definition (0.6.1)
+  -> AI Ability Usage IDs
+    -> Ability Definition IDs
+      -> Projectile / Status / Telegraph / Damage Profile IDs
+```
+
+Enemy records will reference combat-library definitions instead of copying
+power, speed, range, cast time, cooldown, or telegraph values.
+
+## Definition kinds
+
+```text
+ability
+projectile
+status-effect
+telegraph
+damage-profile
+combat-tag
+ai-ability-usage
+```
+
+All kinds are registered through the existing `DefinitionRegistry` and are
+read-only after registration.
+
+## Ability catalog
+
+The catalog now contains the four implemented player abilities plus reusable
+enemy-ready abilities covering:
+
+- Melee strike, cleave, heavy slam, and spin attack
+- Arrow, fire, frost, homing, piercing, and spread projectiles
+- Ground fire, frost nova, shock burst, and poison cloud
+- Dash, charge, retreat, leap, and blink movement patterns
+- Barrier, heal, regeneration, and Astral Shield defense patterns
+
+Catalog-only abilities are data definitions. They do not execute until their
+focused executor is added during enemy-archetype work.
+
+## Shared power and speed language
+
+```text
+power
+  Base damage, healing, shielding, or effect strength.
+
+speed
+  Projectile travel speed or movement propagation speed.
+```
+
+Values that do not apply remain undefined and display as an em dash in the
+catalog.
+
+## AI usage records
+
+AI usage definitions reference abilities and add actor-specific selection
+rules:
+
+```text
+weight
+minimum / maximum / preferred range
+health window
+initial delay
+cooldown multiplier
+power multiplier
+line-of-sight requirement
+commitment threshold
+```
+
+This supports multiple enemies using the same ability with different tactical
+weights and scaling, without duplicating the ability itself.
+
+The initial AI usage set prepares:
+
+- Grunt strike and cleave
+- Brute slam and charge
+- Archer arrow, piercing shot, and retreat
+- Fire mage bolt and ground fire
+- Frost mage bolt and frost nova
+
+Standard enemy commitment values are intentionally earlier than the player's
+95% threshold, supporting the combat principle documented in `GameDesign.md`:
+enemies should commit to readable attacks rather than repeatedly canceling
+when the player moves.
+
+## Searchable developer catalog
+
+The Developer HUD now contains a **Combat Library** page.
+
+It supports:
+
+- Text search
+- Definition-kind filtering
+- Combat-tag filtering
+- Sortable, compact power/speed/range/cast/cooldown presentation
+- Detailed reference inspection
+- Ability-to-AI-usage reverse lookup
+- Runtime-ready versus catalog-only visibility
+
+Click a row to inspect its complete definition and references.
+
+## Cross-reference validation
+
+Startup validation checks:
+
+- Ability projectile IDs
+- Ability status-effect IDs
+- Ability telegraph IDs
+- Ability damage-profile IDs
+- Ability combat tags
+- AI usage ability IDs
+
+Missing references stop startup. Catalog-only abilities are reported as
+warnings rather than errors because they intentionally await executors.
+
+## Existing gameplay
+
+The four current player abilities remain assigned and executable:
+
+```text
+Fireball
+Blink
+Astral Shield
+Ice Spear
+```
+
+No player movement, cast commitment, queueing, cooldown, or combat values were
+changed by this milestone.
 
 
 

@@ -219,3 +219,108 @@
   border-top: 1px solid rgba(165, 190, 225, 0.18);
   padding-top: 10px;
 }
+
+.combat-library-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.combat-library-toolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(130px, .55fr) minmax(110px, .45fr) auto;
+  gap: 7px;
+  align-items: center;
+}
+
+.combat-library-toolbar input,
+.combat-library-toolbar select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(117, 186, 255, .34);
+  border-radius: 7px;
+  background: #101a2b;
+  color: #eef5ff;
+  font: 11px/1.2 system-ui, sans-serif;
+}
+
+.combat-library-toolbar option {
+  background: #101a2b;
+  color: #eef5ff;
+}
+
+.combat-library-summary {
+  color: #86a9d6;
+  font: 700 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.combat-library-table-wrap {
+  max-height: 330px;
+  overflow: auto;
+  border: 1px solid rgba(165, 190, 225, .16);
+  border-radius: 8px;
+}
+
+.combat-library-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #dbe9ff;
+  font: 10px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.combat-library-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px;
+  background: #17243a;
+  color: #9fc2ef;
+  text-align: left;
+}
+
+.combat-library-table td {
+  padding: 7px;
+  border-top: 1px solid rgba(165, 190, 225, .10);
+  white-space: nowrap;
+}
+
+.combat-library-table tr {
+  cursor: pointer;
+}
+
+.combat-library-table tbody tr:hover,
+.combat-library-table tbody tr:focus {
+  outline: none;
+  background: rgba(113, 173, 255, .12);
+}
+
+.combat-library-table td:first-child {
+  min-width: 150px;
+}
+
+.combat-library-table td strong,
+.combat-library-table td small {
+  display: block;
+}
+
+.combat-library-table td small {
+  margin-top: 2px;
+  color: #7189aa;
+  font-size: 9px;
+}
+
+.combat-library-detail {
+  min-height: 210px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid rgba(165, 190, 225, .16);
+  border-radius: 8px;
+  background: rgba(5, 11, 20, .58);
+}
+
+@media (max-width: 900px) {
+  .combat-library-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+}

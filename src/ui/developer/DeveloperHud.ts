@@ -6,6 +6,7 @@ export type DeveloperHudPageId =
   | 'states'
   | 'movement'
   | 'abilities'
+  | 'combat'
   | 'ai'
   | 'status'
   | 'loot'
@@ -30,6 +31,7 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   states: 'State Machines',
   movement: 'Movement',
   abilities: 'Abilities',
+  combat: 'Combat Library',
   ai: 'AI',
   status: 'Status',
   loot: 'Loot',
@@ -48,7 +50,7 @@ export class DeveloperHud {
   >();
   private readonly pages = new Map<DeveloperHudPageId, HTMLElement>();
   private readonly textPages = new Map<
-    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities'>,
+    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat'>,
     HTMLPreElement
   >();
   private open = false;
@@ -147,6 +149,13 @@ export class DeveloperHud {
     body.appendChild(abilities);
     this.pages.set('abilities', abilities);
 
+    const combat = document.createElement('article');
+    combat.className = 'developer-hud-page developer-combat-page';
+    combat.dataset.page = 'combat';
+    combat.hidden = true;
+    body.appendChild(combat);
+    this.pages.set('combat', combat);
+
     const movement = document.createElement('article');
     movement.className = 'developer-hud-page developer-movement-page';
     movement.dataset.page = 'movement';
@@ -202,12 +211,12 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 
   setPageText(
-    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities'>,
+    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat'>,
     text: string,
   ): void {
     this.textPages.get(pageId)!.textContent = text;
