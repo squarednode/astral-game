@@ -96,3 +96,33 @@
   background: rgba(255,255,255,.075);
   color: inherit;
 }
+
+.settings-menu-backdrop:not([hidden]),
+.settings-menu-panel,
+.settings-menu-panel button,
+.settings-menu-panel select,
+.settings-menu-panel input,
+.settings-menu-panel label {
+  pointer-events: auto;
+}
+
+.settings-menu-backdrop[hidden] {
+  display: none !important;
+}
+
+.settings-action-button {
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.settings-action-button:hover {
+  background: rgba(255,255,255,.14);
+}
+
+.settings-action-button:focus-visible,
+.settings-menu-panel select:focus-visible,
+.settings-menu-panel input:focus-visible {
+  outline: 2px solid var(--ui-accent, #63c8ff);
+  outline-offset: 2px;
+}

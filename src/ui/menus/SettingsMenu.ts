@@ -11,6 +11,7 @@ export class SettingsMenu {
   readonly element: HTMLDivElement;
   private readonly panel: HTMLDivElement;
   private readonly deviceStatus: HTMLSpanElement;
+  private readonly parentLayer: HTMLElement;
   private open = false;
 
   constructor(
@@ -19,6 +20,7 @@ export class SettingsMenu {
     private readonly input: InputManager,
     private readonly options: SettingsMenuOptions = {},
   ) {
+    this.parentLayer = parent;
     this.element = document.createElement('div');
     this.element.className = 'settings-menu-backdrop';
     this.element.hidden = true;
@@ -26,6 +28,7 @@ export class SettingsMenu {
     this.panel = document.createElement('div');
     this.panel.className = 'settings-menu-panel';
     this.panel.addEventListener('pointerdown', event => event.stopPropagation());
+    this.panel.addEventListener('click', event => event.stopPropagation());
 
     const header = document.createElement('div');
     header.className = 'settings-menu-header';
@@ -33,8 +36,17 @@ export class SettingsMenu {
     title.innerHTML = '<strong>Player Configuration</strong><small>Keyboard, mouse, controller, and accessibility</small>';
     const close = document.createElement('button');
     close.type = 'button';
+    close.className = 'settings-action-button';
     close.textContent = 'Close';
-    close.addEventListener('click', () => this.setOpen(false));
+    close.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    close.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.setOpen(false);
+    });
     header.append(title, close);
 
     const body = document.createElement('div');
@@ -50,8 +62,14 @@ export class SettingsMenu {
     this.deviceStatus = document.createElement('span');
     const reset = document.createElement('button');
     reset.type = 'button';
+    reset.className = 'settings-action-button';
     reset.textContent = 'Restore Defaults';
-    reset.addEventListener('click', () => {
+    reset.addEventListener('pointerdown', event => {
+      event.stopPropagation();
+    });
+    reset.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
       this.settings.reset();
       this.rebuild();
     });
@@ -59,7 +77,9 @@ export class SettingsMenu {
 
     this.panel.append(header, body, footer);
     this.element.appendChild(this.panel);
-    this.element.addEventListener('pointerdown', () => this.setOpen(false));
+    this.element.addEventListener('pointerdown', event => {
+      if (event.target === this.element) this.setOpen(false);
+    });
     parent.appendChild(this.element);
   }
 
@@ -71,17 +91,21 @@ export class SettingsMenu {
     if (this.open === open) return;
     this.open = open;
     this.element.hidden = !open;
+    this.parentLayer.classList.toggle('ui-layer--interactive', open);
     this.options.onVisibilityChanged?.(open);
   }
 
   update(): void {
     const diagnostics = this.input.getDiagnostics();
     this.deviceStatus.textContent = diagnostics.gamepadConnected
-      ? `Active input: ${diagnostics.device} · Controller connected`
-      : `Active input: ${diagnostics.device} · No controller detected`;
+      ? `Keyboard & mouse ready · Controller connected · Active: ${diagnostics.device}`
+      : `Keyboard & mouse ready · Controller optional · Active: ${diagnostics.device}`;
   }
 
-  dispose(): void { this.element.remove(); }
+  dispose(): void {
+    this.parentLayer.classList.remove('ui-layer--interactive');
+    this.element.remove();
+  }
 
   private rebuild(): void {
     const body = this.panel.querySelector<HTMLDivElement>('.settings-menu-body');

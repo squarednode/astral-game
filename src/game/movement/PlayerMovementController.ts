@@ -310,7 +310,7 @@ export class PlayerMovementController {
 
   private getDesiredMovementDirection(): Vector3 {
     const axes = this.input.getMoveAxes();
-    const direct = new Vector3(axes.x, 0, axes.z);
+    let direct = new Vector3(axes.x, 0, axes.z);
 
     if (
       direct.lengthSquared() > 0 &&
@@ -318,6 +318,20 @@ export class PlayerMovementController {
     ) {
       this.clickTarget = null;
       this.movementSource = 'wasd';
+
+      if (
+        this.input.getMovementControlScheme() === 'mouse-relative' &&
+        this.input.getActiveDevice() === 'keyboard-mouse'
+      ) {
+        const forward = this.pointerWorld.subtract(this.actor.position);
+        forward.y = 0;
+        if (forward.lengthSquared() > 0.0001) {
+          forward.normalize();
+          const right = new Vector3(forward.z, 0, -forward.x);
+          direct = forward.scale(axes.z).add(right.scale(axes.x));
+        }
+      }
+
       return direct.normalize();
     }
 

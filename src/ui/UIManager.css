@@ -18,3 +18,7 @@
 
 #ui-root { transform-origin: top left; }
 #ui-root > .ui-layer { font-size: calc(1rem * var(--ui-scale, 1)); }
+
+.ui-layer[data-ui-layer='menus'].ui-layer--interactive {
+  pointer-events: auto;
+}
