@@ -22,6 +22,7 @@ import {
 import { InputManager } from './engine/input/InputManager';
 import { EventBus } from './engine/events';
 import { StateMachine } from './engine/state';
+import { AssetRegistry } from './engine/assets';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
@@ -152,16 +153,35 @@ const shadows = new ShadowGenerator(1024, sun);
 shadows.useBlurExponentialShadowMap = true;
 shadows.blurKernel = 18;
 
-const mats = new Map<string, StandardMaterial>();
-function mat(name: string, color: Color3, emissive = 0): StandardMaterial {
+const assets = new AssetRegistry();
+
+function mat(
+  name: string,
+  color: Color3,
+  emissive = 0,
+): StandardMaterial {
   const key = `${name}-${color.toHexString()}-${emissive}`;
-  if (mats.has(key)) return mats.get(key)!;
-  const m = new StandardMaterial(key, scene);
-  m.diffuseColor = color;
-  m.emissiveColor = color.scale(emissive);
-  m.specularColor = new Color3(0.15, 0.15, 0.18);
-  mats.set(key, m);
-  return m;
+  const assetId = `material:${key}`;
+  const existing = assets.get<StandardMaterial>(assetId);
+  if (existing) return existing;
+
+  const material = new StandardMaterial(key, scene);
+  material.diffuseColor = color;
+  material.emissiveColor = color.scale(emissive);
+  material.specularColor = new Color3(0.15, 0.15, 0.18);
+
+  assets.register(
+    {
+      id: assetId,
+      kind: 'material',
+      tags: ['runtime', 'shared'],
+      persistent: true,
+    },
+    material,
+    value => value.dispose(),
+  );
+
+  return material;
 }
 
 const events = new EventBus();
@@ -226,6 +246,31 @@ if (validationEventValue !== 42) {
   throw new Error('Event bus foundation validation failed.');
 }
 events.resetDiagnostics();
+
+assets.register(
+  {
+    id: 'data:asset-registry-validation',
+    kind: 'data',
+    tags: ['developer', 'validation'],
+    persistent: true,
+  },
+  {
+    value: 42,
+    description: 'Asset registry startup validation.',
+  },
+);
+
+const assetValidation =
+  assets.require<{ value: number }>(
+    'data:asset-registry-validation',
+  );
+
+if (
+  assetValidation.value !== 42 ||
+  assets.validate().length > 0
+) {
+  throw new Error('Asset registry foundation validation failed.');
+}
 
 type ValidationStateId = 'waiting' | 'pulse';
 interface ValidationStateContext {
@@ -1876,6 +1921,8 @@ scene.onBeforeRenderObservable.add(() => {
     const stats = entities.stats();
     const registeredEnemies = entities.withTag('enemy').length;
     const eventStats = events.stats();
+    const assetStats = assets.stats();
+    const assetErrors = assets.validate();
     const standardEnemyMachines = enemies
       .filter(enemy => !enemy.elite && enemy.stateMachine)
       .map(enemy => enemy.stateMachine!);
@@ -1922,6 +1969,15 @@ scene.onBeforeRenderObservable.add(() => {
       `  Subscribers ${eventStats.subscribers}`,
       `  Errors      ${eventStats.errors}`,
       `  Last        ${eventStats.lastEventType ?? 'none'}`,
+      'Assets',
+      `  Total       ${assetStats.total}`,
+      `  Ready       ${assetStats.ready}`,
+      `  Loading     ${assetStats.loading}`,
+      `  Failed      ${assetStats.failed}`,
+      `  References  ${assetStats.references}`,
+      `  Materials   ${assetStats.byKind.material}`,
+      `  Data        ${assetStats.byKind.data}`,
+      `  Validation  ${assetErrors.length}`,
       'State Machine · Validation',
       `  ID          ${validationStateMachine.id}`,
       `  Current     ${validationStateMachine.getCurrentStateId() ?? 'none'}`,
@@ -1967,6 +2023,7 @@ window.addEventListener('beforeunload', () => {
   events.clearSubscriptions();
   entities.clear();
   stateValidationMesh.dispose();
+  assets.clear();
   developerHud.remove();
   waterStatus.remove();
 });

@@ -2756,6 +2756,236 @@ src/game/world/OutdoorZoneBuilder.ts
 src/game/world/WorldTypes.ts
 README.md
 
+# Astral 0.5.5.1 — Asset Registry Foundation
+
+This milestone begins the data and resource phase with a central typed registry
+for reusable engine assets.
+
+## New engine package
+
+```text
+src/engine/assets/
+  AssetRecord.ts
+  AssetRegistry.ts
+  AssetTypes.ts
+  index.ts
+```
+
+## Supported asset kinds
+
+```text
+mesh
+material
+texture
+audio
+prefab
+data
+other
+```
+
+The registry is Babylon-agnostic. It can store Babylon resources, plain data,
+factories, or future engine-specific asset descriptors.
+
+## Asset identity
+
+Every asset uses a stable string ID:
+
+```ts
+assets.register(
+  {
+    id: 'material:enemy-standard',
+    kind: 'material',
+  },
+  material,
+);
+```
+
+Duplicate or empty IDs fail immediately.
+
+## Asset lifecycle
+
+Supported states:
+
+```text
+registered
+loading
+ready
+failed
+disposed
+```
+
+Assets may be registered with an existing value or with a synchronous or
+asynchronous loader.
+
+```ts
+assets.registerLoader(
+  {
+    id: 'texture:hero-icon',
+    kind: 'texture',
+    source: '/assets/ui/hero.png',
+  },
+  async () => loadTexture(),
+);
+```
+
+Calling `load()` more than once while an asset is loading returns the same
+promise.
+
+## Retrieval
+
+The registry supports:
+
+```ts
+assets.get(id);
+assets.require(id);
+assets.load(id);
+assets.acquire(id);
+assets.release(id);
+```
+
+`require()` throws when an asset is missing or not ready.
+
+## Reference tracking
+
+`acquire()` increments the asset reference count.
+
+`release()` decrements it without allowing the count to become negative.
+
+Future streaming and scene-unload systems can use:
+
+```ts
+assets.disposeUnused();
+```
+
+Persistent assets are excluded from unused disposal.
+
+## Disposal
+
+A record may provide an asset-specific disposer:
+
+```ts
+assets.register(
+  descriptor,
+  material,
+  value => value.dispose(),
+);
+```
+
+Assets with active references cannot be disposed unless forced.
+
+The full registry is disposed during application shutdown.
+
+## Tags and queries
+
+Descriptors support tags:
+
+```ts
+tags: ['runtime', 'shared']
+```
+
+The registry provides:
+
+```ts
+assets.all();
+assets.all('material');
+assets.withTag('shared');
+```
+
+## Validation
+
+The registry validates:
+
+- Empty IDs
+- Failed asset loads
+
+Startup creates and reads:
+
+```text
+data:asset-registry-validation
+```
+
+The game throws immediately if the registry cannot retrieve that asset or if
+validation returns an error.
+
+## Material bridge
+
+The previous standalone material `Map` has been removed.
+
+The existing `mat()` helper now uses the asset registry:
+
+```text
+mat(...)
+  ↓
+material:<generated-key>
+  ↓
+AssetRegistry
+```
+
+This preserves every current call site while making shared runtime materials
+visible to the central asset system.
+
+Gameplay mesh creation, textures, audio, and prefabs are intentionally not
+migrated yet.
+
+## Developer diagnostics
+
+The framework HUD now includes:
+
+```text
+Assets
+  Total
+  Ready
+  Loading
+  Failed
+  References
+  Materials
+  Data
+  Validation
+```
+
+Expected startup values vary because materials are created as the scene is
+built, but:
+
+```text
+Failed      0
+Validation  0
+```
+
+should remain constant.
+
+## Files added
+
+```text
+src/engine/assets/AssetRecord.ts
+src/engine/assets/AssetRegistry.ts
+src/engine/assets/AssetTypes.ts
+src/engine/assets/index.ts
+```
+
+## Files modified
+
+```text
+src/main.ts
+README.md
+```
+
+No movement, collision, world, entity, event, state-machine, or combat files
+were changed.
+
+## Validation checklist
+
+1. Start the game with no startup exception.
+2. Confirm the movement course remains functional.
+3. Confirm enemies and elites retain their existing behavior.
+4. Confirm the elevator and validation cube continue operating.
+5. Confirm materials display correctly.
+6. Confirm repeated use of the same `mat()` parameters reuses one material.
+7. Confirm the HUD asset count increases as runtime materials are created.
+8. Confirm `Failed` remains `0`.
+9. Confirm `Validation` remains `0`.
+10. Confirm event-bus `Errors` remains `0`.
+11. Reload the page and confirm shutdown does not report disposal errors.
+
 
 ### Validate
 ```bash
