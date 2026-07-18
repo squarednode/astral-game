@@ -42,7 +42,12 @@ export class AbilityRuntime {
         onExited: callbacks.onStateExited,
         onChanged: callbacks.onStateChanged,
       },
-      { castSequence: 0, request: null, interruptReason: null },
+      {
+        castSequence: 0,
+        request: null,
+        interruptReason: null,
+        executedAt: null,
+      },
     )
       .addState({ id: 'ready' })
       .addState({
@@ -62,6 +67,10 @@ export class AbilityRuntime {
             machine.blackboard.set('interruptReason', reason);
             callbacks.onInterrupted?.(definition, reason);
           },
+        }, {
+          type: 'finish-cast',
+          to: 'executing',
+          reason: 'developer-finish-cast',
         }],
       })
       .addState({
@@ -71,6 +80,7 @@ export class AbilityRuntime {
         enter: (abilityContext, machine) => {
           const request = machine.blackboard.get('request');
           if (!request) return;
+          machine.blackboard.set('executedAt', performance.now());
           abilityContext.execute({ definition, request });
           callbacks.onExecuted?.(definition, request);
         },
@@ -83,6 +93,11 @@ export class AbilityRuntime {
         exit: (_context, _machine, to) => {
           if (to === 'ready') callbacks.onReady?.(definition);
         },
+        interactions: [{
+          type: 'finish-cooldown',
+          to: 'ready',
+          reason: 'developer-finish-cooldown',
+        }],
       })
       .addState({ id: 'disabled' });
 
@@ -95,6 +110,7 @@ export class AbilityRuntime {
       request,
       castSequence: this.machine.blackboard.get('castSequence') + 1,
       interruptReason: null,
+      executedAt: null,
     });
     return this.machine.request(
       this.definition.castTime > 0 ? 'casting' : 'executing',
@@ -106,8 +122,26 @@ export class AbilityRuntime {
     return this.machine.interact('interrupt', reason).handled;
   }
 
-  update(dt: number): void {
-    this.machine.update(dt);
+  finishCast(): boolean {
+    return this.machine.interact('finish-cast').handled;
+  }
+
+  finishCooldown(): boolean {
+    return this.machine.interact('finish-cooldown').handled;
+  }
+
+  isBusy(): boolean {
+    const state = this.machine.getCurrentStateId();
+    return state === 'casting' || state === 'executing';
+  }
+
+  update(dt: number, noCooldowns = false, freezeCasting = false): void {
+    if (!(freezeCasting && this.machine.getCurrentStateId() === 'casting')) {
+      this.machine.update(dt);
+    }
+    if (noCooldowns && this.machine.getCurrentStateId() === 'cooldown') {
+      this.finishCooldown();
+    }
   }
 
   reset(): void {
@@ -119,6 +153,7 @@ export class AbilityRuntime {
   snapshot(): AbilityRuntimeSnapshot {
     const state = this.machine.getCurrentStateId() ?? 'disabled';
     const timer = this.machine.getStateTimer();
+    const blackboard = this.machine.blackboard.snapshot();
     return {
       id: this.id,
       definitionId: this.definition.id,
@@ -126,8 +161,13 @@ export class AbilityRuntime {
       state,
       cooldownRemaining: state === 'cooldown' ? timer.remaining ?? 0 : 0,
       cooldownMaximum: this.definition.cooldown,
+      castElapsed: state === 'casting' ? timer.elapsed : 0,
+      castRemaining: state === 'casting' ? timer.remaining ?? 0 : 0,
+      castMaximum: this.definition.castTime,
       castProgress: state === 'casting' ? timer.progress ?? 0 : 0,
+      executionProgress: state === 'executing' ? timer.progress ?? 0 : 0,
       tags: this.definition.abilityTags,
+      blackboard,
     };
   }
 }

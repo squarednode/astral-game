@@ -4,7 +4,13 @@ export type DeveloperHudPageId =
   | 'events'
   | 'resources'
   | 'states'
-  | 'movement';
+  | 'movement'
+  | 'abilities'
+  | 'ai'
+  | 'status'
+  | 'loot'
+  | 'bosses'
+  | 'quests';
 
 export interface DeveloperOverviewMetrics {
   fps: number;
@@ -23,6 +29,12 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   resources: 'Resources',
   states: 'State Machines',
   movement: 'Movement',
+  abilities: 'Abilities',
+  ai: 'AI',
+  status: 'Status',
+  loot: 'Loot',
+  bosses: 'Bosses',
+  quests: 'Quests',
 };
 
 export class DeveloperHud {
@@ -36,7 +48,7 @@ export class DeveloperHud {
   >();
   private readonly pages = new Map<DeveloperHudPageId, HTMLElement>();
   private readonly textPages = new Map<
-    Exclude<DeveloperHudPageId, 'overview' | 'movement'>,
+    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities'>,
     HTMLPreElement
   >();
   private open = false;
@@ -109,6 +121,11 @@ export class DeveloperHud {
       'events',
       'resources',
       'states',
+      'ai',
+      'status',
+      'loot',
+      'bosses',
+      'quests',
     ] as const) {
       const page = document.createElement('article');
       page.className = 'developer-hud-page';
@@ -123,12 +140,25 @@ export class DeveloperHud {
       this.textPages.set(id, pre);
     }
 
+    const abilities = document.createElement('article');
+    abilities.className = 'developer-hud-page developer-abilities-page';
+    abilities.dataset.page = 'abilities';
+    abilities.hidden = true;
+    body.appendChild(abilities);
+    this.pages.set('abilities', abilities);
+
     const movement = document.createElement('article');
     movement.className = 'developer-hud-page developer-movement-page';
     movement.dataset.page = 'movement';
     movement.hidden = true;
     body.appendChild(movement);
     this.pages.set('movement', movement);
+
+    this.textPages.get('ai')!.textContent = 'AI INSPECTOR\nReserved for 0.6.1 enemy archetypes.';
+    this.textPages.get('status')!.textContent = 'STATUS INSPECTOR\nQuick status controls are available on the Abilities page.\nFull runtime inspection arrives with the status framework.';
+    this.textPages.get('loot')!.textContent = 'LOOT INSPECTOR\nReserved for equipment and loot expansion.';
+    this.textPages.get('bosses')!.textContent = 'BOSS INSPECTOR\nReserved for the boss framework.';
+    this.textPages.get('quests')!.textContent = 'QUEST INSPECTOR\nReserved for the quest framework.';
 
     this.panel.appendChild(body);
     this.root.appendChild(this.panel);
@@ -172,12 +202,12 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 
   setPageText(
-    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement'>,
+    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities'>,
     text: string,
   ): void {
     this.textPages.get(pageId)!.textContent = text;

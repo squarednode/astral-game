@@ -43,12 +43,13 @@ import type {
   AbilityDefinition,
 } from './game/definitions';
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
-import type { AbilityExecutionContext } from './game/abilities';
+import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
 import { UIManager } from './ui/core/UIManager';
 import { DeveloperHud } from './ui/developer/DeveloperHud';
+import { AbilityDeveloperPanel } from './ui/developer/AbilityDeveloperPanel';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
 import type { GameplayHudSnapshot } from './ui/gameplay';
@@ -497,6 +498,12 @@ const party: CharacterState[] = defs.map(d => ({
 let activeIndex = 0;
 let active = party[0];
 const abilityComponents = new Map<string, AbilityComponent>();
+const abilityEventLog: string[] = [];
+let freezeAbilityCastTimers = false;
+function logAbilityEvent(message: string): void {
+  abilityEventLog.unshift(`${new Date().toLocaleTimeString()}  ${message}`);
+  abilityEventLog.splice(24);
+}
 
 const playerRoot = new TransformNode('playerRoot', scene);
 playerRoot.position.set(0, 0, -22);
@@ -720,6 +727,9 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
       assigned: Boolean(runtime),
       state: snapshot?.state,
       castProgress: snapshot?.castProgress ?? 0,
+      castElapsed: snapshot?.castElapsed ?? 0,
+      castRemaining: snapshot?.castRemaining ?? 0,
+      castMaximum: snapshot?.castMaximum ?? 0,
       tags: snapshot?.tags ?? [],
     };
   };
@@ -756,6 +766,9 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
           assigned: view.assigned,
           state: view.state,
           castProgress: view.castProgress,
+          castElapsed: view.castElapsed,
+          castRemaining: view.castRemaining,
+          castMaximum: view.castMaximum,
           tags: view.tags,
         };
       }),
@@ -779,6 +792,20 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
     wave,
     kills,
     power: powerFor(),
+    activeCast: (() => {
+      const casting = activeAbilities?.all()
+        .map(runtime => runtime.snapshot())
+        .find(snapshot => snapshot.state === 'casting');
+      return casting
+        ? {
+            name: casting.name,
+            elapsed: casting.castElapsed,
+            remaining: casting.castRemaining,
+            maximum: casting.castMaximum,
+            progress: casting.castProgress,
+          }
+        : undefined;
+    })(),
     boss: elite
       ? {
           name: 'Elite Enemy',
@@ -1391,6 +1418,7 @@ function createAbilityRuntime(
     executeAbility,
     {
       onCastStarted: (ability, request) => {
+        logAbilityEvent(`${character.name}: ${ability.name} cast started`);
         events.emit('ability.castStarted', {
           runtimeId: `${character.id}-slot-${slot}`,
           abilityId: ability.id,
@@ -1398,6 +1426,7 @@ function createAbilityRuntime(
         });
       },
       onExecuted: (ability, request) => {
+        logAbilityEvent(`${character.name}: ${ability.name} executed`);
         events.emit('ability.executed', {
           runtimeId: `${character.id}-slot-${slot}`,
           abilityId: ability.id,
@@ -1405,6 +1434,7 @@ function createAbilityRuntime(
         });
       },
       onCooldownStarted: ability => {
+        logAbilityEvent(`${character.name}: ${ability.name} cooldown ${ability.cooldown.toFixed(1)}s`);
         events.emit('ability.cooldownStarted', {
           runtimeId: `${character.id}-slot-${slot}`,
           abilityId: ability.id,
@@ -1412,12 +1442,14 @@ function createAbilityRuntime(
         });
       },
       onReady: ability => {
+        logAbilityEvent(`${character.name}: ${ability.name} ready`);
         events.emit('ability.ready', {
           runtimeId: `${character.id}-slot-${slot}`,
           abilityId: ability.id,
         });
       },
       onInterrupted: (ability, reason) => {
+        logAbilityEvent(`${character.name}: ${ability.name} interrupted (${reason})`);
         events.emit('ability.interrupted', {
           runtimeId: `${character.id}-slot-${slot}`,
           abilityId: ability.id,
@@ -1465,6 +1497,61 @@ for (const character of party) {
   abilityComponents.set(character.id, component);
 }
 
+const abilityDeveloperPanel = new AbilityDeveloperPanel(
+  developerHud.getPageContent('abilities'),
+  {
+    resetCooldowns: () => {
+      for (const component of abilityComponents.values()) component.finishCooldowns();
+      logAbilityEvent('Developer: cooldowns reset');
+      refreshHud();
+    },
+    interruptCast: () => {
+      const interrupted = abilityComponents.get(active.id)?.interruptActive();
+      feed(interrupted ? 'Developer: cast interrupted.' : 'Developer: no active cast.');
+    },
+    finishCast: () => {
+      const finished = abilityComponents.get(active.id)?.finishActiveCast();
+      feed(finished ? 'Developer: cast completed.' : 'Developer: no cast to complete.');
+    },
+    resetAbilities: () => {
+      for (const component of abilityComponents.values()) component.reset();
+      logAbilityEvent('Developer: ability states reset');
+      refreshHud();
+    },
+    toggleCastTimerFreeze: () => {
+      freezeAbilityCastTimers = !freezeAbilityCastTimers;
+      logAbilityEvent(`Developer: cast timer freeze ${freezeAbilityCastTimers ? 'enabled' : 'disabled'}`);
+      feed(`Developer: cast timer freeze ${freezeAbilityCastTimers ? 'enabled' : 'disabled'}.`);
+    },
+    toggleNoCooldowns: () => {
+      developerState.noCooldowns = !developerState.noCooldowns;
+      logAbilityEvent(`Developer: no cooldowns ${developerState.noCooldowns ? 'enabled' : 'disabled'}`);
+      feed(`Developer: no cooldowns ${developerState.noCooldowns ? 'enabled' : 'disabled'}.`);
+    },
+    applyStatus: status => {
+      const target = enemies
+        .filter(enemy => enemy.hp > 0)
+        .sort((a, b) => Vector3.Distance(a.mesh.position, playerRoot.position) - Vector3.Distance(b.mesh.position, playerRoot.position))[0];
+      if (!target) {
+        feed('Developer: no enemy available for status testing.');
+        return;
+      }
+      if (status === 'clear') {
+        target.statuses = {};
+      } else {
+        const element: Element = status === 'burn' ? 'fire' : status === 'shock' ? 'lightning' : 'frost';
+        target.statuses[element] = 5;
+      }
+      logAbilityEvent(`Developer: ${status} status applied to nearest enemy`);
+      feed(`Developer: ${status} status ${status === 'clear' ? 'cleared' : 'applied'}.`);
+    },
+  },
+);
+
+function activeAbilitySnapshots(): readonly AbilityRuntimeSnapshot[] {
+  return abilityComponents.get(active.id)?.all().map(runtime => runtime.snapshot()) ?? [];
+}
+
 function castSkill(key: SkillKey): void {
   castAbilitySlot(key === 'Q' ? 1 : 2);
 }
@@ -1490,8 +1577,9 @@ function swapTo(index: number): void {
 
 function castAbilitySlot(slot: AbilitySlot): void {
   if (inventoryOpen || gameOver) return;
-  const runtime = abilityComponents.get(active.id)?.get(slot);
-  if (!runtime) {
+  const component = abilityComponents.get(active.id);
+  const runtime = component?.get(slot);
+  if (!component || !runtime) {
     feed(`Ability slot ${slot} is not assigned yet.`);
     return;
   }
@@ -1501,13 +1589,18 @@ function castAbilitySlot(slot: AbilitySlot): void {
   if (aimDirection.lengthSquared() < 0.0001) aimDirection.z = 1;
   aimDirection.normalize();
 
-  const cast = runtime.cast({
+  const result = component.requestCast(slot, {
     casterId: active.id,
     casterPosition: playerRoot.position.clone(),
     aimPosition: pointerWorld.clone(),
     aimDirection,
   });
-  if (!cast) feed(`${runtime.definition.name} is not ready.`);
+  if (result === 'queued') {
+    feed(`${runtime.definition.name} queued.`);
+    logAbilityEvent(`${active.name}: ${runtime.definition.name} queued`);
+  } else if (result === 'rejected') {
+    feed(`${runtime.definition.name} is not ready.`);
+  }
   refreshHud();
 }
 
@@ -1652,7 +1745,7 @@ const developerActions: DeveloperActions = {
       Object.keys(character.cooldowns).forEach(key => {
         character.cooldowns[key as keyof typeof character.cooldowns] = 0;
       });
-      abilityComponents.get(character.id)?.reset();
+      abilityComponents.get(character.id)?.finishCooldowns();
     });
     refreshHud();
     feed('Developer: cooldowns reset.');
@@ -2128,8 +2221,11 @@ scene.onBeforeRenderObservable.add(() => {
 
   party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = developerState.noCooldowns ? 0 : Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
   party.forEach(character => {
-    abilityComponents.get(character.id)?.update(dt);
-    if (developerState.noCooldowns) abilityComponents.get(character.id)?.reset();
+    abilityComponents.get(character.id)?.update(
+      dt,
+      developerState.noCooldowns,
+      freezeAbilityCastTimers,
+    );
     character.shieldRemaining = Math.max(0, character.shieldRemaining - dt);
   });
 
@@ -2372,6 +2468,19 @@ scene.onBeforeRenderObservable.add(() => {
         'Elites      legacy behavior',
       ].join('\n'),
     );
+
+    const activeAbilityComponent = abilityComponents.get(active.id);
+    const queued = activeAbilityComponent?.getQueued();
+    abilityDeveloperPanel.render({
+      characterName: active.name,
+      queuedAbility: queued
+        ? activeAbilityComponent?.get(queued.slot)?.definition.name
+        : undefined,
+      abilities: activeAbilitySnapshots(),
+      events: abilityEventLog,
+      noCooldowns: developerState.noCooldowns,
+      castTimersFrozen: freezeAbilityCastTimers,
+    });
   }
 
   flushFrameInfrastructure();

@@ -17,6 +17,9 @@ export interface GameplayAbilityView {
   readonly assigned: boolean;
   readonly state?: string;
   readonly castProgress?: number;
+  readonly castElapsed?: number;
+  readonly castRemaining?: number;
+  readonly castMaximum?: number;
   readonly tags?: readonly string[];
 }
 
@@ -33,6 +36,13 @@ export interface GameplayHudSnapshot {
   readonly kills: number;
   readonly power: number;
   readonly boss?: GameplayBossView;
+  readonly activeCast?: {
+    readonly name: string;
+    readonly elapsed: number;
+    readonly remaining: number;
+    readonly maximum: number;
+    readonly progress: number;
+  };
 }
 
 export type NotificationTone =

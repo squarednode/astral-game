@@ -331,3 +331,39 @@
   .gameplay-wave-metric { min-width: 48px; padding-inline: 7px; }
   .gameplay-notification-feed { bottom: 82px; }
 }
+
+.gameplay-cast-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 98px;
+  width: min(420px, calc(100vw - 36px));
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(117, 186, 255, 0.45);
+  border-radius: 9px;
+  background: var(--ui-panel-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  transform: translateX(-50%);
+}
+
+.gameplay-cast-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.gameplay-cast-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.gameplay-cast-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ui-accent), #c3e3ff);
+  transition: width 50ms linear;
+}

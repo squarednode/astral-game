@@ -1,6 +1,7 @@
 import { UITheme } from '../shared/UITheme';
 import { AbilityBar } from './AbilityBar';
 import { BossBar } from './BossBar';
+import { CastBar } from './CastBar';
 import type {
   GameplayHudSnapshot,
   NotificationTone,
@@ -13,6 +14,7 @@ export class GameplayHud {
   readonly element: HTMLDivElement;
   private readonly partyHud: PartyHud;
   private readonly abilityBar: AbilityBar;
+  private readonly castBar: CastBar;
   private readonly waveHud: WaveHud;
   private readonly bossBar: BossBar;
   private readonly notifications: NotificationFeed;
@@ -34,6 +36,7 @@ export class GameplayHud {
     this.partyHud = new PartyHud(this.element);
     this.waveHud = new WaveHud(this.element);
     this.bossBar = new BossBar(this.element);
+    this.castBar = new CastBar(this.element);
     this.abilityBar = new AbilityBar(this.element);
     this.notifications = new NotificationFeed(notificationLayer);
 
@@ -55,6 +58,7 @@ export class GameplayHud {
   render(snapshot: GameplayHudSnapshot): void {
     this.partyHud.render(snapshot.party);
     this.abilityBar.render(snapshot.abilities);
+    this.castBar.render(snapshot.activeCast);
     this.waveHud.render(snapshot.wave, snapshot.kills, snapshot.power);
     this.bossBar.render(snapshot.boss);
   }

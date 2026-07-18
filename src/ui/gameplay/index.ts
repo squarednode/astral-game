@@ -6,3 +6,6 @@ export type {
   GameplayHudSnapshot,
   NotificationTone,
 } from './GameplayHudTypes';
+
+export { CastBar } from './CastBar';
+export type { CastBarView } from './CastBar';

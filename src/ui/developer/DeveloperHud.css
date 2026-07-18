@@ -192,3 +192,30 @@
     grid-template-columns: 1fr;
   }
 }
+
+.ability-developer-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.ability-developer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ability-developer-controls button {
+  padding: 7px 9px;
+  border: 1px solid rgba(117, 186, 255, 0.4);
+  border-radius: 7px;
+  background: rgba(117, 186, 255, 0.12);
+  color: #f2f6ff;
+  cursor: pointer;
+}
+
+.ability-event-log {
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid rgba(165, 190, 225, 0.18);
+  padding-top: 10px;
+}

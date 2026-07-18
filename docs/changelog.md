@@ -3995,6 +3995,78 @@ can be added without replacing the foundation.
 13. Confirm event-bus errors and state-machine rejections remain zero.
 14. Confirm movement, inventory, settings, enemies, elevator, and character swapping remain functional.
 
+# Astral 0.6.0.1 — Ability Runtime Polish & Gameplay Developer Toolkit
+
+This milestone makes cast time visible and authoritative, adds one-slot ability
+queueing, and introduces an ability-focused developer toolkit.
+
+## Runtime corrections
+
+Ability execution is owned by the state machine:
+
+```text
+ready -> casting -> executing -> cooldown -> ready
+```
+
+The executor runs only when `executing` is entered.
+
+Validation timings:
+
+```text
+Fireball       0.50 s cast / 8.0 s cooldown
+Ice Spear      0.30 s cast / 6.0 s cooldown
+Astral Shield  0.20 s cast / 12.0 s cooldown
+Blink          instant / 6.0 s cooldown
+```
+
+## Ability queue
+
+Each character has one queued ability slot.
+
+Pressing another ability while one is casting or executing replaces the queued
+request. When the active execution finishes, the queued request begins if its
+runtime is ready.
+
+## Gameplay HUD
+
+A cast bar appears above the ability bar with:
+
+- Ability name
+- Remaining cast time
+- Cast progress
+
+Ability icons continue to show state and cooldown overlays.
+
+## Developer HUD — Abilities
+
+The new Abilities page shows:
+
+- Runtime state
+- Cast elapsed, remaining, maximum, and progress
+- Cooldown remaining
+- Blackboard cast sequence
+- Caster ID
+- Aim position
+- Aim direction
+- Interrupt reason
+- Ability tags
+- Queued ability
+- Recent ability event stream
+
+Controls:
+
+- Reset cooldowns
+- Interrupt cast
+- Finish cast
+- Reset ability states
+- Toggle no cooldowns
+- Freeze cast timer
+- Apply burn to nearest enemy
+- Apply frost to nearest enemy
+- Apply shock to nearest enemy
+- Clear nearest-enemy statuses
+
+Reserved developer pages were added for AI, Status, Loot, Bosses, and Quests.
 
 
 ### Validate

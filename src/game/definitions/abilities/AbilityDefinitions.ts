@@ -72,7 +72,7 @@ export function validateAbilityDefinition(
 
 const metadata = {
   schemaVersion: ABILITY_DEFINITION_SCHEMA_VERSION,
-  contentVersion: '0.6.0',
+  contentVersion: '0.6.0a',
   source: 'src/game/definitions/abilities/AbilityDefinitions.ts',
   tags: ['ability', 'phase-2', 'validation'],
 } as const;
@@ -83,7 +83,7 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     name: 'Fireball', description: 'Launch a fiery projectile toward the aim point.',
     executorId: 'fireball', targeting: 'directional', castStyle: 'cast-time', resource: 'cooldown-only',
     element: 'fire', abilityTags: ['projectile', 'fire', 'damage'],
-    cooldown: 4.5, castTime: 0.18, executionTime: 0.05, range: 12, damage: 46,
+    cooldown: 8, castTime: 0.50, executionTime: 0.05, range: 12, damage: 46,
     iconAssetId: 'icon:ability-fireball',
   },
   {
@@ -97,9 +97,9 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
   {
     id: 'ability.shield', kind: 'ability', metadata,
     name: 'Astral Shield', description: 'Restore health and surround the caster with a timed defensive field.',
-    executorId: 'shield', targeting: 'self', castStyle: 'instant', resource: 'cooldown-only',
+    executorId: 'shield', targeting: 'self', castStyle: 'cast-time', resource: 'cooldown-only',
     element: 'arcane', abilityTags: ['defensive', 'buff'],
-    cooldown: 9, castTime: 0, executionTime: 0.05, range: 0, duration: 4,
+    cooldown: 12, castTime: 0.20, executionTime: 0.05, range: 0, duration: 4,
     iconAssetId: 'icon:ability-shield',
   },
   {
@@ -107,7 +107,7 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     name: 'Ice Spear', description: 'Launch a piercing frost projectile that applies frost.',
     executorId: 'ice-spear', targeting: 'directional', castStyle: 'cast-time', resource: 'cooldown-only',
     element: 'frost', abilityTags: ['projectile', 'ice', 'damage', 'crowd-control', 'status'],
-    cooldown: 5.5, castTime: 0.12, executionTime: 0.05, range: 14, damage: 38, statusDuration: 4,
+    cooldown: 6, castTime: 0.30, executionTime: 0.05, range: 14, damage: 38, statusDuration: 4,
     iconAssetId: 'icon:ability-ice-spear',
   },
 ];
