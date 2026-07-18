@@ -99,6 +99,8 @@ import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController
 import { HitFeedbackController } from './game/combat/HitFeedbackController';
 import type { HitWeight } from './game/combat/CombatTypes';
 import { GameBalance } from './game/config/GameBalance';
+import { CombatTuning } from './game/config/CombatTuning';
+import { CombatPresentation } from './game/config/CombatPresentation';
 import { DeveloperConsole } from './devtools/DeveloperConsole';
 import { developerState } from './devtools/DeveloperState';
 import type { DeveloperActions } from './devtools/DeveloperActions';
@@ -1156,7 +1158,12 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
     if (direction.lengthSquared() > 0.001) direction.normalize();
     const projectile = MeshBuilder.CreateSphere(
       `enemy-projectile-${ability.id}`,
-      { diameter: Math.max(0.24, (projectileDefinition?.radius ?? 0.16) * 2) },
+      { diameter: Math.max(
+        0.12,
+        (projectileDefinition?.radius ?? 0.16) *
+          2 *
+          CombatPresentation.projectiles.visualScale,
+      ) },
       scene,
     );
     projectile.position = enemy.mesh.position
@@ -1180,7 +1187,9 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
       element: ability.element,
       pierce: projectileDefinition?.pierce ?? 0,
       owner: 'enemy',
-      collisionRadius: projectileDefinition?.radius ?? 0.16,
+      collisionRadius:
+      (projectileDefinition?.radius ?? 0.16) *
+      CombatPresentation.projectiles.collisionScale,
     });
   } else if (ability.id === 'ability.retreat') {
     const away = enemy.mesh.position.subtract(playerRoot.position); away.y = 0;
@@ -1651,7 +1660,17 @@ function spawnEnemy(
   shadows.addShadowCaster(mesh);
 
   const waveScale = 1 + (wave - 1) * 0.18;
-  const hp = definition.maxHp * variant.hpMultiplier * modifier.hpMultiplier * waveScale;
+  const roleHealthScale = elite
+    ? CombatTuning.elites.healthScale
+    : definition.role === 'boss'
+      ? CombatTuning.bosses.healthScale
+      : CombatTuning.enemies.healthScale;
+  const hp =
+    definition.maxHp *
+    variant.hpMultiplier *
+    modifier.hpMultiplier *
+    roleHealthScale *
+    waveScale;
   const healthComponent: HealthComponent = { current: hp, maximum: hp };
   const enemyEntity = entities.create({
     name: displayName,
@@ -1665,7 +1684,13 @@ function spawnEnemy(
 
   const targetMesh = MeshBuilder.CreateSphere(
     `enemy-target-${enemyEntity.id}`,
-    { diameter: definition.targetRadius * 2, segments: 12 },
+    {
+      diameter:
+        definition.targetRadius *
+        2 *
+        CombatPresentation.targeting.hoverVolumeScale,
+      segments: 12,
+    },
     scene,
   );
   targetMesh.parent = mesh;
@@ -1688,12 +1713,23 @@ function spawnEnemy(
     healthComponent,
     mesh,
     targetMesh,
-    targetRadius: definition.targetRadius,
+    targetRadius:
+      definition.targetRadius *
+      CombatPresentation.targeting.targetVolumeScale,
     targetHeight: definition.targetHeight,
     hp,
     maxHp: hp,
-    speed: definition.movementSpeed * variant.speedMultiplier * modifier.speedMultiplier,
-    damage: definition.baseDamage * variant.damageMultiplier * modifier.damageMultiplier * (1 + wave * 0.08),
+    speed:
+      definition.movementSpeed *
+      variant.speedMultiplier *
+      modifier.speedMultiplier *
+      CombatTuning.enemies.movementSpeedScale,
+    damage:
+      definition.baseDamage *
+      variant.damageMultiplier *
+      modifier.damageMultiplier *
+      CombatTuning.enemies.damageScale *
+      (1 + wave * 0.08),
     elite,
     attackCd: Math.random(),
     abilityCooldowns: new Map<string, number>(),
@@ -1777,10 +1813,21 @@ function basicAttack(): void {
     vfxRing(playerRoot.position.add(dir.scale(1.3)), active.color, active.attackRange * 1.15, 0.23);
     enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position.add(dir.scale(1.1))) < active.attackRange).forEach(e => damageEnemy(e, attackFor(), active.element));
   } else {
-    const orb = MeshBuilder.CreateSphere('projectile', { diameter: 0.36 }, scene);
+    const orb = MeshBuilder.CreateSphere(
+      'projectile',
+      {
+        diameter:
+          0.36 *
+          CombatPresentation.projectiles.visualScale,
+      },
+      scene,
+    );
     orb.position = playerRoot.position.add(new Vector3(0, 0.8, 0)).add(dir.scale(0.8));
     orb.material = mat('projectile', active.color, 0.8);
-    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player', collisionRadius: 0.18 });
+    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player', collisionRadius:
+      0.18 *
+      CombatPresentation.projectiles.collisionScale,
+    });
   }
 }
 
@@ -1823,7 +1870,13 @@ function executeAbility(context: AbilityExecutionContext): void {
   if (direction.lengthSquared() > 0.0001) direction.normalize();
 
   if (definition.executorId === 'fireball') {
-    const orb = MeshBuilder.CreateSphere('ability-fireball', { diameter: 0.52 }, scene);
+    const orb = MeshBuilder.CreateSphere('ability-fireball', {
+        diameter:
+          0.52 *
+          CombatPresentation.projectiles.visualScale,
+      },
+      scene,
+    );
     orb.position = request.casterPosition.add(new Vector3(0, 0.85, 0)).add(direction.scale(0.9));
     orb.material = mat('ability-fireball', new Color3(1, 0.32, 0.08), 0.85);
     projectiles.push({
@@ -1834,7 +1887,9 @@ function executeAbility(context: AbilityExecutionContext): void {
       element: 'fire',
       pierce: 0,
       owner: 'player',
-      collisionRadius: 0.26,
+      collisionRadius:
+        0.26 *
+        CombatPresentation.projectiles.collisionScale,
     });
     vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
     return;
@@ -1843,7 +1898,15 @@ function executeAbility(context: AbilityExecutionContext): void {
   if (definition.executorId === 'ice-spear') {
     const spear = MeshBuilder.CreateCylinder(
       'ability-ice-spear',
-      { diameter: 0.28, height: 1.4, tessellation: 8 },
+      {
+        diameter:
+          0.28 *
+          CombatPresentation.projectiles.visualScale,
+        height:
+          1.4 *
+          CombatPresentation.projectiles.visualScale,
+        tessellation: 8,
+      },
       scene,
     );
     spear.rotation.x = Math.PI / 2;
@@ -1858,7 +1921,9 @@ function executeAbility(context: AbilityExecutionContext): void {
       element: 'frost',
       pierce: 1,
       owner: 'player',
-      collisionRadius: 0.18,
+      collisionRadius:
+        0.18 *
+        CombatPresentation.projectiles.collisionScale,
     });
     return;
   }

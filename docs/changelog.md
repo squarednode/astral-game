@@ -4852,6 +4852,32 @@ It continues to show:
 - Added `return-home` enemy state and leash enforcement.
 - Added territory and target-volume diagnostics.
 
+# Changelog — 0.6.1f2
+
+## Added
+
+- Central combat balance configuration
+- Central combat presentation configuration
+- Combat debug-visual configuration
+- Export surface from `src/game/config/index.ts`
+
+## Changed
+
+- Enemy target volumes scaled to 50%
+- Hover volumes scaled to 50%
+- Player and enemy projectile visuals scaled to 50%
+- Player and enemy projectile collision radii scaled to 50%
+- Damage-number presentation scaled to 75%
+- Enemy health, damage, and movement now pass through centralized tuning multipliers
+
+## Unchanged
+
+- Detection ranges
+- Preferred ranges
+- Leash and territory values
+- Enemy tactical behavior
+- Ability selection
+- State-machine behavior
 
 ### Validate
 ```bash

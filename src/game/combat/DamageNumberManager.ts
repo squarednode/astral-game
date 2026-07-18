@@ -2,6 +2,7 @@ import { Camera, Engine, Matrix, Scene, Vector3 } from '@babylonjs/core';
 import { DEFAULT_COMBAT_CONFIG } from './CombatConfig';
 import type { CombatConfig } from './CombatConfig';
 import type { DamageElement } from './CombatTypes';
+import { CombatPresentation } from '../config/CombatPresentation';
 
 interface DamageNumber {
   element: HTMLDivElement;
@@ -39,7 +40,8 @@ export class DamageNumberManager {
     node.textContent = label ?? `${Math.max(1, Math.round(amount))}`;
     Object.assign(node.style, {
       position: 'absolute', transform: 'translate(-50%, -50%)',
-      fontFamily: 'system-ui, sans-serif', fontWeight: '800', fontSize: label ? '22px' : '18px',
+      fontFamily: 'system-ui, sans-serif', fontWeight: '800',
+      fontSize: `${(label ? 22 : 18) * CombatPresentation.damageNumbers.scale}px`,
       letterSpacing: '0.02em', color: COLORS[element],
       textShadow: '0 2px 3px rgba(0,0,0,0.95)', whiteSpace: 'nowrap',
     });
@@ -56,9 +58,15 @@ export class DamageNumberManager {
     const viewport = this.camera.viewport.toGlobal(this.engine.getRenderWidth(), this.engine.getRenderHeight());
     for (const number of [...this.active]) {
       number.age += dt;
-      number.riseOffset += this.config.damageNumberRiseSpeed * dt;
+      number.riseOffset +=
+        this.config.damageNumberRiseSpeed *
+        CombatPresentation.damageNumbers.verticalSpeedScale *
+        dt;
       const projected = Vector3.Project(number.worldPosition, Matrix.Identity(), this.scene.getTransformMatrix(), viewport);
-      const progress = number.age / this.config.damageNumberLifetimeSeconds;
+      const progress =
+        number.age /
+        (this.config.damageNumberLifetimeSeconds *
+          CombatPresentation.damageNumbers.lifetimeScale);
       number.element.style.left = `${projected.x}px`;
       number.element.style.top = `${projected.y - number.riseOffset}px`;
       number.element.style.opacity = `${Math.max(0, 1 - progress)}`;
