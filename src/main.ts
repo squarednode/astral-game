@@ -1608,7 +1608,10 @@ scene.onPointerObservable.add((pi: any) => {
 
     if (pi.event.button === 0) {
       canvas.setPointerCapture?.(pi.event.pointerId);
-      if (updatePointerWorldFromCursor()) {
+      if (
+        !input.isClickToAttackEnabled() &&
+        updatePointerWorldFromCursor()
+      ) {
         movement.beginPointerMovement(pointerWorld);
       }
     }
@@ -1739,16 +1742,26 @@ scene.onBeforeRenderObservable.add(() => {
   if (input.consumePressed('partyPrevious')) cycleControl(-1);
   const wheelDirection = input.consumeWheelDirection();
   if (wheelDirection !== 0) cycleControl(wheelDirection);
+  const leftClickAttack = input.isClickToAttackEnabled() && (
+    input.consumePointerPressed('left') ||
+    input.isPointerHeld('left')
+  );
   if (
     input.consumePressed('primaryAttack') ||
     input.isHeld('primaryAttack') ||
     input.consumePointerPressed('right') ||
-    input.isPointerHeld('right')
+    input.isPointerHeld('right') ||
+    leftClickAttack
   ) basicAttack();
 
   // Repick every frame while held. This keeps steering responsive even when
   // the browser coalesces pointer-move events or the cursor moves across VFX.
-  if (input.isPointerHeld('left')) updatePointerWorldFromCursor();
+  if (
+    input.isPointerHeld('left') &&
+    !input.isClickToAttackEnabled()
+  ) {
+    updatePointerWorldFromCursor();
+  }
 
   const gamepadAim = input.getAimAxes();
   if (input.hasGamepadAim()) {

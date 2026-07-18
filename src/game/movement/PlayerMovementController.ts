@@ -320,7 +320,10 @@ export class PlayerMovementController {
       this.movementSource = 'wasd';
 
       if (
-        this.input.getMovementControlScheme() === 'mouse-relative' &&
+        (
+          this.input.getMovementControlScheme() === 'mouse-relative' ||
+          this.input.getMovementControlScheme() === 'hybrid'
+        ) &&
         this.input.getActiveDevice() === 'keyboard-mouse'
       ) {
         const forward = this.pointerWorld.subtract(this.actor.position);

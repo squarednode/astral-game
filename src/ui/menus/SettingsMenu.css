@@ -126,3 +126,16 @@
   outline: 2px solid var(--ui-accent, #63c8ff);
   outline-offset: 2px;
 }
+
+
+/* Native dropdown menus may render options on a light system surface. */
+.settings-menu-panel select {
+  color: var(--ui-text, #f5f7fb);
+  color-scheme: dark;
+}
+
+.settings-menu-panel select option,
+.settings-menu-panel select optgroup {
+  background: #111923;
+  color: #f5f7fb;
+}

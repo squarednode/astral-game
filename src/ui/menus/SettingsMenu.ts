@@ -126,7 +126,7 @@ export class SettingsMenu {
         'Movement style',
         current.input.movementControlScheme,
         [
-          ['hybrid', 'Hybrid: WASD + click-to-move'],
+          ['hybrid', 'Mouse-relative WASD + click-to-move'],
           ['click-to-move', 'Click-to-move'],
           ['screen-relative', 'Screen-relative WASD'],
           ['mouse-relative', 'Mouse-relative WASD'],
@@ -139,7 +139,7 @@ export class SettingsMenu {
         value => this.settings.update({ input: { ...this.settings.get().input, faceAimDirection: value } }),
       ),
       this.toggleRow(
-        'Click to attack',
+        'Left click attacks instead of moving',
         current.input.clickToAttack,
         value => this.settings.update({ input: { ...this.settings.get().input, clickToAttack: value } }),
       ),
