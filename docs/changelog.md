@@ -4399,7 +4399,91 @@ CHANGELOG.md
 FILES_CHANGED.md
 MIGRATION.md
 ```
+# Astral 0.6.1.1 — Tactical Positioning
 
+This patch corrects the tactical layer found during the first Enemy Archetype validation.
+
+## Ability-first decisions
+
+Enemies now select a ready combat ability before deciding whether movement is necessary.
+
+```text
+Evaluate
+  -> Select ability
+  -> Already in its range band?
+      Yes: Cast
+      No: Position for that ability
+```
+
+Movement no longer occurs without a selected tactical purpose.
+
+## Range-band behavior
+
+Each selected AI usage supplies:
+
+- Minimum range
+- Preferred range
+- Maximum range
+
+The movement policy is:
+
+```text
+Distance > maximum  -> advance
+Inside range band   -> hold and cast
+Distance < minimum  -> retreat
+```
+
+Ranged enemies therefore stop moving as soon as Arrow Shot, Fire Bolt, Ice Bolt, or another selected attack becomes valid.
+
+## Visible ranged attacks
+
+Enemy abilities that reference a projectile definition now spawn a visible hostile projectile using the Combat Library's projectile speed, radius, lifetime, and pierce values.
+
+Player and enemy projectiles share one runtime collection but have explicit ownership:
+
+```text
+player projectile -> checks enemy collision
+enemy projectile  -> checks player collision
+```
+
+## Blackboard additions
+
+Enemy machines now track:
+
+```text
+minimumRange
+maximumRange
+canCast
+castReason
+positioningIntent
+```
+
+The selected ability and AI usage remain locked while the enemy positions for the cast.
+
+## AI inspector
+
+The live inspector now displays:
+
+```text
+Distance
+Range band
+Preferred range
+Selected ability
+Can cast
+Positioning intent
+Reason
+Committed state
+```
+
+Typical output:
+
+```text
+Ability      ability.fire-bolt
+Band         5.0 - 24.0
+Can Cast     yes
+Position     hold
+Reason       in selected ability range
+```
 
 ### Validate
 ```bash

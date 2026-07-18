@@ -147,9 +147,14 @@ interface EnemyBlackboard {
   distanceToTarget: number;
   lastSeenPosition: Vector3;
   desiredRange: number;
+  minimumRange: number;
+  maximumRange: number;
   currentAbilityId: string | null;
   currentUsageId: string | null;
   committed: boolean;
+  canCast: boolean;
+  castReason: string;
+  positioningIntent: 'advance' | 'hold' | 'retreat' | 'none';
   homePosition: Vector3;
   decisionCount: number;
 }
@@ -682,7 +687,15 @@ let enemies: Enemy[] = [];
 let loot: LootItem[] = [];
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
 let scheduledWave: number | null = null;
-let projectiles: { mesh: Mesh; vel: Vector3; ttl: number; damage: number; element: Element; pierce: number }[] = [];
+let projectiles: {
+  mesh: Mesh;
+  vel: Vector3;
+  ttl: number;
+  damage: number;
+  element: Element;
+  pierce: number;
+  owner: 'player' | 'enemy';
+}[] = [];
 
 const inventoryEl = document.querySelector<HTMLDivElement>('#inventory')!;
 
@@ -1082,36 +1095,17 @@ function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   return ring;
 }
 
-function weightedEnemyUsage(enemy: Enemy): AiAbilityUsageDefinition | null {
-  const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
-  const healthPercent = Math.max(0, enemy.hp / enemy.maxHp);
-  const candidates = enemy.definition.abilityUsage
-    .map(reference => ({
-      reference,
-      usage: definitions.get<AiAbilityUsageDefinition>(reference.usageId),
-    }))
-    .filter((candidate): candidate is {
-      reference: EnemyDefinition['abilityUsage'][number];
-      usage: Readonly<AiAbilityUsageDefinition>;
-    } => Boolean(candidate.usage))
-    .filter(({ usage }) =>
-      distance >= usage.minimumRange &&
-      distance <= usage.maximumRange &&
-      healthPercent >= usage.minimumHealthPercent &&
-      healthPercent <= usage.maximumHealthPercent &&
-      (enemy.abilityCooldowns.get(usage.abilityId) ?? 0) <= 0
-    )
-    .map(candidate => ({
-      ...candidate,
-      effectiveWeight: candidate.usage.weight * (
-        candidate.reference.role === 'escape' && distance < enemy.definition.preferredRange * 0.45 ? 4 :
-        candidate.reference.role === 'defensive' && healthPercent < 0.45 ? 3 :
-        candidate.reference.role === 'primary' ? 1.35 : 1
-      ),
-    }));
-
+function chooseWeightedUsage(
+  candidates: readonly {
+    usage: Readonly<AiAbilityUsageDefinition>;
+    effectiveWeight: number;
+  }[],
+): Readonly<AiAbilityUsageDefinition> | null {
   if (candidates.length === 0) return null;
-  const total = candidates.reduce((sum, candidate) => sum + candidate.effectiveWeight, 0);
+  const total = candidates.reduce(
+    (sum, candidate) => sum + candidate.effectiveWeight,
+    0,
+  );
   let roll = Math.random() * total;
   for (const candidate of candidates) {
     roll -= candidate.effectiveWeight;
@@ -1120,12 +1114,113 @@ function weightedEnemyUsage(enemy: Enemy): AiAbilityUsageDefinition | null {
   return candidates[candidates.length - 1].usage;
 }
 
+function selectEnemyUsage(enemy: Enemy): Readonly<AiAbilityUsageDefinition> | null {
+  const distance = Vector3.Distance(
+    enemy.mesh.position,
+    playerRoot.position,
+  );
+  const healthPercent = Math.max(0, enemy.hp / enemy.maxHp);
+
+  const candidates = enemy.definition.abilityUsage
+    .map(reference => ({
+      reference,
+      usage: definitions.get<AiAbilityUsageDefinition>(
+        reference.usageId,
+      ),
+    }))
+    .filter((candidate): candidate is {
+      reference: EnemyDefinition['abilityUsage'][number];
+      usage: Readonly<AiAbilityUsageDefinition>;
+    } => Boolean(candidate.usage))
+    .filter(({ usage }) =>
+      healthPercent >= usage.minimumHealthPercent &&
+      healthPercent <= usage.maximumHealthPercent &&
+      (enemy.abilityCooldowns.get(usage.abilityId) ?? 0) <= 0
+    )
+    .filter(({ reference, usage }) =>
+      reference.role !== 'escape' || distance <= usage.maximumRange
+    )
+    .map(candidate => {
+      const inRange =
+        distance >= candidate.usage.minimumRange &&
+        distance <= candidate.usage.maximumRange;
+      const rangeError = inRange
+        ? 0
+        : distance < candidate.usage.minimumRange
+          ? candidate.usage.minimumRange - distance
+          : distance - candidate.usage.maximumRange;
+      const roleMultiplier =
+        candidate.reference.role === 'escape' &&
+        distance < enemy.definition.preferredRange * 0.45
+          ? 5
+          : candidate.reference.role === 'defensive' &&
+              healthPercent < 0.45
+            ? 3
+            : candidate.reference.role === 'primary'
+              ? 1.35
+              : 1;
+      return {
+        ...candidate,
+        inRange,
+        rangeError,
+        effectiveWeight:
+          candidate.usage.weight *
+          roleMultiplier *
+          (inRange ? 3 : 1 / (1 + rangeError * 0.15)),
+      };
+    });
+
+  const inRange = candidates.filter(candidate => candidate.inRange);
+  if (inRange.length > 0) return chooseWeightedUsage(inRange);
+
+  // Select a real combat ability first, then let positioning move into its band.
+  // This prevents ranged archetypes from wandering without a tactical purpose.
+  const positionable = candidates.filter(
+    candidate => candidate.reference.role !== 'escape',
+  );
+  return chooseWeightedUsage(positionable.length > 0 ? positionable : candidates);
+}
+
 function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
   const ability = definitions.require<AbilityDefinition>(usage.abilityId);
   const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
   const power = (ability.power ?? ability.damage ?? enemy.damage) * usage.powerMultiplier;
 
-  if (ability.id === 'ability.retreat') {
+  if (ability.projectileId) {
+    const projectileDefinition = definitions.get<ProjectileDefinition>(
+      ability.projectileId,
+    );
+    const direction = playerRoot.position.subtract(enemy.mesh.position);
+    direction.y = 0;
+    if (direction.lengthSquared() > 0.001) direction.normalize();
+    const projectile = MeshBuilder.CreateSphere(
+      `enemy-projectile-${ability.id}`,
+      { diameter: Math.max(0.24, (projectileDefinition?.radius ?? 0.16) * 2) },
+      scene,
+    );
+    projectile.position = enemy.mesh.position
+      .add(new Vector3(0, 0.75, 0))
+      .add(direction.scale(0.8));
+    projectile.material = mat(
+      `enemy-projectile-${ability.element}`,
+      ability.element === 'fire'
+        ? new Color3(1, 0.28, 0.08)
+        : ability.element === 'frost'
+          ? new Color3(0.45, 0.85, 1)
+          : new Color3(0.85, 0.85, 0.95),
+      0.75,
+    );
+    const speed = projectileDefinition?.speed ?? ability.speed ?? 15;
+    projectiles.push({
+      mesh: projectile,
+      vel: direction.scale(speed),
+      ttl: projectileDefinition?.lifetime ?? Math.max(0.5, ability.range / speed),
+      damage: Math.max(enemy.damage, power),
+      element: ability.element,
+      pierce: projectileDefinition?.pierce ?? 0,
+      owner: 'enemy',
+    });
+  } else if (ability.id === 'ability.retreat') {
     const away = enemy.mesh.position.subtract(playerRoot.position); away.y = 0;
     if (away.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(away.normalize().scale(ability.range));
   } else if (ability.id === 'ability.charge') {
@@ -1135,7 +1230,11 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
 
   const resolvedDistance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
   const hitRange = Math.max(ability.range, usage.maximumRange) + 0.75;
-  if (resolvedDistance <= hitRange && !ability.abilityTags.includes('defensive')) {
+  if (
+    !ability.projectileId &&
+    resolvedDistance <= hitRange &&
+    !ability.abilityTags.includes('defensive')
+  ) {
     hurtActive(Math.max(enemy.damage, power));
   }
 
@@ -1169,9 +1268,14 @@ function createEnemyStateMachine(
       distanceToTarget: 0,
       lastSeenPosition: playerRoot.position.clone(),
       desiredRange: enemy.definition.preferredRange,
+      minimumRange: 0,
+      maximumRange: enemy.definition.detectionRange,
       currentAbilityId: null,
       currentUsageId: null,
       committed: enemy.definition.policy === 'boss',
+      canCast: false,
+      castReason: 'no ability selected',
+      positioningIntent: 'none',
       homePosition: enemy.mesh.position.clone(),
       decisionCount: 0,
     },
@@ -1186,15 +1290,47 @@ function createEnemyStateMachine(
         const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
         blackboard.set('distanceToTarget', distance);
         blackboard.set('lastSeenPosition', playerRoot.position.clone());
-        const usage = weightedEnemyUsage(enemy);
-        if (usage) {
-          blackboard.set('currentAbilityId', usage.abilityId);
-          blackboard.set('currentUsageId', usage.id);
-          blackboard.set('desiredRange', usage.preferredRange);
-          activeMachine.request('casting', 'ability-selected');
-        } else {
-          activeMachine.request('reposition', 'no-valid-ability');
+        const usage = selectEnemyUsage(enemy);
+        if (!usage) {
+          blackboard.set('currentAbilityId', null);
+          blackboard.set('currentUsageId', null);
+          blackboard.set('canCast', false);
+          blackboard.set('castReason', 'all abilities cooling down');
+          blackboard.set('positioningIntent', 'hold');
+          activeMachine.request('recover', 'no-ready-ability');
+          return;
         }
+
+        blackboard.set('currentAbilityId', usage.abilityId);
+        blackboard.set('currentUsageId', usage.id);
+        blackboard.set('desiredRange', usage.preferredRange);
+        blackboard.set('minimumRange', usage.minimumRange);
+        blackboard.set('maximumRange', usage.maximumRange);
+
+        const canCast =
+          distance >= usage.minimumRange &&
+          distance <= usage.maximumRange;
+        blackboard.set('canCast', canCast);
+        blackboard.set(
+          'castReason',
+          canCast
+            ? 'in selected ability range'
+            : distance < usage.minimumRange
+              ? 'too close for selected ability'
+              : 'too far for selected ability',
+        );
+        blackboard.set(
+          'positioningIntent',
+          canCast
+            ? 'hold'
+            : distance < usage.minimumRange
+              ? 'retreat'
+              : 'advance',
+        );
+        activeMachine.request(
+          canCast ? 'casting' : 'reposition',
+          canCast ? 'ability-ready' : 'position-for-selected-ability',
+        );
       },
     })
     .addState({
@@ -1204,15 +1340,34 @@ function createEnemyStateMachine(
         const toPlayer = playerRoot.position.subtract(enemy.mesh.position); toPlayer.y = 0;
         const distance = toPlayer.length();
         activeMachine.blackboard.set('distanceToTarget', distance);
-        const desired = activeMachine.blackboard.get('desiredRange');
+        const minimum = activeMachine.blackboard.get('minimumRange');
+        const maximum = activeMachine.blackboard.get('maximumRange');
         const slow = (enemy.statuses.frost ?? 0) > 0 ? 0.58 : 1;
-        if (distance > desired + 1.25 && toPlayer.lengthSquared() > 0.001) {
-          enemy.mesh.position.addInPlace(toPlayer.normalize().scale(enemy.speed * dt * slow));
-        } else if (distance < desired - 1.25 && desired > 5 && toPlayer.lengthSquared() > 0.001) {
-          enemy.mesh.position.addInPlace(toPlayer.normalize().scale(-enemy.speed * dt * slow));
-        } else {
-          activeMachine.request('evaluate', 'position-reached');
+        const inRange = distance >= minimum && distance <= maximum;
+
+        activeMachine.blackboard.set('canCast', inRange);
+        if (inRange) {
+          activeMachine.blackboard.set('castReason', 'entered selected ability range');
+          activeMachine.blackboard.set('positioningIntent', 'hold');
+          activeMachine.request('casting', 'selected-ability-in-range');
+          return;
         }
+
+        if (toPlayer.lengthSquared() <= 0.001) return;
+        if (distance > maximum) {
+          activeMachine.blackboard.set('castReason', 'too far for selected ability');
+          activeMachine.blackboard.set('positioningIntent', 'advance');
+          enemy.mesh.position.addInPlace(
+            toPlayer.normalize().scale(enemy.speed * dt * slow),
+          );
+          return;
+        }
+
+        activeMachine.blackboard.set('castReason', 'too close for selected ability');
+        activeMachine.blackboard.set('positioningIntent', 'retreat');
+        enemy.mesh.position.addInPlace(
+          toPlayer.normalize().scale(-enemy.speed * dt * slow),
+        );
       },
     })
     .addState({
@@ -1375,7 +1530,7 @@ function basicAttack(): void {
     const orb = MeshBuilder.CreateSphere('projectile', { diameter: 0.36 }, scene);
     orb.position = playerRoot.position.add(new Vector3(0, 0.8, 0)).add(dir.scale(0.8));
     orb.material = mat('projectile', active.color, 0.8);
-    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0 });
+    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player' });
   }
 }
 
@@ -1428,6 +1583,7 @@ function executeAbility(context: AbilityExecutionContext): void {
       damage: definition.damage ?? 0,
       element: 'fire',
       pierce: 0,
+      owner: 'player',
     });
     vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
     return;
@@ -1450,6 +1606,7 @@ function executeAbility(context: AbilityExecutionContext): void {
       damage: definition.damage ?? 0,
       element: 'frost',
       pierce: 1,
+      owner: 'player',
     });
     return;
   }
@@ -2355,10 +2512,39 @@ scene.onBeforeRenderObservable.add(() => {
   });
 
   for (const p of [...projectiles]) {
-    p.mesh.position.addInPlace(p.vel.scale(dt)); p.ttl -= dt;
-    const hit = enemies.find(e => Vector3.Distance(e.mesh.position, p.mesh.position) < 0.8);
-    if (hit) { damageEnemy(hit, p.damage, p.element, hit.mesh.position, p.mesh.position.subtract(p.vel), p.damage >= 40 ? 'heavy' : 'light'); vfxRing(hit.mesh.position, active.color, 1.35, 0.16); p.pierce--; if (p.pierce < 0) p.ttl = 0; }
-    if (p.ttl <= 0) { p.mesh.dispose(); projectiles.splice(projectiles.indexOf(p), 1); }
+    p.mesh.position.addInPlace(p.vel.scale(dt));
+    p.ttl -= dt;
+
+    if (p.owner === 'player') {
+      const hit = enemies.find(
+        enemy => Vector3.Distance(enemy.mesh.position, p.mesh.position) < 0.8,
+      );
+      if (hit) {
+        damageEnemy(
+          hit,
+          p.damage,
+          p.element,
+          hit.mesh.position,
+          p.mesh.position.subtract(p.vel),
+          p.damage >= 40 ? 'heavy' : 'light',
+        );
+        vfxRing(hit.mesh.position, active.color, 1.35, 0.16);
+        p.pierce -= 1;
+        if (p.pierce < 0) p.ttl = 0;
+      }
+    } else if (
+      Vector3.Distance(playerRoot.position, p.mesh.position) < 0.85
+    ) {
+      hurtActive(p.damage);
+      vfxRing(playerRoot.position, new Color3(1, 0.2, 0.12), 1.2, 0.15);
+      p.pierce -= 1;
+      if (p.pierce < 0) p.ttl = 0;
+    }
+
+    if (p.ttl <= 0) {
+      p.mesh.dispose();
+      projectiles.splice(projectiles.indexOf(p), 1);
+    }
   }
 
   for (const fx of [...effects]) {
@@ -2560,8 +2746,12 @@ scene.onBeforeRenderObservable.add(() => {
           `State        ${inspectedEnemy.stateMachine.getCurrentStateId() ?? 'none'}`,
           `HP           ${Math.max(0, inspectedEnemy.hp).toFixed(0)} / ${inspectedEnemy.maxHp.toFixed(0)}`,
           `Distance     ${inspectedEnemy.stateMachine.blackboard.get('distanceToTarget')?.toFixed(1) ?? 'n/a'}`,
-          `Desired      ${inspectedEnemy.stateMachine.blackboard.get('desiredRange')?.toFixed(1) ?? 'n/a'}`,
+          `Band         ${(inspectedEnemy.stateMachine.blackboard.get('minimumRange') ?? 0).toFixed(1)} - ${(inspectedEnemy.stateMachine.blackboard.get('maximumRange') ?? 0).toFixed(1)}`,
+          `Preferred    ${inspectedEnemy.stateMachine.blackboard.get('desiredRange')?.toFixed(1) ?? 'n/a'}`,
           `Ability      ${inspectedEnemy.stateMachine.blackboard.get('currentAbilityId') ?? 'none'}`,
+          `Can Cast     ${inspectedEnemy.stateMachine.blackboard.get('canCast') ? 'yes' : 'no'}`,
+          `Position     ${inspectedEnemy.stateMachine.blackboard.get('positioningIntent') ?? 'none'}`,
+          `Reason       ${inspectedEnemy.stateMachine.blackboard.get('castReason') ?? 'none'}`,
           `Committed    ${inspectedEnemy.stateMachine.blackboard.get('committed') ? 'yes' : 'no'}`,
           `Decisions    ${inspectedEnemy.stateMachine.blackboard.get('decisionCount') ?? 0}`,
         ] : []),
