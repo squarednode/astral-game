@@ -3818,6 +3818,183 @@ New callbacks:
 onTimerCompleted
 onInteraction
 ```
+# Astral 0.6.0 — Gameplay Ability Framework
+
+This milestone begins Phase 2 by adding a definition-driven gameplay ability
+system that uses the existing definition registry, advanced state machine,
+blackboard, event bus, input actions, and gameplay HUD.
+
+## Ability framework
+
+New modules:
+
+```text
+src/game/abilities/
+  AbilityComponent.ts
+  AbilityRuntime.ts
+  AbilityTypes.ts
+  index.ts
+
+src/game/definitions/abilities/
+  AbilityDefinitions.ts
+  index.ts
+```
+
+Each runtime follows:
+
+```text
+ready
+  ↓
+casting
+  ↓
+executing
+  ↓
+cooldown
+  ↓
+ready
+```
+
+Instant abilities skip `casting` and enter `executing` directly.
+
+## Blackboard
+
+Each ability machine owns a typed blackboard containing:
+
+```text
+castSequence
+request
+interruptReason
+```
+
+The cast request stores the caster ID, caster position, aim position, and aim
+direction. This data remains stable through casting and execution.
+
+## Ability definitions
+
+Definitions include:
+
+- Stable ID
+- Name and description
+- Executor ID
+- Targeting mode
+- Cast style
+- Resource model
+- Element
+- Semantic tags
+- Cooldown
+- Cast and execution times
+- Range
+- Damage and duration values
+- Future icon asset ID
+
+## Validation abilities
+
+### Fireball
+
+- Directional cast
+- Cast time
+- Fire projectile
+- Damage and fire status
+- Projectile and damage tags
+
+### Blink
+
+- Ground targeting
+- Instant execution
+- Uses the validated collision-safe blink path
+- Movement and mobility tags
+
+### Astral Shield
+
+- Self targeting
+- Restores health
+- Grants four seconds of 50% incoming-damage reduction
+- Defensive and buff tags
+
+### Ice Spear
+
+- Directional cast
+- Faster piercing projectile
+- Frost damage and frost status
+- Ice, projectile, crowd-control, and status tags
+
+## Validation loadouts
+
+All three party members receive the four validation abilities in different slot
+orders. This exercises dynamic HUD names, prompts, cooldowns, and four ability
+input actions without requiring a character-definition migration yet.
+
+## Events
+
+New events:
+
+```text
+ability.castStarted
+ability.executed
+ability.cooldownStarted
+ability.ready
+ability.interrupted
+```
+
+Ability machines also publish the existing generic state entered, exited, and
+changed events.
+
+## HUD bridge
+
+The ability bar now reads directly from ability runtime snapshots:
+
+- Ability name
+- Current state
+- Cooldown remaining
+- Cooldown maximum
+- Cast progress
+- Semantic tags
+- Current keyboard or controller prompt
+
+Casting uses the existing progress overlay. Cooldown rendering remains
+unchanged.
+
+## Developer support
+
+Reset Cooldowns now resets both legacy movement/basic-attack cooldowns and all
+ability state machines.
+
+The existing no-cooldowns developer option continually returns ability
+runtimes to `ready`.
+
+## Intentional limits
+
+This first vertical slice does not yet add:
+
+- Mana or stamina costs
+- Charges
+- Channels or charged casts
+- Ability interruption from damage
+- Ability icons or audio assets
+- Generalized status-effect components
+- Enemy ability users
+- AI ability selection
+
+The definition vocabulary includes the future cast and resource types so these
+can be added without replacing the foundation.
+
+## Validation checklist
+
+1. Confirm definition validation remains zero.
+2. Cast all four slots using keyboard controls.
+3. Confirm controller prompts remain available when a controller is connected.
+4. Confirm Fireball and Ice Spear travel toward mouse or right-stick aim.
+5. Confirm Fireball damages enemies.
+6. Confirm Ice Spear applies frost and can pierce one enemy.
+7. Confirm Blink stops at the last safe collision position.
+8. Confirm Astral Shield restores health and reduces incoming damage for four seconds.
+9. Confirm cast progress appears for Fireball and Ice Spear.
+10. Confirm cooldown numbers and overlays update from ability state timers.
+11. Confirm abilities cannot be recast during casting, execution, or cooldown.
+12. Confirm Reset Cooldowns returns all abilities to ready.
+13. Confirm event-bus errors and state-machine rejections remain zero.
+14. Confirm movement, inventory, settings, enemies, elevator, and character swapping remain functional.
+
 
 
 ### Validate

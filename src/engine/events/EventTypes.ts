@@ -9,6 +9,30 @@ export interface EngineEventMap {
     name: string;
     tags: readonly string[];
   };
+  'ability.castStarted': {
+    runtimeId: string;
+    abilityId: string;
+    casterId: string;
+  };
+  'ability.executed': {
+    runtimeId: string;
+    abilityId: string;
+    casterId: string;
+  };
+  'ability.cooldownStarted': {
+    runtimeId: string;
+    abilityId: string;
+    duration: number;
+  };
+  'ability.ready': {
+    runtimeId: string;
+    abilityId: string;
+  };
+  'ability.interrupted': {
+    runtimeId: string;
+    abilityId: string;
+    reason: string;
+  };
   'combat.enemyKilled': {
     entityId: string;
     elite: boolean;

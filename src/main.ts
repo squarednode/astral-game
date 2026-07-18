@@ -33,11 +33,17 @@ import {
   CHARACTER_DEFINITION_SCHEMA_VERSION,
   characterDefinitions,
   validateCharacterDefinition,
+  ABILITY_DEFINITION_SCHEMA_VERSION,
+  abilityDefinitions,
+  validateAbilityDefinition,
 } from './game/definitions';
 import type {
   CharacterDefinition,
   CharacterElement,
+  AbilityDefinition,
 } from './game/definitions';
+import { AbilityComponent, AbilityRuntime } from './game/abilities';
+import type { AbilityExecutionContext } from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
@@ -91,6 +97,7 @@ interface CharacterState extends CharacterDef {
   cooldowns: Record<SkillKey | 'attack' | 'dodge' | 'swap', number>;
   equipment: Partial<Record<ItemSlot, LootItem>>;
   skillSlots: Partial<Record<AbilitySlot, SkillKey>>;
+  shieldRemaining: number;
 }
 
 type StandardEnemyStateId =
@@ -168,6 +175,12 @@ definitions.registerKind<CharacterDefinition>(
   validateCharacterDefinition,
 );
 definitions.registerMany(characterDefinitions);
+definitions.registerKind<AbilityDefinition>(
+  'ability',
+  ABILITY_DEFINITION_SCHEMA_VERSION,
+  validateAbilityDefinition,
+);
+definitions.registerMany(abilityDefinitions);
 
 function mat(
   name: string,
@@ -479,9 +492,11 @@ const party: CharacterState[] = defs.map(d => ({
   cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 },
   equipment: {},
   skillSlots: { 1: 'Q', 2: 'E' },
+  shieldRemaining: 0,
 }));
 let activeIndex = 0;
 let active = party[0];
+const abilityComponents = new Map<string, AbilityComponent>();
 
 const playerRoot = new TransformNode('playerRoot', scene);
 playerRoot.position.set(0, 0, -22);
@@ -693,31 +708,20 @@ function hasLegendaryPower(c: CharacterState, text: string): boolean {
   );
 }
 
-function skillCooldownMaximum(
-  character: CharacterState,
-  skill: SkillKey,
-): number {
-  if (character.id === 'vanguard') return skill === 'Q' ? 5 : 8;
-  if (character.id === 'warden') return skill === 'Q' ? 7 : 10;
-  return skill === 'Q' ? 5.5 : 6;
-}
-
 function gameplayHudSnapshot(): GameplayHudSnapshot {
-  const skillName = (slot: AbilitySlot): string => {
-    const skill = active.skillSlots[slot];
-    if (skill === 'Q') return active.qName;
-    if (skill === 'E') return active.eName;
-    return 'Unassigned';
-  };
-
-  const skillCooldown = (slot: AbilitySlot): number => {
-    const skill = active.skillSlots[slot];
-    return skill ? active.cooldowns[skill] : 0;
-  };
-
-  const skillMaximum = (slot: AbilitySlot): number => {
-    const skill = active.skillSlots[slot];
-    return skill ? skillCooldownMaximum(active, skill) : 0;
+  const activeAbilities = abilityComponents.get(active.id);
+  const abilityView = (slot: AbilitySlot) => {
+    const runtime = activeAbilities?.get(slot);
+    const snapshot = runtime?.snapshot();
+    return {
+      name: snapshot?.name ?? 'Unassigned',
+      cooldown: snapshot?.cooldownRemaining ?? 0,
+      maximum: snapshot?.cooldownMaximum ?? 0,
+      assigned: Boolean(runtime),
+      state: snapshot?.state,
+      castProgress: snapshot?.castProgress ?? 0,
+      tags: snapshot?.tags ?? [],
+    };
   };
 
   const elite = enemies.find(enemy => enemy.elite);
@@ -741,14 +745,20 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
         cooldownMaximum: active.attackCooldown,
         assigned: true,
       },
-      ...([1, 2, 3, 4] as AbilitySlot[]).map(slot => ({
-        id: `ability-${slot}`,
-        binding: input.getBindingLabel(`ability${slot}` as 'ability1' | 'ability2' | 'ability3' | 'ability4'),
-        name: skillName(slot),
-        cooldown: skillCooldown(slot),
-        cooldownMaximum: skillMaximum(slot),
-        assigned: Boolean(active.skillSlots[slot]),
-      })),
+      ...([1, 2, 3, 4] as AbilitySlot[]).map(slot => {
+        const view = abilityView(slot);
+        return {
+          id: `ability-${slot}`,
+          binding: input.getBindingLabel(`ability${slot}` as 'ability1' | 'ability2' | 'ability3' | 'ability4'),
+          name: view.name,
+          cooldown: view.cooldown,
+          cooldownMaximum: view.maximum,
+          assigned: view.assigned,
+          state: view.state,
+          castProgress: view.castProgress,
+          tags: view.tags,
+        };
+      }),
       {
         id: 'dodge',
         binding: input.getBindingLabel('dodge'),
@@ -796,8 +806,14 @@ function partyManagementModel(): PartyManagementModel {
       controlled: character.id === active.id,
       equipment: character.equipment,
       skills: [
-        { id: 'Q', name: character.qName },
-        { id: 'E', name: character.eName },
+        {
+          id: 'Q',
+          name: abilityComponents.get(character.id)?.get(1)?.definition.name ?? character.qName,
+        },
+        {
+          id: 'E',
+          name: abilityComponents.get(character.id)?.get(2)?.definition.name ?? character.eName,
+        },
       ],
       skillSlots: character.skillSlots,
       summary: {
@@ -1307,86 +1323,150 @@ function performBlink(
   return blink.position;
 }
 
-function castSkill(key: SkillKey): void {
-  if (active.cooldowns[key] > 0 || inventoryOpen || gameOver) return;
-  const dir = pointerWorld.subtract(playerRoot.position);
-  dir.y = 0;
-  if (dir.lengthSquared() > 0.0001) dir.normalize();
-  if (active.id === 'vanguard' && key === 'Q') {
-    active.cooldowns.Q = 5;
-    vfxRing(playerRoot.position, active.color, 7, 0.45);
-    enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position) < 4).forEach(e => damageEnemy(e, 52, 'physical', e.mesh.position, playerRoot.position, 'heavy'));
-  } else if (active.id === 'vanguard') {
-    active.cooldowns.E = 8;
-    party.forEach(c => c.cooldowns.attack = 0);
-    active.hp = Math.min(hpMax(active), active.hp + 28);
-    feed('War Cry refreshed attacks and restored health.');
-  } else if (active.id === 'warden' && key === 'Q') {
-    active.cooldowns.Q = 7;
-    const field = MeshBuilder.CreateCylinder('frostField', { diameter: 6.5, height: 0.08, tessellation: 48 }, scene);
-    field.position = pointerWorld.clone(); field.position.y = 0.06;
-    field.material = mat('frostField', active.color, 0.32); field.visibility = 0.55;
-    effects.push({ mesh: field, ttl: 6, tick: 0, type: 'frost', radius: 3.25, damage: 8 });
-  } else if (active.id === 'warden') {
-    active.cooldowns.E = 10;
-    party.forEach(c => c.hp = Math.min(hpMax(c), c.hp + 22));
-    vfxRing(playerRoot.position, active.color, 4.5, 0.55);
-  } else if (active.id === 'tempest' && key === 'Q') {
-    active.cooldowns.Q = 5.5;
-    const targets = [...enemies].sort((a,b) => Vector3.Distance(a.mesh.position, playerRoot.position) - Vector3.Distance(b.mesh.position, playerRoot.position)).slice(0,4);
-    targets.forEach((e, i) => setTimeout(() => damageEnemy(e, 34, 'lightning'), i * 90));
-    vfxRing(playerRoot.position, active.color, 5, 0.3);
-  } else if (active.id === 'tempest') {
-    active.cooldowns.E = 6;
+function executeAbility(context: AbilityExecutionContext): void {
+  const { definition, request } = context;
+  const direction = request.aimDirection.clone();
+  direction.y = 0;
+  if (direction.lengthSquared() > 0.0001) direction.normalize();
 
-    const target = [...enemies]
-      .filter(
-        enemy =>
-          Vector3.Distance(
-            enemy.mesh.position,
-            playerRoot.position,
-          ) < 10,
-      )
-      .sort(
-        (a, b) =>
-          Vector3.Distance(a.mesh.position, pointerWorld) -
-          Vector3.Distance(b.mesh.position, pointerWorld),
-      )[0];
-
-    const requestedDestination = target
-      ? target.mesh.position.add(dir.scale(-1.1))
-      : pointerWorld.clone();
-    requestedDestination.y = 0;
-
-    const blinkDestination = performBlink(
-      requestedDestination,
-      8.5,
-    );
-
-    if (
-      target &&
-      Vector3.Distance(
-        target.mesh.position,
-        blinkDestination,
-      ) <= 2.4
-    ) {
-      damageEnemy(
-        target,
-        48,
-        'lightning',
-        target.mesh.position,
-        blinkDestination,
-        'heavy',
-      );
-      vfxRing(
-        target.mesh.position,
-        active.color,
-        2.8,
-        0.25,
-      );
-    }
+  if (definition.executorId === 'fireball') {
+    const orb = MeshBuilder.CreateSphere('ability-fireball', { diameter: 0.52 }, scene);
+    orb.position = request.casterPosition.add(new Vector3(0, 0.85, 0)).add(direction.scale(0.9));
+    orb.material = mat('ability-fireball', new Color3(1, 0.32, 0.08), 0.85);
+    projectiles.push({
+      mesh: orb,
+      vel: direction.scale(14),
+      ttl: definition.range / 14,
+      damage: definition.damage ?? 0,
+      element: 'fire',
+      pierce: 0,
+    });
+    vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
+    return;
   }
-  refreshHud();
+
+  if (definition.executorId === 'ice-spear') {
+    const spear = MeshBuilder.CreateCylinder(
+      'ability-ice-spear',
+      { diameter: 0.28, height: 1.4, tessellation: 8 },
+      scene,
+    );
+    spear.rotation.x = Math.PI / 2;
+    spear.rotation.y = Math.atan2(direction.x, direction.z);
+    spear.position = request.casterPosition.add(new Vector3(0, 0.8, 0)).add(direction.scale(0.9));
+    spear.material = mat('ability-ice-spear', new Color3(0.35, 0.82, 1), 0.75);
+    projectiles.push({
+      mesh: spear,
+      vel: direction.scale(17),
+      ttl: definition.range / 17,
+      damage: definition.damage ?? 0,
+      element: 'frost',
+      pierce: 1,
+    });
+    return;
+  }
+
+  if (definition.executorId === 'blink') {
+    performBlink(request.aimPosition, definition.range);
+    return;
+  }
+
+  if (definition.executorId === 'shield') {
+    active.shieldRemaining = Math.max(active.shieldRemaining, definition.duration ?? 4);
+    active.hp = Math.min(hpMax(active), active.hp + 24);
+    vfxRing(playerRoot.position, new Color3(0.55, 0.75, 1), 4.2, 0.5);
+    feed('Astral Shield active.');
+  }
+}
+
+function createAbilityRuntime(
+  character: CharacterState,
+  slot: AbilitySlot,
+  definitionId: string,
+): AbilityRuntime {
+  const definition = definitions.require<AbilityDefinition>(definitionId);
+  return new AbilityRuntime(
+    `${character.id}-slot-${slot}`,
+    definition,
+    executeAbility,
+    {
+      onCastStarted: (ability, request) => {
+        events.emit('ability.castStarted', {
+          runtimeId: `${character.id}-slot-${slot}`,
+          abilityId: ability.id,
+          casterId: request.casterId,
+        });
+      },
+      onExecuted: (ability, request) => {
+        events.emit('ability.executed', {
+          runtimeId: `${character.id}-slot-${slot}`,
+          abilityId: ability.id,
+          casterId: request.casterId,
+        });
+      },
+      onCooldownStarted: ability => {
+        events.emit('ability.cooldownStarted', {
+          runtimeId: `${character.id}-slot-${slot}`,
+          abilityId: ability.id,
+          duration: ability.cooldown,
+        });
+      },
+      onReady: ability => {
+        events.emit('ability.ready', {
+          runtimeId: `${character.id}-slot-${slot}`,
+          abilityId: ability.id,
+        });
+      },
+      onInterrupted: (ability, reason) => {
+        events.emit('ability.interrupted', {
+          runtimeId: `${character.id}-slot-${slot}`,
+          abilityId: ability.id,
+          reason,
+        });
+      },
+      onStateEntered: (state, from) => {
+        events.emit('state.entered', {
+          machineId: `ability-${character.id}-slot-${slot}`,
+          state,
+          from,
+        });
+      },
+      onStateExited: (state, to) => {
+        events.emit('state.exited', {
+          machineId: `ability-${character.id}-slot-${slot}`,
+          state,
+          to,
+        });
+      },
+      onStateChanged: (from, to, reason) => {
+        events.emit('state.changed', {
+          machineId: `ability-${character.id}-slot-${slot}`,
+          from,
+          to,
+          reason,
+        });
+      },
+    },
+  );
+}
+
+const validationAbilityLoadouts: Record<string, readonly string[]> = {
+  vanguard: ['ability.fireball', 'ability.blink', 'ability.shield', 'ability.ice-spear'],
+  warden: ['ability.ice-spear', 'ability.shield', 'ability.blink', 'ability.fireball'],
+  tempest: ['ability.blink', 'ability.fireball', 'ability.ice-spear', 'ability.shield'],
+};
+
+for (const character of party) {
+  const component = new AbilityComponent();
+  const loadout = validationAbilityLoadouts[character.id] ?? validationAbilityLoadouts.vanguard;
+  ([1, 2, 3, 4] as AbilitySlot[]).forEach((slot, index) => {
+    component.assign(slot, createAbilityRuntime(character, slot, loadout[index]));
+  });
+  abilityComponents.set(character.id, component);
+}
+
+function castSkill(key: SkillKey): void {
+  castAbilitySlot(key === 'Q' ? 1 : 2);
 }
 
 function swapTo(index: number): void {
@@ -1409,9 +1489,26 @@ function swapTo(index: number): void {
 }
 
 function castAbilitySlot(slot: AbilitySlot): void {
-  const skill = active.skillSlots[slot];
-  if (skill) castSkill(skill);
-  else feed(`Ability slot ${slot} is not assigned yet.`);
+  if (inventoryOpen || gameOver) return;
+  const runtime = abilityComponents.get(active.id)?.get(slot);
+  if (!runtime) {
+    feed(`Ability slot ${slot} is not assigned yet.`);
+    return;
+  }
+
+  const aimDirection = pointerWorld.subtract(playerRoot.position);
+  aimDirection.y = 0;
+  if (aimDirection.lengthSquared() < 0.0001) aimDirection.z = 1;
+  aimDirection.normalize();
+
+  const cast = runtime.cast({
+    casterId: active.id,
+    casterPosition: playerRoot.position.clone(),
+    aimPosition: pointerWorld.clone(),
+    aimDirection,
+  });
+  if (!cast) feed(`${runtime.definition.name} is not ready.`);
+  refreshHud();
 }
 
 function cycleControl(direction: 1 | -1): void {
@@ -1523,7 +1620,8 @@ function hurtActive(
   if (developerState.godMode) return;
   if (!bypassHitProtection && movement.isInvulnerable()) return;
   if (!bypassHitProtection && !combat.registerPlayerHit()) return;
-  active.hp -= amount;
+  const resolvedAmount = active.shieldRemaining > 0 ? amount * 0.5 : amount;
+  active.hp -= resolvedAmount;
   vfxRing(playerRoot.position, new Color3(1,.12,.12), 1.5, .16);
   if (active.hp <= 0) {
     active.hp = 0;
@@ -1554,6 +1652,7 @@ const developerActions: DeveloperActions = {
       Object.keys(character.cooldowns).forEach(key => {
         character.cooldowns[key as keyof typeof character.cooldowns] = 0;
       });
+      abilityComponents.get(character.id)?.reset();
     });
     refreshHud();
     feed('Developer: cooldowns reset.');
@@ -2028,6 +2127,11 @@ scene.onBeforeRenderObservable.add(() => {
   swapInputCooldown = Math.max(0, swapInputCooldown - dt);
 
   party.forEach(c => Object.keys(c.cooldowns).forEach(k => c.cooldowns[k as keyof typeof c.cooldowns] = developerState.noCooldowns ? 0 : Math.max(0, c.cooldowns[k as keyof typeof c.cooldowns] - dt)));
+  party.forEach(character => {
+    abilityComponents.get(character.id)?.update(dt);
+    if (developerState.noCooldowns) abilityComponents.get(character.id)?.reset();
+    character.shieldRemaining = Math.max(0, character.shieldRemaining - dt);
+  });
 
   for (const p of [...projectiles]) {
     p.mesh.position.addInPlace(p.vel.scale(dt)); p.ttl -= dt;

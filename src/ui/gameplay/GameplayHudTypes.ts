@@ -15,6 +15,9 @@ export interface GameplayAbilityView {
   readonly cooldown: number;
   readonly cooldownMaximum: number;
   readonly assigned: boolean;
+  readonly state?: string;
+  readonly castProgress?: number;
+  readonly tags?: readonly string[];
 }
 
 export interface GameplayBossView {
