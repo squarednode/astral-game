@@ -146,6 +146,7 @@ type EnemyStateId =
   | 'reposition'
   | 'casting'
   | 'recover'
+  | 'return-home'
   | 'dead';
 
 interface EnemyBlackboard {
@@ -174,6 +175,8 @@ interface EnemyBlackboard {
   lastRecoveryReason: string;
   watchdogStatus: string;
   stationaryTime: number;
+  distanceFromHome: number;
+  territoryStatus: 'inside' | 'returning' | 'home';
 }
 
 interface EnemyStateContext {
@@ -189,6 +192,9 @@ interface Enemy {
   modifier: Readonly<EliteModifierDefinition>;
   healthComponent: HealthComponent;
   mesh: Mesh;
+  targetMesh: Mesh;
+  targetRadius: number;
+  targetHeight: number;
   hp: number;
   maxHp: number;
   speed: number;
@@ -724,6 +730,7 @@ let projectiles: {
   element: Element;
   pierce: number;
   owner: 'player' | 'enemy';
+  collisionRadius: number;
 }[] = [];
 
 const inventoryEl = document.querySelector<HTMLDivElement>('#inventory')!;
@@ -1122,6 +1129,19 @@ function vfxRing(pos: Vector3, color: Color3, size = 2, ttl = 0.35): Mesh {
   return ring;
 }
 
+function enemyTargetPoint(enemy: Enemy): Vector3 {
+  return enemy.mesh.position.add(new Vector3(0, enemy.targetHeight * 0.12, 0));
+}
+
+function enemyTargetDistance(enemy: Enemy, point: Vector3): number {
+  return Vector3.Distance(enemyTargetPoint(enemy), point);
+}
+
+function enemyIsOutsideTerritory(enemy: Enemy): boolean {
+  const home = enemy.stateMachine.blackboard.get('homePosition');
+  return Vector3.Distance(enemy.mesh.position, home) > enemy.definition.leashRange;
+}
+
 function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
   const ability = definitions.require<AbilityDefinition>(usage.abilityId);
   const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
@@ -1131,7 +1151,7 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
     const projectileDefinition = definitions.get<ProjectileDefinition>(
       ability.projectileId,
     );
-    const direction = playerRoot.position.subtract(enemy.mesh.position);
+    const direction = playerRoot.position.add(new Vector3(0, 0.7, 0)).subtract(enemy.mesh.position);
     direction.y = 0;
     if (direction.lengthSquared() > 0.001) direction.normalize();
     const projectile = MeshBuilder.CreateSphere(
@@ -1160,6 +1180,7 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
       element: ability.element,
       pierce: projectileDefinition?.pierce ?? 0,
       owner: 'enemy',
+      collisionRadius: projectileDefinition?.radius ?? 0.16,
     });
   } else if (ability.id === 'ability.retreat') {
     const away = enemy.mesh.position.subtract(playerRoot.position); away.y = 0;
@@ -1302,6 +1323,8 @@ function createEnemyStateMachine(
       lastRecoveryReason: 'none',
       watchdogStatus: 'runtime progressing',
       stationaryTime: 0,
+      distanceFromHome: 0,
+      territoryStatus: 'home',
     },
   );
 
@@ -1311,6 +1334,16 @@ function createEnemyStateMachine(
       enter: (_context, activeMachine) => {
         const blackboard = activeMachine.blackboard;
         blackboard.set('decisionCount', blackboard.get('decisionCount') + 1);
+        const homeDistance = Vector3.Distance(enemy.mesh.position, blackboard.get('homePosition'));
+        blackboard.set('distanceFromHome', homeDistance);
+        if (homeDistance > enemy.definition.leashRange) {
+          blackboard.set('territoryStatus', 'returning');
+          blackboard.set('movementReason', 'outside leash radius');
+          blackboard.set('positioningIntent', 'advance');
+          activeMachine.request('return-home', 'territory-leash-exceeded');
+          return;
+        }
+        blackboard.set('territoryStatus', homeDistance < 0.4 ? 'home' : 'inside');
         const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
         const plan = enemyTactics.plan(toEnemyRuntimeActor(enemy), distance);
 
@@ -1342,6 +1375,13 @@ function createEnemyStateMachine(
         }
 
         const blackboard = activeMachine.blackboard;
+        const homeDistance = Vector3.Distance(enemy.mesh.position, blackboard.get('homePosition'));
+        blackboard.set('distanceFromHome', homeDistance);
+        if (homeDistance > enemy.definition.leashRange) {
+          blackboard.set('territoryStatus', 'returning');
+          activeMachine.request('return-home', 'territory-leash-exceeded');
+          return;
+        }
         const usageId = blackboard.get('currentUsageId');
         const usage = usageId
           ? definitions.get<AiAbilityUsageDefinition>(usageId)
@@ -1393,6 +1433,12 @@ function createEnemyStateMachine(
     .addState({
       id: 'casting',
       enter: (_context, activeMachine) => {
+        if (enemyIsOutsideTerritory(enemy)) {
+          enemyTelegraphs.cancel(enemy.mesh);
+          activeMachine.blackboard.set('territoryStatus', 'returning');
+          activeMachine.request('return-home', 'territory-leash-exceeded');
+          return;
+        }
         const usageId = activeMachine.blackboard.get('currentUsageId');
         const usage = usageId
           ? definitions.get<AiAbilityUsageDefinition>(usageId)
@@ -1470,6 +1516,46 @@ function createEnemyStateMachine(
       },
       update: (_context, activeMachine) => {
         if (enemy.hp <= 0) activeMachine.request('dead', 'health-depleted');
+      },
+    })
+    .addState({
+      id: 'return-home',
+      enter: (_context, activeMachine) => {
+        enemyTelegraphs.cancel(enemy.mesh);
+        activeMachine.blackboard.set('committed', false);
+        activeMachine.blackboard.set('canCast', false);
+        activeMachine.blackboard.set('castReason', 'returning to territory');
+        activeMachine.blackboard.set('positioningIntent', 'advance');
+        activeMachine.blackboard.set('movementReason', 'returning to home position');
+        activeMachine.blackboard.set('territoryStatus', 'returning');
+      },
+      update: (_context, activeMachine, dt) => {
+        if (enemy.hp <= 0) {
+          activeMachine.request('dead', 'health-depleted');
+          return;
+        }
+        const home = activeMachine.blackboard.get('homePosition');
+        const toHome = home.subtract(enemy.mesh.position);
+        toHome.y = 0;
+        const distance = toHome.length();
+        activeMachine.blackboard.set('distanceFromHome', distance);
+        if (distance <= 0.35) {
+          enemy.mesh.position.x = home.x;
+          enemy.mesh.position.z = home.z;
+          enemy.attackCd = 0;
+          enemy.abilityCooldowns.clear();
+          enemy.statuses = {};
+          activeMachine.blackboard.set('packAlerted', false);
+          activeMachine.blackboard.set('territoryStatus', 'home');
+          activeMachine.request('evaluate', 'returned-home');
+          return;
+        }
+        if (toHome.lengthSquared() > 0.001) {
+          toHome.normalize();
+          enemy.mesh.position.addInPlace(
+            toHome.scale(enemy.speed * enemy.definition.returnSpeedMultiplier * dt),
+          );
+        }
       },
     })
     .addState({ id: 'dead', enter: () => enemyTelegraphs.cancel(enemy.mesh) });
@@ -1577,6 +1663,20 @@ function spawnEnemy(
     .setComponent<EnemyComponent>(EntityComponentKeys.enemy, { elite, spawnWave: wave });
   mesh.metadata = { enemyEntityId: enemyEntity.id };
 
+  const targetMesh = MeshBuilder.CreateSphere(
+    `enemy-target-${enemyEntity.id}`,
+    { diameter: definition.targetRadius * 2, segments: 12 },
+    scene,
+  );
+  targetMesh.parent = mesh;
+  targetMesh.position.set(0, 0, 0);
+  targetMesh.visibility = 0.001;
+  targetMesh.isPickable = true;
+  targetMesh.metadata = {
+    enemyEntityId: enemyEntity.id,
+    targetVolume: true,
+  };
+
   const enemy = {} as Enemy;
   Object.assign(enemy, {
     entityId: enemyEntity.id,
@@ -1587,6 +1687,9 @@ function spawnEnemy(
     modifier,
     healthComponent,
     mesh,
+    targetMesh,
+    targetRadius: definition.targetRadius,
+    targetHeight: definition.targetHeight,
     hp,
     maxHp: hp,
     speed: definition.movementSpeed * variant.speedMultiplier * modifier.speedMultiplier,
@@ -1664,7 +1767,10 @@ function damageEnemy(
 function basicAttack(): void {
   if (active.cooldowns.attack > 0 || inventoryOpen || gameOver) return;
   active.cooldowns.attack = active.attackCooldown;
-  const dir = pointerWorld.subtract(playerRoot.position); dir.y = 0;
+  const basicTarget = hoveredEnemy && enemies.includes(hoveredEnemy)
+    ? enemyTargetPoint(hoveredEnemy)
+    : pointerWorld.clone();
+  const dir = basicTarget.subtract(playerRoot.position); dir.y = 0;
   if (dir.lengthSquared() < 0.01) return;
   dir.normalize();
   if (active.attackRange < 4) {
@@ -1674,7 +1780,7 @@ function basicAttack(): void {
     const orb = MeshBuilder.CreateSphere('projectile', { diameter: 0.36 }, scene);
     orb.position = playerRoot.position.add(new Vector3(0, 0.8, 0)).add(dir.scale(0.8));
     orb.material = mat('projectile', active.color, 0.8);
-    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player' });
+    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player', collisionRadius: 0.18 });
   }
 }
 
@@ -1728,6 +1834,7 @@ function executeAbility(context: AbilityExecutionContext): void {
       element: 'fire',
       pierce: 0,
       owner: 'player',
+      collisionRadius: 0.26,
     });
     vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
     return;
@@ -1751,6 +1858,7 @@ function executeAbility(context: AbilityExecutionContext): void {
       element: 'frost',
       pierce: 1,
       owner: 'player',
+      collisionRadius: 0.18,
     });
     return;
   }
@@ -1963,7 +2071,10 @@ function castAbilitySlot(slot: AbilitySlot): void {
     return;
   }
 
-  const aimDirection = pointerWorld.subtract(playerRoot.position);
+  const resolvedAimPosition = hoveredEnemy && enemies.includes(hoveredEnemy)
+    ? enemyTargetPoint(hoveredEnemy)
+    : pointerWorld.clone();
+  const aimDirection = resolvedAimPosition.subtract(playerRoot.position);
   aimDirection.y = 0;
   if (aimDirection.lengthSquared() < 0.0001) aimDirection.z = 1;
   aimDirection.normalize();
@@ -1971,7 +2082,7 @@ function castAbilitySlot(slot: AbilitySlot): void {
   const result = component.requestCast(slot, {
     casterId: active.id,
     casterPosition: playerRoot.position.clone(),
-    aimPosition: pointerWorld.clone(),
+    aimPosition: resolvedAimPosition.clone(),
     aimDirection,
   });
   if (result === 'queued') {
@@ -2090,6 +2201,7 @@ function killEnemy(enemy: Enemy): void {
   }
 
   enemyTelegraphs.cancel(enemy.mesh);
+  enemy.targetMesh.dispose();
   kills++;
   events.emit('combat.enemyKilled', {
     entityId: enemy.entityId,
@@ -2237,10 +2349,11 @@ function updateHoveredEnemyFromCursor(): void {
   const pick = scene.pick(
     scene.pointerX,
     scene.pointerY,
-    mesh => enemies.some(enemy => enemy.mesh === mesh),
+    mesh => Boolean(mesh.metadata?.targetVolume),
   );
-  const next = pick?.hit
-    ? enemies.find(enemy => enemy.mesh === pick.pickedMesh) ?? null
+  const pickedEntityId = pick?.pickedMesh?.metadata?.enemyEntityId as string | undefined;
+  const next = pick?.hit && pickedEntityId
+    ? enemies.find(enemy => enemy.entityId === pickedEntityId) ?? null
     : null;
   if (hoveredEnemy === next) return;
   if (hoveredEnemy) hoveredEnemy.mesh.renderOutline = false;
@@ -2686,7 +2799,7 @@ scene.onBeforeRenderObservable.add(() => {
 
     if (p.owner === 'player') {
       const hit = enemies.find(
-        enemy => Vector3.Distance(enemy.mesh.position, p.mesh.position) < 0.8,
+        enemy => enemyTargetDistance(enemy, p.mesh.position) <= enemy.targetRadius + p.collisionRadius,
       );
       if (hit) {
         damageEnemy(
@@ -2702,7 +2815,7 @@ scene.onBeforeRenderObservable.add(() => {
         if (p.pierce < 0) p.ttl = 0;
       }
     } else if (
-      Vector3.Distance(playerRoot.position, p.mesh.position) < 0.85
+      Vector3.Distance(playerRoot.position.add(new Vector3(0, 0.7, 0)), p.mesh.position) < 0.68 + p.collisionRadius
     ) {
       hurtActive(p.damage);
       vfxRing(playerRoot.position, new Color3(1, 0.2, 0.12), 1.2, 0.15);
@@ -2783,23 +2896,20 @@ scene.onBeforeRenderObservable.add(() => {
     const standardEnemyMachines = enemies
       .filter(enemy => !enemy.elite && enemy.stateMachine)
       .map(enemy => enemy.stateMachine!);
-    const standardEnemyStateCounts =
-      standardEnemyMachines.reduce<
-        Record<EnemyStateId, number>
-      >(
-        (counts, machine) => {
-          const state = machine.getCurrentStateId();
-          if (state) counts[state] += 1;
-          return counts;
-        },
-        {
-          evaluate: 0,
-          reposition: 0,
-          casting: 0,
-          recover: 0,
-          dead: 0,
-        },
-      );
+
+    const standardEnemyStateCounts: Record<EnemyStateId, number> = {
+      evaluate: 0,
+      reposition: 0,
+      casting: 0,
+      recover: 0,
+      'return-home': 0,
+      dead: 0,
+    };
+
+    for (const machine of standardEnemyMachines) {
+      const state = machine.getCurrentStateId();
+      if (state) standardEnemyStateCounts[state] += 1;
+    }
     const standardEnemyRejected =
       standardEnemyMachines.reduce(
         (sum, machine) =>
@@ -2938,6 +3048,9 @@ scene.onBeforeRenderObservable.add(() => {
           `Last Recover ${inspectedEnemy.stateMachine.blackboard.get('lastRecoveryReason') ?? 'none'}`,
           `Cast Resolved ${inspectedEnemy.stateMachine.blackboard.get('castResolved') ? 'yes' : 'no'}`,
           `Telegraph    ${enemyTelegraphs.isBusy(inspectedEnemy.mesh) ? 'active' : 'none'}`,
+          `Target Vol   r${inspectedEnemy.targetRadius.toFixed(2)} h${inspectedEnemy.targetHeight.toFixed(2)}`,
+          `Territory    ${inspectedEnemy.stateMachine.blackboard.get('territoryStatus') ?? 'n/a'}`,
+          `Home Dist    ${(inspectedEnemy.stateMachine.blackboard.get('distanceFromHome') ?? 0).toFixed(1)} / ${inspectedEnemy.definition.leashRange.toFixed(1)}`,
           `Decisions    ${inspectedEnemy.stateMachine.blackboard.get('decisionCount') ?? 0}`,
         ] : []),
       ].join('\n'),
@@ -2968,6 +3081,7 @@ scene.onBeforeRenderObservable.add(() => {
         `Reposition  ${standardEnemyStateCounts.reposition}`,
         `Casting     ${standardEnemyStateCounts.casting}`,
         `Recover     ${standardEnemyStateCounts.recover}`,
+        `Return Home ${standardEnemyStateCounts['return-home']}`,
         `Dead        ${standardEnemyStateCounts.dead}`,
         `Rejected    ${standardEnemyRejected}`,
         `Elites      ${enemies.filter(enemy => enemy.elite).length}`,

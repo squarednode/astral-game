@@ -4843,6 +4843,16 @@ It continues to show:
 - Movement states holding without displacement
 - Potential duplicate attacks during forced cast recovery
 
+# Changelog — 0.6.1f
+
+- Added configurable enemy target radius and height.
+- Added invisible combat target volumes for hover selection.
+- Aimed player abilities and ranged basic attacks at hovered target centers.
+- Updated projectile collision to use enemy target volumes.
+- Added `return-home` enemy state and leash enforcement.
+- Added territory and target-volume diagnostics.
+
+
 ### Validate
 ```bash
 npm run build
