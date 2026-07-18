@@ -51,6 +51,16 @@ export interface EngineEventMap {
     to: string;
     rejectedBy: string;
   };
+  'state.timerCompleted': {
+    machineId: string;
+    state: string;
+  };
+  'state.interaction': {
+    machineId: string;
+    state: string | null;
+    interaction: string;
+    handled: boolean;
+  };
 }
 
 export type EngineEventName = keyof EngineEventMap;

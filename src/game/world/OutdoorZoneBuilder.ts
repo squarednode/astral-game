@@ -1451,30 +1451,32 @@ export function buildOutdoorZone(
   )
     .addState({
       id: 'bottom-idle',
+      duration: context => context.idleDuration,
+      timeout: {
+        to: 'moving-up',
+        reason: 'bottom-wait-complete',
+      },
       enter: context => {
         applyElevatorHeight(context.bottomHeight);
       },
-      update: (context, machine) => {
+      update: context => {
         applyElevatorHeight(context.bottomHeight);
-        if (machine.getTimeInState() >= context.idleDuration) {
-          machine.request('moving-up', 'bottom-wait-complete');
-        }
       },
     })
     .addState({
       id: 'moving-up',
+      duration: context => context.travelDuration,
+      timeout: {
+        to: 'top-idle',
+        reason: 'top-reached',
+      },
       update: (context, machine) => {
-        const progress =
-          machine.getTimeInState() / context.travelDuration;
+        const progress = machine.getStateTimer().progress ?? 0;
         const height =
           context.bottomHeight +
           (context.topHeight - context.bottomHeight) *
             smoothStep(progress);
         applyElevatorHeight(height);
-
-        if (progress >= 1) {
-          machine.request('top-idle', 'top-reached');
-        }
       },
       exit: context => {
         applyElevatorHeight(context.topHeight);
@@ -1482,30 +1484,32 @@ export function buildOutdoorZone(
     })
     .addState({
       id: 'top-idle',
+      duration: context => context.idleDuration,
+      timeout: {
+        to: 'moving-down',
+        reason: 'top-wait-complete',
+      },
       enter: context => {
         applyElevatorHeight(context.topHeight);
       },
-      update: (context, machine) => {
+      update: context => {
         applyElevatorHeight(context.topHeight);
-        if (machine.getTimeInState() >= context.idleDuration) {
-          machine.request('moving-down', 'top-wait-complete');
-        }
       },
     })
     .addState({
       id: 'moving-down',
+      duration: context => context.travelDuration,
+      timeout: {
+        to: 'bottom-idle',
+        reason: 'bottom-reached',
+      },
       update: (context, machine) => {
-        const progress =
-          machine.getTimeInState() / context.travelDuration;
+        const progress = machine.getStateTimer().progress ?? 0;
         const height =
           context.topHeight -
           (context.topHeight - context.bottomHeight) *
             smoothStep(progress);
         applyElevatorHeight(height);
-
-        if (progress >= 1) {
-          machine.request('bottom-idle', 'bottom-reached');
-        }
       },
       exit: context => {
         applyElevatorHeight(context.bottomHeight);

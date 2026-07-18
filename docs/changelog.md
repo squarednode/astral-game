@@ -3730,6 +3730,95 @@ This milestone does not change:
 The movement controller still owns movement resolution. The new input layer only
 provides requested movement and aim data.
 
+# Astral 0.5.7 — Advanced State Machine Framework
+
+This milestone completes the planned state-machine work before the definition-driven ability framework.
+
+## Added capabilities
+
+### Timed states
+
+States may declare a duration and automatic timeout transition:
+
+```ts
+{
+  id: 'recover',
+  duration: context => context.recoverDuration,
+  timeout: {
+    to: 'chase',
+    reason: 'recovery-complete',
+  },
+}
+```
+
+The machine exposes:
+
+```ts
+machine.getStateTimer();
+```
+
+which returns elapsed time, duration, remaining time, normalized progress, and completion state.
+
+### Interaction-driven transitions
+
+Active states may declare interactions:
+
+```ts
+{
+  id: 'casting',
+  interactions: [
+    {
+      type: 'interrupted',
+      to: 'recover',
+    },
+  ],
+}
+```
+
+Callers deliver them through:
+
+```ts
+machine.interact('interrupted', payload);
+```
+
+Only the current state handles the interaction.
+
+### Typed blackboard
+
+Every machine owns a typed shared blackboard:
+
+```ts
+machine.blackboard.get('target');
+machine.blackboard.set('target', nextTarget);
+machine.blackboard.patch({ chargeTime: 0 });
+```
+
+The blackboard tracks revisions for diagnostics. Persistent gameplay data should remain in components or the machine context; the blackboard is intended for behavior coordination between states.
+
+### Transition guards
+
+Machines may register transition-specific guards:
+
+```ts
+machine.addTransitionGuard({
+  id: 'requires-resource',
+  from: 'ready',
+  to: 'casting',
+  check: context => context.resource >= context.cost,
+});
+```
+
+Rejected guard transitions report `rejectedBy: 'guard'` and the guard ID.
+
+### Lifecycle callbacks
+
+New callbacks:
+
+```text
+onTimerCompleted
+onInteraction
+```
+
 
 ### Validate
 ```bash

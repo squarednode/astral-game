@@ -293,6 +293,11 @@ interface ValidationStateContext {
   pulseDuration: number;
 }
 
+interface ValidationStateBlackboard {
+  cycles: number;
+  lastInteraction: string | null;
+}
+
 const stateValidationMesh = MeshBuilder.CreateBox(
   'state-validation-cube',
   { size: 1.1 },
@@ -314,7 +319,8 @@ const stateValidationContext: ValidationStateContext = {
 
 const validationStateMachine = new StateMachine<
   ValidationStateContext,
-  ValidationStateId
+  ValidationStateId,
+  ValidationStateBlackboard
 >(
   'framework-validation',
   stateValidationContext,
@@ -349,10 +355,43 @@ const validationStateMachine = new StateMachine<
         rejectedBy: result.rejectedBy ?? 'unknown',
       });
     },
+    onTimerCompleted: state => {
+      events.emit('state.timerCompleted', {
+        machineId: 'framework-validation',
+        state,
+      });
+    },
+    onInteraction: (state, interaction, handled) => {
+      events.emit('state.interaction', {
+        machineId: 'framework-validation',
+        state,
+        interaction: interaction.type,
+        handled,
+      });
+    },
+  },
+  {
+    cycles: 0,
+    lastInteraction: null,
   },
 )
   .addState({
     id: 'waiting',
+    duration: context => context.waitingDuration,
+    timeout: {
+      to: 'pulse',
+      reason: 'waiting-complete',
+    },
+    interactions: [
+      {
+        type: 'pulse-now',
+        to: 'pulse',
+        reason: 'interaction:pulse-now',
+        handle: (_context, machine, interaction) => {
+          machine.blackboard.set('lastInteraction', interaction.type);
+        },
+      },
+    ],
     enter: context => {
       context.mesh.scaling.setAll(1);
       context.mesh.material = mat(
@@ -361,14 +400,14 @@ const validationStateMachine = new StateMachine<
         0.12,
       );
     },
-    update: (context, machine) => {
-      if (machine.getTimeInState() >= context.waitingDuration) {
-        machine.request('pulse', 'waiting-complete');
-      }
-    },
   })
   .addState({
     id: 'pulse',
+    duration: context => context.pulseDuration,
+    timeout: {
+      to: 'waiting',
+      reason: 'pulse-complete',
+    },
     enter: context => {
       context.mesh.material = mat(
         'state-validation-pulse',
@@ -377,17 +416,16 @@ const validationStateMachine = new StateMachine<
       );
     },
     update: (context, machine) => {
-      const progress = Math.min(
-        1,
-        machine.getTimeInState() / context.pulseDuration,
-      );
+      const progress = machine.getStateTimer().progress ?? 0;
       const scale = 1 + Math.sin(progress * Math.PI) * 0.45;
       context.mesh.scaling.setAll(scale);
       context.mesh.rotation.y += 0.035;
-
-      if (machine.getTimeInState() >= context.pulseDuration) {
-        machine.request('waiting', 'pulse-complete');
-      }
+    },
+    timerCompleted: (_context, machine) => {
+      machine.blackboard.set(
+        'cycles',
+        machine.blackboard.get('cycles') + 1,
+      );
     },
     exit: context => {
       context.mesh.scaling.setAll(1);
@@ -395,6 +433,13 @@ const validationStateMachine = new StateMachine<
   });
 
 validationStateMachine.start('waiting', 'validation-start');
+const validationInteraction = validationStateMachine.interact(
+  'pulse-now',
+  { source: 'startup-validation' },
+);
+if (!validationInteraction.handled) {
+  throw new Error('State interaction validation failed.');
+}
 
 const entities = new EntityRegistry();
 
@@ -1003,6 +1048,13 @@ function createStandardEnemyStateMachine(
     })
     .addState({
       id: 'attack-windup',
+      interactions: [
+        {
+          type: 'attack-resolved',
+          to: 'recover',
+          reason: 'attack-resolved',
+        },
+      ],
       enter: stateContext => {
         const target = stateContext.enemy;
 
@@ -1035,8 +1087,7 @@ function createStandardEnemyStateMachine(
               target.stateMachine?.getCurrentStateId() ===
               'attack-windup'
             ) {
-              target.stateMachine.request(
-                'recover',
+              target.stateMachine.interact(
                 'attack-resolved',
               );
             }
@@ -1058,17 +1109,15 @@ function createStandardEnemyStateMachine(
     })
     .addState({
       id: 'recover',
+      duration: stateContext => stateContext.recoverDuration,
+      timeout: {
+        to: 'chase',
+        reason: 'recovery-complete',
+        guard: stateContext => stateContext.enemy.hp > 0,
+      },
       update: (stateContext, machine) => {
         if (stateContext.enemy.hp <= 0) {
           machine.request('dead', 'health-depleted');
-          return;
-        }
-
-        if (
-          machine.getTimeInState() >=
-          stateContext.recoverDuration
-        ) {
-          machine.request('chase', 'recovery-complete');
         }
       },
     })
