@@ -3314,6 +3314,226 @@ src/engine/input/InputTypes.ts
 README.md
 ```
 
+# Astral 0.5.6.2 — Gameplay UI & Presentation Framework
+
+This milestone combines the gameplay HUD cleanup with the UI architecture
+work that had previously been planned as 0.5.6.6.
+
+The validated gameplay systems remain unchanged. The work is focused on
+presentation ownership, reusable UI modules, responsive layout, and the first
+UI event bridge.
+
+## New UI architecture
+
+```text
+src/ui/
+  core/
+    UIManager.ts
+  developer/
+    DeveloperHud.ts
+  gameplay/
+    AbilityBar.ts
+    BossBar.ts
+    CharacterFrame.ts
+    GameplayHud.ts
+    GameplayHud.css
+    GameplayHudTypes.ts
+    NotificationFeed.ts
+    PartyHud.ts
+    WaveHud.ts
+    index.ts
+  shared/
+    UITheme.ts
+```
+
+`UIManager` continues to own the four presentation layers:
+
+```text
+gameplay
+notifications
+menus
+developer
+```
+
+The new `GameplayHud` coordinates the gameplay components without owning
+combat, movement, inventory, entity, or character logic.
+
+## Gameplay HUD ownership
+
+The following direct DOM responsibilities were removed from `main.ts`:
+
+- Party-card construction
+- Health-bar construction
+- Ability-slot construction
+- Cooldown-number construction
+- Wave, kill, and power DOM updates
+- Boss-bar visibility and width updates
+- Notification-line creation and removal
+- Game-over panel updates
+
+`main.ts` now produces a typed `GameplayHudSnapshot` and passes it to:
+
+```text
+GameplayHud
+  PartyHud
+    CharacterFrame
+  AbilityBar
+  WaveHud
+  BossBar
+```
+
+## Party HUD
+
+The party panel now provides:
+
+- Dedicated character frames
+- Stronger active-character emphasis
+- Current and maximum HP values
+- Smooth health-bar updates
+- Character-specific accent colors
+- Defeated-character presentation
+- Responsive width and spacing
+
+The party panel remains in the upper-right but no longer shares that space
+with the developer framework panel.
+
+## Ability bar
+
+The ability bar is now a standalone component and owns:
+
+- Current binding labels
+- Assigned and unassigned states
+- Cooldown values
+- Cooldown progress overlays
+- Ability names
+- Responsive compact behavior
+
+The existing bindings remain unchanged:
+
+```text
+RMB    Basic attack
+1–4    Assigned ability slots
+R      Dodge
+Space  Jump
+```
+
+Cooldown maximums are presentation metadata only. Ability behavior and timing
+are still owned by gameplay.
+
+## Wave and boss presentation
+
+A new compact upper-left panel displays:
+
+```text
+Wave
+Kills
+Power
+```
+
+Elite health is displayed through the dedicated `BossBar` component. The
+legacy boss DOM is no longer updated by gameplay code.
+
+## Notification event bridge
+
+The engine event map now includes:
+
+```text
+ui.notification
+```
+
+The existing `feed()` helper publishes a typed UI event instead of creating
+DOM elements directly:
+
+```text
+Gameplay code
+  EventBus
+    ui.notification
+      GameplayHud
+        NotificationFeed
+```
+
+Notifications support semantic presentation tones:
+
+```text
+neutral
+success
+warning
+danger
+loot
+```
+
+This is the first production UI event bridge. Additional UI events should be
+added only when a real consumer needs them.
+
+## Theme foundation
+
+`UITheme.ts` provides centralized semantic values for:
+
+- Panels
+- Borders
+- Text
+- Muted text
+- Accent
+- Success
+- Warning
+- Danger
+- Cooldown
+- Item rarity colors
+- Shared radii and spacing
+
+`GameplayHud` applies the theme to CSS custom properties so later theme and
+accessibility settings can update the presentation layer without changing
+gameplay code.
+
+## Game-over presentation
+
+The game-over view is now created and owned by `GameplayHud`.
+
+The existing run result and page-reload behavior remain unchanged.
+
+## Legacy compatibility
+
+The previous HTML HUD elements are hidden when `GameplayHud` initializes.
+This allows the build to work with the current repository HTML while removing
+runtime ownership from those elements.
+
+The inventory screen remains on the existing `PartyManagementScreen` path and
+will be migrated with the menu/settings work.
+
+## Developer controls
+
+The 0.5.6.1 developer UI remains unchanged:
+
+```text
+U  Toggle engine diagnostics
+P  Toggle developer controls
+```
+
+No function keys are used.
+
+## Files added
+
+```text
+src/ui/gameplay/AbilityBar.ts
+src/ui/gameplay/BossBar.ts
+src/ui/gameplay/CharacterFrame.ts
+src/ui/gameplay/GameplayHud.ts
+src/ui/gameplay/GameplayHud.css
+src/ui/gameplay/GameplayHudTypes.ts
+src/ui/gameplay/NotificationFeed.ts
+src/ui/gameplay/PartyHud.ts
+src/ui/gameplay/WaveHud.ts
+src/ui/gameplay/index.ts
+src/ui/shared/UITheme.ts
+```
+
+## Files modified
+
+```text
+src/main.ts
+src/engine/events/EventTypes.ts
+README.md
+```
 
 
 ### Validate

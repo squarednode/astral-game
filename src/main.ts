@@ -3,6 +3,7 @@ import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
 import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
+import './ui/gameplay/GameplayHud.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -40,6 +41,8 @@ import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
 import { UIManager } from './ui/core/UIManager';
 import { DeveloperHud } from './ui/developer/DeveloperHud';
+import { GameplayHud } from './ui/gameplay';
+import type { GameplayHudSnapshot } from './ui/gameplay';
 import { CombatSystem } from './game/combat/CombatSystem';
 import { DamageNumberManager } from './game/combat/DamageNumberManager';
 import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController';
@@ -501,9 +504,6 @@ let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: num
 let scheduledWave: number | null = null;
 let projectiles: { mesh: Mesh; vel: Vector3; ttl: number; damage: number; element: Element; pierce: number }[] = [];
 
-const partyEl = document.querySelector<HTMLDivElement>('#party')!;
-const abilitiesEl = document.querySelector<HTMLDivElement>('#abilities')!;
-const lootFeed = document.querySelector<HTMLDivElement>('#lootFeed')!;
 const inventoryEl = document.querySelector<HTMLDivElement>('#inventory')!;
 
 let worldMovementMultiplier = 1;
@@ -534,6 +534,10 @@ document.body.appendChild(waterStatus);
 const ui = new UIManager();
 const developerHud = new DeveloperHud(
   ui.getLayer('developer'),
+);
+const gameplayHud = new GameplayHud(
+  ui.getLayer('gameplay'),
+  ui.getLayer('notifications'),
 );
 
 const movement = new PlayerMovementController(input, playerRoot, {
@@ -619,32 +623,94 @@ function hasLegendaryPower(c: CharacterState, text: string): boolean {
   );
 }
 
-function refreshHud(): void {
-  partyEl.innerHTML = party.map((c, i) => `<div class="party-card ${i === activeIndex ? 'active' : ''}">
-    <div class="party-line"><div><div class="party-name">${i === activeIndex ? 'CONTROL · ' : ''}${c.name}</div><div class="party-role">${c.role}</div></div><b>${Math.ceil(c.hp)}</b></div>
-    <div class="hpbar"><div class="hpfill" style="width:${Math.max(0, c.hp / hpMax(c) * 100)}%"></div></div></div>`).join('');
+function skillCooldownMaximum(
+  character: CharacterState,
+  skill: SkillKey,
+): number {
+  if (character.id === 'vanguard') return skill === 'Q' ? 5 : 8;
+  if (character.id === 'warden') return skill === 'Q' ? 7 : 10;
+  return skill === 'Q' ? 5.5 : 6;
+}
+
+function gameplayHudSnapshot(): GameplayHudSnapshot {
   const skillName = (slot: AbilitySlot): string => {
     const skill = active.skillSlots[slot];
     if (skill === 'Q') return active.qName;
     if (skill === 'E') return active.eName;
     return 'Unassigned';
   };
+
   const skillCooldown = (slot: AbilitySlot): number => {
     const skill = active.skillSlots[slot];
     return skill ? active.cooldowns[skill] : 0;
   };
-  abilitiesEl.innerHTML = [
-    ['RMB', 'Basic', active.cooldowns.attack],
-    ['1', skillName(1), skillCooldown(1)],
-    ['2', skillName(2), skillCooldown(2)],
-    ['3', skillName(3), skillCooldown(3)],
-    ['4', skillName(4), skillCooldown(4)],
-    ['R', 'Dodge', active.cooldowns.dodge],
-    ['Space', 'Jump', 0],
-  ].map(([key, name, cd]) => `<div class="ability"><kbd>${key}</kbd>${name}${Number(cd) > 0 ? `<div class="cooldown">${Number(cd).toFixed(1)}</div>` : ''}</div>`).join('');
-  document.querySelector('#wave')!.textContent = String(wave);
-  document.querySelector('#kills')!.textContent = String(kills);
-  document.querySelector('#power')!.textContent = String(powerFor());
+
+  const skillMaximum = (slot: AbilitySlot): number => {
+    const skill = active.skillSlots[slot];
+    return skill ? skillCooldownMaximum(active, skill) : 0;
+  };
+
+  const elite = enemies.find(enemy => enemy.elite);
+
+  return {
+    party: party.map((character, index) => ({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      hp: character.hp,
+      maxHp: hpMax(character),
+      active: index === activeIndex,
+      color: character.color.toHexString(),
+    })),
+    abilities: [
+      {
+        id: 'basic',
+        binding: 'RMB',
+        name: 'Basic',
+        cooldown: active.cooldowns.attack,
+        cooldownMaximum: active.attackCooldown,
+        assigned: true,
+      },
+      ...([1, 2, 3, 4] as AbilitySlot[]).map(slot => ({
+        id: `ability-${slot}`,
+        binding: String(slot),
+        name: skillName(slot),
+        cooldown: skillCooldown(slot),
+        cooldownMaximum: skillMaximum(slot),
+        assigned: Boolean(active.skillSlots[slot]),
+      })),
+      {
+        id: 'dodge',
+        binding: 'R',
+        name: 'Dodge',
+        cooldown: active.cooldowns.dodge,
+        cooldownMaximum: GameBalance.movement.dodgeCooldown,
+        assigned: true,
+      },
+      {
+        id: 'jump',
+        binding: 'Space',
+        name: 'Jump',
+        cooldown: 0,
+        cooldownMaximum: 0,
+        assigned: true,
+      },
+    ],
+    wave,
+    kills,
+    power: powerFor(),
+    boss: elite
+      ? {
+          name: 'Elite Enemy',
+          hp: elite.hp,
+          maxHp: elite.maxHp,
+        }
+      : undefined,
+  };
+}
+
+function refreshHud(): void {
+  gameplayHud.render(gameplayHudSnapshot());
   renderPartyManagement();
 }
 
@@ -750,12 +816,11 @@ function assignSkillSlot(
   feed(`${character.name} skill slot ${slot} updated.`);
   refreshHud();
 }
-function feed(text: string): void {
-  const line = document.createElement('div');
-  line.className = 'loot-line';
-  line.textContent = text;
-  lootFeed.prepend(line);
-  setTimeout(() => line.remove(), 4200);
+function feed(
+  text: string,
+  tone: 'neutral' | 'success' | 'warning' | 'danger' | 'loot' = 'neutral',
+): void {
+  events.emit('ui.notification', { text, tone });
 }
 
 const eventUnsubscribers = [
@@ -769,6 +834,12 @@ const eventUnsubscribers = [
   }),
   events.subscribe('world.triggerActivated', event => {
     feed(`Trigger volume: ${event.payload.triggerId}.`);
+  }),
+  events.subscribe('ui.notification', event => {
+    gameplayHud.notify(
+      event.payload.text,
+      event.payload.tone ?? 'neutral',
+    );
   }),
 ];
 
@@ -1390,8 +1461,9 @@ function hurtActive(
 
 function endGame(): void {
   gameOver = true;
-  document.querySelector('#gameOver')!.classList.remove('hidden');
-  document.querySelector('#finalScore')!.textContent = `You reached wave ${wave} with ${kills} kills and found ${loot.length} items.`;
+  gameplayHud.showGameOver(
+    `You reached wave ${wave} with ${kills} kills and found ${loot.length} items.`,
+  );
 }
 
 const developerActions: DeveloperActions = {
@@ -1544,7 +1616,6 @@ document.querySelector('#closeInventory')?.addEventListener('click', () => {
   inventoryOpen = false;
   partyManagement.setOpen(false);
 });
-document.querySelector('#restart')!.addEventListener('click', () => location.reload());
 
 function flushFrameInfrastructure(): void {
   entities.flushDestroyed();
@@ -1893,10 +1964,6 @@ scene.onBeforeRenderObservable.add(() => {
   [...enemies].filter(e => e.hp <= 0).forEach(killEnemy);
 
   const elite = enemies.find(e => e.elite);
-  const bossWrap = document.querySelector('#bossBar')!;
-  bossWrap.classList.toggle('hidden', !elite);
-  if (elite) (document.querySelector('#bossFill') as HTMLElement).style.width = `${Math.max(0, elite.hp / elite.maxHp * 100)}%`;
-
   if (Math.floor(now / 100) !== Math.floor((now - dt * 1000) / 100)) refreshHud();
 
   entityStatusTimer -= dt;
@@ -2058,6 +2125,7 @@ window.addEventListener('beforeunload', () => {
   stateValidationMesh.dispose();
   assets.clear();
   developerHud.dispose();
+  gameplayHud.dispose();
   ui.dispose();
   waterStatus.remove();
 });

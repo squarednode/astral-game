@@ -22,6 +22,10 @@ export interface EngineEventMap {
   'world.triggerActivated': {
     triggerId: string;
   };
+  'ui.notification': {
+    text: string;
+    tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'loot';
+  };
   'framework.validation': {
     value: number;
   };
