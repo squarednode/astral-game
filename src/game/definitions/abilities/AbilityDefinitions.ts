@@ -15,6 +15,8 @@ export type AbilityCastStyle =
   | 'toggle'
   | 'passive';
 
+export type AbilityQueueBehavior = 'replace' | 'reject' | 'preserve';
+
 export type AbilityResourceType =
   | 'cooldown-only'
   | 'charges'
@@ -50,6 +52,11 @@ export interface AbilityDefinition extends DefinitionBase {
   readonly damage?: number;
   readonly duration?: number;
   readonly statusDuration?: number;
+  readonly canMoveWhileCasting: boolean;
+  readonly canRotateWhileCasting: boolean;
+  readonly commitThreshold: number;
+  readonly queueBehavior: AbilityQueueBehavior;
+  readonly interruptPriority: number;
   readonly iconAssetId?: string;
 }
 
@@ -67,12 +74,14 @@ export function validateAbilityDefinition(
   if (definition.range < 0) errors.push('range cannot be negative.');
   if (definition.damage !== undefined && definition.damage < 0) errors.push('damage cannot be negative.');
   if (definition.abilityTags.length === 0) errors.push('At least one ability tag is required.');
+  if (definition.commitThreshold < 0 || definition.commitThreshold > 1) errors.push('commitThreshold must be between 0 and 1.');
+  if (!Number.isFinite(definition.interruptPriority)) errors.push('interruptPriority must be finite.');
   return errors;
 }
 
 const metadata = {
   schemaVersion: ABILITY_DEFINITION_SCHEMA_VERSION,
-  contentVersion: '0.6.0a',
+  contentVersion: '0.6.0b',
   source: 'src/game/definitions/abilities/AbilityDefinitions.ts',
   tags: ['ability', 'phase-2', 'validation'],
 } as const;
@@ -84,6 +93,7 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     executorId: 'fireball', targeting: 'directional', castStyle: 'cast-time', resource: 'cooldown-only',
     element: 'fire', abilityTags: ['projectile', 'fire', 'damage'],
     cooldown: 8, castTime: 0.50, executionTime: 0.05, range: 12, damage: 46,
+    canMoveWhileCasting: false, canRotateWhileCasting: true, commitThreshold: 0.95, queueBehavior: 'replace', interruptPriority: 10,
     iconAssetId: 'icon:ability-fireball',
   },
   {
@@ -92,6 +102,7 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     executorId: 'blink', targeting: 'ground', castStyle: 'instant', resource: 'cooldown-only',
     element: 'arcane', abilityTags: ['movement', 'mobility'],
     cooldown: 6, castTime: 0, executionTime: 0.05, range: 8.5,
+    canMoveWhileCasting: false, canRotateWhileCasting: true, commitThreshold: 0, queueBehavior: 'replace', interruptPriority: 20,
     iconAssetId: 'icon:ability-blink',
   },
   {
@@ -100,6 +111,7 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     executorId: 'shield', targeting: 'self', castStyle: 'cast-time', resource: 'cooldown-only',
     element: 'arcane', abilityTags: ['defensive', 'buff'],
     cooldown: 12, castTime: 0.20, executionTime: 0.05, range: 0, duration: 4,
+    canMoveWhileCasting: true, canRotateWhileCasting: true, commitThreshold: 0.95, queueBehavior: 'replace', interruptPriority: 10,
     iconAssetId: 'icon:ability-shield',
   },
   {
@@ -108,6 +120,7 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     executorId: 'ice-spear', targeting: 'directional', castStyle: 'cast-time', resource: 'cooldown-only',
     element: 'frost', abilityTags: ['projectile', 'ice', 'damage', 'crowd-control', 'status'],
     cooldown: 6, castTime: 0.30, executionTime: 0.05, range: 14, damage: 38, statusDuration: 4,
+    canMoveWhileCasting: false, canRotateWhileCasting: true, commitThreshold: 0.95, queueBehavior: 'replace', interruptPriority: 10,
     iconAssetId: 'icon:ability-ice-spear',
   },
 ];

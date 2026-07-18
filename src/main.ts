@@ -1448,6 +1448,14 @@ function createAbilityRuntime(
           abilityId: ability.id,
         });
       },
+      onCommitReached: ability => {
+        logAbilityEvent(`${character.name}: ${ability.name} committed`);
+        events.emit('ability.commitReached', {
+          runtimeId: `${character.id}-slot-${slot}`,
+          abilityId: ability.id,
+          progress: ability.commitThreshold,
+        });
+      },
       onInterrupted: (ability, reason) => {
         logAbilityEvent(`${character.name}: ${ability.name} interrupted (${reason})`);
         events.emit('ability.interrupted', {
@@ -1489,7 +1497,16 @@ const validationAbilityLoadouts: Record<string, readonly string[]> = {
 };
 
 for (const character of party) {
-  const component = new AbilityComponent();
+  const component = new AbilityComponent({
+    onQueueConsumed: action => {
+      logAbilityEvent(`${character.name}: queued ${action.id} consumed`);
+      events.emit('ability.queueConsumed', {
+        characterId: character.id,
+        actionId: action.id,
+        actionType: action.type,
+      });
+    },
+  });
   const loadout = validationAbilityLoadouts[character.id] ?? validationAbilityLoadouts.vanguard;
   ([1, 2, 3, 4] as AbilitySlot[]).forEach((slot, index) => {
     component.assign(slot, createAbilityRuntime(character, slot, loadout[index]));
@@ -1598,6 +1615,13 @@ function castAbilitySlot(slot: AbilitySlot): void {
   if (result === 'queued') {
     feed(`${runtime.definition.name} queued.`);
     logAbilityEvent(`${active.name}: ${runtime.definition.name} queued`);
+    events.emit('ability.queued', {
+      characterId: active.id,
+      actionId: runtime.definition.id,
+      actionType: 'ability',
+    });
+  } else if (result === 'interrupted') {
+    logAbilityEvent(`${active.name}: prior cast interrupted by ${runtime.definition.name}`);
   } else if (result === 'rejected') {
     feed(`${runtime.definition.name} is not ready.`);
   }
@@ -1608,7 +1632,25 @@ function cycleControl(direction: 1 | -1): void {
   if (party.length <= 1 || swapInputCooldown > 0 || inventoryOpen || gameOver) return;
   for (let step = 1; step <= party.length; step++) {
     const candidate = (activeIndex + direction * step + party.length) % party.length;
-    if (party[candidate].hp > 0) { swapTo(candidate); swapInputCooldown = 0.15; return; }
+    if (party[candidate].hp <= 0) continue;
+
+    const component = abilityComponents.get(active.id);
+    const result = component?.requestExternalAction(
+      'swap',
+      `swap:${party[candidate].id}`,
+      () => swapTo(candidate),
+    ) ?? 'executed';
+
+    if (result === 'queued') {
+      events.emit('ability.queued', {
+        characterId: active.id,
+        actionId: `swap:${party[candidate].id}`,
+        actionType: 'swap',
+      });
+    }
+
+    swapInputCooldown = 0.15;
+    return;
   }
 }
 
@@ -1990,9 +2032,20 @@ scene.onBeforeRenderObservable.add(() => {
     input.endFrame();
     return;
   }
-  if (input.consumePressed('dodge')) movement.requestDodge();
+  const activeAbilityComponent = abilityComponents.get(active.id);
+  const requestAbilityAction = (
+    type: 'movement' | 'jump' | 'dodge' | 'swap',
+    id: string,
+    execute: () => void,
+  ) => activeAbilityComponent?.requestExternalAction(type, id, execute) ?? 'executed';
+
+  if (input.consumePressed('dodge')) {
+    const result = requestAbilityAction('dodge', 'player-dodge', () => movement.requestDodge());
+    if (result === 'queued') events.emit('ability.queued', { characterId: active.id, actionId: 'player-dodge', actionType: 'dodge' });
+  }
   if (input.consumePressed('jump') && !worldJumpDisabled) {
-    movement.requestJump();
+    const result = requestAbilityAction('jump', 'player-jump', () => movement.requestJump());
+    if (result === 'queued') events.emit('ability.queued', { characterId: active.id, actionId: 'player-jump', actionType: 'jump' });
   }
   if (input.consumePressed('ability1')) castAbilitySlot(1);
   if (input.consumePressed('ability2')) castAbilitySlot(2);
@@ -2072,7 +2125,19 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   const positionBeforeMovement = playerRoot.position.clone();
-  movement.update(dt);
+  const moveAxes = input.getMoveAxes();
+  const movementRequested =
+    Math.abs(moveAxes.x) + Math.abs(moveAxes.z) > 0.001 ||
+    (input.isPointerHeld('left') && !input.isClickToAttackEnabled());
+  let movementAllowed = true;
+  if (movementRequested) {
+    const movementResult = requestAbilityAction('movement', 'player-movement', () => undefined);
+    movementAllowed = movementResult !== 'queued' && movementResult !== 'rejected';
+    if (movementResult === 'queued') {
+      events.emit('ability.queued', { characterId: active.id, actionId: 'player-movement', actionType: 'movement' });
+    }
+  }
+  if (movementAllowed) movement.update(dt);
 
   const movementPosition = playerRoot.position.clone();
 
@@ -2213,6 +2278,7 @@ scene.onBeforeRenderObservable.add(() => {
   const face = pointerWorld.subtract(playerRoot.position); face.y = 0;
   if (
     input.shouldFaceAimDirection() &&
+    (abilityComponents.get(active.id)?.canRotateTowardAim() ?? true) &&
     face.lengthSquared() > .01
   ) playerRoot.rotation.y = Math.atan2(face.x, face.z);
   playerCamera.update(dt);
@@ -2473,9 +2539,7 @@ scene.onBeforeRenderObservable.add(() => {
     const queued = activeAbilityComponent?.getQueued();
     abilityDeveloperPanel.render({
       characterName: active.name,
-      queuedAbility: queued
-        ? activeAbilityComponent?.get(queued.slot)?.definition.name
-        : undefined,
+      queuedAbility: queued?.id,
       abilities: activeAbilitySnapshots(),
       events: abilityEventLog,
       noCooldowns: developerState.noCooldowns,

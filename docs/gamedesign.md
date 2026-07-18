@@ -1155,6 +1155,27 @@ The existing wave system is retained as a separate mode for:
 
 Survival Mode is not the default campaign structure.
 
+# Combat Rules
+Astral rewards reading and reacting to committed combat actions, not exploiting repeated AI indecision.
+Players
+Can interrupt casts with actions.
+Have a 95% commitment window.
+One queued action.
+Movement interrupts early casts.
+Standard Enemies
+Can interrupt early.
+Commit around 70%.
+Slightly longer attack range.
+Don't endlessly chase.
+Elites
+Earlier commitment.
+Fewer interruptions.
+Better positioning.
+Bosses
+Mechanics always execute once committed.
+Telegraphs replace cancellation.
+Dodging is the counterplay.
+
 # 25. Future Ideas Parking Lot
 
 These ideas are recorded but intentionally deferred.

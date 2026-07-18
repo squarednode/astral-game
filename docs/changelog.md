@@ -4067,6 +4067,89 @@ Controls:
 - Clear nearest-enemy statuses
 
 Reserved developer pages were added for AI, Status, Loot, Bosses, and Quests.
+# Astral 0.6.0.2 — Ability Commitment & Combat Feel
+
+This milestone completes the player-side cast interruption and action queue rules before enemy archetypes are introduced.
+
+## Cast commitment
+
+Cast-time abilities declare a commitment threshold. The current validation abilities use 95%.
+
+```text
+0%–94.9%
+  A movement, jump, dodge, swap, or ability request interrupts the cast.
+  The requested action begins immediately.
+
+95%–100%
+  The cast is committed and will execute.
+  One requested action is stored and begins immediately afterward.
+```
+
+Blink is instant and therefore begins in execution without a visible cast window.
+
+## Per-ability cast rules
+
+Definitions now declare:
+
+```ts
+canMoveWhileCasting
+canRotateWhileCasting
+commitThreshold
+queueBehavior
+interruptPriority
+```
+
+Current validation settings:
+
+| Ability | Move while casting | Rotate while casting | Commit |
+|---|---:|---:|---:|
+| Fireball | No | Yes | 95% |
+| Ice Spear | No | Yes | 95% |
+| Astral Shield | Yes | Yes | 95% |
+| Blink | Instant | Yes | 0% |
+
+## Generalized action queue
+
+A character owns one queued action. Supported action types are:
+
+```text
+ability
+movement
+jump
+dodge
+swap
+```
+
+The default `replace` behavior means the newest late-cast action replaces the prior queued action. Future definitions may use `preserve` or `reject`.
+
+## Movement behavior
+
+Stationary casts stop movement until interrupted or completed. Mobile casts, such as Astral Shield, allow movement without cancelling the cast.
+
+Aim-facing is independently controlled by `canRotateWhileCasting`.
+
+## Events
+
+```text
+ability.commitReached
+ability.queued
+ability.queueConsumed
+ability.interrupted
+```
+
+## Developer inspection
+
+The Abilities page now shows:
+
+- Cast progress
+- Commit threshold
+- Whether commitment has been reached
+- Move-while-casting setting
+- Rotate-while-casting setting
+- Queued action
+- Ability event history
+
+
 
 
 ### Validate

@@ -19,6 +19,7 @@ export interface AbilityRuntimeCallbacks {
   onCooldownStarted?: (definition: Readonly<AbilityDefinition>) => void;
   onReady?: (definition: Readonly<AbilityDefinition>) => void;
   onInterrupted?: (definition: Readonly<AbilityDefinition>, reason: string) => void;
+  onCommitReached?: (definition: Readonly<AbilityDefinition>) => void;
   onStateEntered?: (state: AbilityStateId, from: AbilityStateId | null) => void;
   onStateExited?: (state: AbilityStateId, to: AbilityStateId) => void;
   onStateChanged?: (from: AbilityStateId | null, to: AbilityStateId, reason?: string) => void;
@@ -26,12 +27,13 @@ export interface AbilityRuntimeCallbacks {
 
 export class AbilityRuntime {
   readonly machine: StateMachine<AbilityContext, AbilityStateId, AbilityBlackboard>;
+  private commitNotified = false;
 
   constructor(
     readonly id: string,
     readonly definition: Readonly<AbilityDefinition>,
     executor: AbilityExecutor,
-    callbacks: AbilityRuntimeCallbacks = {},
+    private readonly callbacks: AbilityRuntimeCallbacks = {},
   ) {
     const context: AbilityContext = { definition, execute: executor };
     this.machine = new StateMachine<AbilityContext, AbilityStateId, AbilityBlackboard>(
@@ -47,6 +49,7 @@ export class AbilityRuntime {
         request: null,
         interruptReason: null,
         executedAt: null,
+        commitReached: false,
       },
     )
       .addState({ id: 'ready' })
@@ -106,11 +109,13 @@ export class AbilityRuntime {
 
   cast(request: AbilityCastRequest): boolean {
     if (this.machine.getCurrentStateId() !== 'ready') return false;
+    this.commitNotified = false;
     this.machine.blackboard.patch({
       request,
       castSequence: this.machine.blackboard.get('castSequence') + 1,
       interruptReason: null,
       executedAt: null,
+      commitReached: this.definition.castTime <= 0,
     });
     return this.machine.request(
       this.definition.castTime > 0 ? 'casting' : 'executing',
@@ -119,6 +124,7 @@ export class AbilityRuntime {
   }
 
   interrupt(reason: string): boolean {
+    if (!this.isInterruptible()) return false;
     return this.machine.interact('interrupt', reason).handled;
   }
 
@@ -135,16 +141,44 @@ export class AbilityRuntime {
     return state === 'casting' || state === 'executing';
   }
 
+  isCasting(): boolean {
+    return this.machine.getCurrentStateId() === 'casting';
+  }
+
+  getCastProgress(): number {
+    if (!this.isCasting()) return 0;
+    return this.machine.getStateTimer().progress ?? 0;
+  }
+
+  isCommitted(): boolean {
+    if (!this.isCasting()) return this.machine.getCurrentStateId() === 'executing';
+    return this.getCastProgress() >= this.definition.commitThreshold;
+  }
+
+  isInterruptible(): boolean {
+    return this.isCasting() && !this.isCommitted();
+  }
+
   update(dt: number, noCooldowns = false, freezeCasting = false): void {
     if (!(freezeCasting && this.machine.getCurrentStateId() === 'casting')) {
       this.machine.update(dt);
     }
+
+    if (this.isCasting() && this.isCommitted()) {
+      this.machine.blackboard.set('commitReached', true);
+      if (!this.commitNotified) {
+        this.commitNotified = true;
+        this.callbacks.onCommitReached?.(this.definition);
+      }
+    }
+
     if (noCooldowns && this.machine.getCurrentStateId() === 'cooldown') {
       this.finishCooldown();
     }
   }
 
   reset(): void {
+    this.commitNotified = false;
     if (this.machine.getCurrentStateId() !== 'ready') {
       this.machine.request('ready', 'developer-reset');
     }
@@ -154,6 +188,7 @@ export class AbilityRuntime {
     const state = this.machine.getCurrentStateId() ?? 'disabled';
     const timer = this.machine.getStateTimer();
     const blackboard = this.machine.blackboard.snapshot();
+    const castProgress = state === 'casting' ? timer.progress ?? 0 : 0;
     return {
       id: this.id,
       definitionId: this.definition.id,
@@ -164,8 +199,12 @@ export class AbilityRuntime {
       castElapsed: state === 'casting' ? timer.elapsed : 0,
       castRemaining: state === 'casting' ? timer.remaining ?? 0 : 0,
       castMaximum: this.definition.castTime,
-      castProgress: state === 'casting' ? timer.progress ?? 0 : 0,
+      castProgress,
       executionProgress: state === 'executing' ? timer.progress ?? 0 : 0,
+      commitThreshold: this.definition.commitThreshold,
+      committed: state === 'executing' || (state === 'casting' && castProgress >= this.definition.commitThreshold),
+      canMoveWhileCasting: this.definition.canMoveWhileCasting,
+      canRotateWhileCasting: this.definition.canRotateWhileCasting,
       tags: this.definition.abilityTags,
       blackboard,
     };

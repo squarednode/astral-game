@@ -3,6 +3,13 @@ import type { AbilityDefinition } from '../definitions/abilities';
 
 export type AbilityStateId = 'ready' | 'casting' | 'executing' | 'cooldown' | 'disabled';
 
+export type AbilityActionType =
+  | 'ability'
+  | 'movement'
+  | 'jump'
+  | 'dodge'
+  | 'swap';
+
 export interface AbilityCastRequest {
   readonly casterId: string;
   readonly casterPosition: Vector3;
@@ -15,6 +22,7 @@ export interface AbilityBlackboard {
   request: AbilityCastRequest | null;
   interruptReason: string | null;
   executedAt: number | null;
+  commitReached: boolean;
 }
 
 export interface AbilityRuntimeSnapshot {
@@ -29,6 +37,10 @@ export interface AbilityRuntimeSnapshot {
   readonly castMaximum: number;
   readonly castProgress: number;
   readonly executionProgress: number;
+  readonly commitThreshold: number;
+  readonly committed: boolean;
+  readonly canMoveWhileCasting: boolean;
+  readonly canRotateWhileCasting: boolean;
   readonly tags: readonly string[];
   readonly blackboard: Readonly<AbilityBlackboard>;
 }

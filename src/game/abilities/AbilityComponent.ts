@@ -1,18 +1,35 @@
 import type { AbilityRuntime } from './AbilityRuntime';
-import type { AbilityCastRequest } from './AbilityTypes';
+import type {
+  AbilityActionType,
+  AbilityCastRequest,
+} from './AbilityTypes';
 
 export type AbilitySlot = 1 | 2 | 3 | 4;
 
-export interface QueuedAbility {
-  readonly slot: AbilitySlot;
-  readonly request: AbilityCastRequest;
+export interface QueuedAction {
+  readonly id: string;
+  readonly type: AbilityActionType;
+  readonly execute: () => void;
 }
 
-export type AbilityCastResult = 'cast' | 'queued' | 'rejected';
+export type AbilityActionResult =
+  | 'executed'
+  | 'interrupted'
+  | 'queued'
+  | 'allowed'
+  | 'rejected';
+
+export interface AbilityComponentCallbacks {
+  onQueueConsumed?: (action: QueuedAction) => void;
+}
 
 export class AbilityComponent {
   private readonly slots = new Map<AbilitySlot, AbilityRuntime>();
-  private queued: QueuedAbility | null = null;
+  private queued: QueuedAction | null = null;
+
+  constructor(
+    private readonly callbacks: AbilityComponentCallbacks = {},
+  ) {}
 
   assign(slot: AbilitySlot, runtime: AbilityRuntime): void {
     this.slots.set(slot, runtime);
@@ -26,19 +43,63 @@ export class AbilityComponent {
     return [...this.slots.values()];
   }
 
-  requestCast(slot: AbilitySlot, request: AbilityCastRequest): AbilityCastResult {
+  requestCast(
+    slot: AbilitySlot,
+    request: AbilityCastRequest,
+  ): AbilityActionResult {
     const runtime = this.slots.get(slot);
     if (!runtime) return 'rejected';
 
-    if (this.all().some(candidate => candidate.isBusy())) {
-      this.queued = { slot, request };
-      return 'queued';
-    }
-
-    return runtime.cast(request) ? 'cast' : 'rejected';
+    return this.requestAction({
+      id: runtime.definition.id,
+      type: 'ability',
+      execute: () => {
+        runtime.cast(request);
+      },
+    });
   }
 
-  getQueued(): QueuedAbility | null {
+  requestExternalAction(
+    type: Exclude<AbilityActionType, 'ability'>,
+    id: string,
+    execute: () => void,
+  ): AbilityActionResult {
+    return this.requestAction({ id, type, execute });
+  }
+
+  private requestAction(action: QueuedAction): AbilityActionResult {
+    const active = this.getActiveRuntime();
+    if (!active) {
+      action.execute();
+      return 'executed';
+    }
+
+    if (
+      action.type === 'movement' &&
+      active.isCasting() &&
+      active.definition.canMoveWhileCasting
+    ) {
+      action.execute();
+      return 'allowed';
+    }
+
+    if (active.isInterruptible()) {
+      const interrupted = active.interrupt(`action:${action.type}`);
+      if (!interrupted) return 'rejected';
+      this.queued = null;
+      action.execute();
+      return 'interrupted';
+    }
+
+    const behavior = active.definition.queueBehavior;
+    if (behavior === 'reject') return 'rejected';
+    if (behavior === 'preserve' && this.queued) return 'queued';
+
+    this.queued = action;
+    return 'queued';
+  }
+
+  getQueued(): QueuedAction | null {
     return this.queued;
   }
 
@@ -48,6 +109,12 @@ export class AbilityComponent {
 
   getActiveRuntime(): AbilityRuntime | undefined {
     return this.all().find(runtime => runtime.isBusy());
+  }
+
+  canRotateTowardAim(): boolean {
+    const active = this.getActiveRuntime();
+    if (!active?.isCasting()) return true;
+    return active.definition.canRotateWhileCasting;
   }
 
   interruptActive(reason = 'developer-interrupt'): boolean {
@@ -66,12 +133,15 @@ export class AbilityComponent {
   }
 
   update(dt: number, noCooldowns = false, freezeCasting = false): void {
-    for (const runtime of this.slots.values()) runtime.update(dt, noCooldowns, freezeCasting);
+    for (const runtime of this.slots.values()) {
+      runtime.update(dt, noCooldowns, freezeCasting);
+    }
 
     if (!this.queued || this.all().some(runtime => runtime.isBusy())) return;
     const queued = this.queued;
     this.queued = null;
-    this.slots.get(queued.slot)?.cast(queued.request);
+    queued.execute();
+    this.callbacks.onQueueConsumed?.(queued);
   }
 
   reset(): void {

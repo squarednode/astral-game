@@ -14,6 +14,7 @@ export {
 } from './abilities';
 export type {
   AbilityCastStyle,
+  AbilityQueueBehavior,
   AbilityDefinition,
   AbilityResourceType,
   AbilityTag,

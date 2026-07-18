@@ -33,6 +33,21 @@ export interface EngineEventMap {
     abilityId: string;
     reason: string;
   };
+  'ability.commitReached': {
+    runtimeId: string;
+    abilityId: string;
+    progress: number;
+  };
+  'ability.queued': {
+    characterId: string;
+    actionId: string;
+    actionType: 'ability' | 'movement' | 'jump' | 'dodge' | 'swap';
+  };
+  'ability.queueConsumed': {
+    characterId: string;
+    actionId: string;
+    actionType: 'ability' | 'movement' | 'jump' | 'dodge' | 'swap';
+  };
   'combat.enemyKilled': {
     entityId: string;
     elite: boolean;
