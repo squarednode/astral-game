@@ -4,13 +4,31 @@ import type {
   EncounterArenaDefinition,
   EncounterDefinition,
   EncounterEnemyRecord,
+  EncounterPhaseDefinition,
   EncounterPosition,
+  EncounterReinforcementControllerDefinition,
+  EncounterReinforcementControllerSnapshot,
   EncounterRuntimeCallbacks,
   EncounterSerializedState,
   EncounterSnapshot,
+  EncounterSpawnEntryDefinition,
   EncounterSpawnGroupDefinition,
   EncounterState,
 } from './EncounterTypes';
+
+interface ScheduledSpawn {
+  at: number;
+  groupId: string;
+  requestIndex: number;
+}
+
+interface ReinforcementControllerRuntime {
+  definition: EncounterReinforcementControllerDefinition;
+  timerRemaining: number | null;
+  checkRemaining: number;
+  totalSpawned: number;
+  nextSpawnCount: number;
+}
 
 interface RuntimeState {
   definition: EncounterDefinition;
@@ -29,9 +47,12 @@ interface RuntimeState {
   activeEnemyIds: Set<string>;
   enemyRecords: Map<string, EncounterEnemyRecord>;
   firedReinforcements: Map<string, number>;
-  scheduledSpawns: Array<{ at: number; groupId: string; requestIndex: number }>;
+  reinforcementControllers: Map<string, ReinforcementControllerRuntime>;
+  scheduledSpawns: ScheduledSpawn[];
   spawnSequence: number;
   playerInside: boolean;
+  outsideBoundary: boolean;
+  boundaryGraceRemaining: number | null;
 }
 
 export class EncounterManager implements SerializableRuntime<EncounterSerializedState> {
@@ -75,19 +96,18 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
 
       if (runtime.state !== 'active' && runtime.state !== 'phase-transition') continue;
       runtime.elapsedSeconds += safeDt;
-      runtime.phaseElapsedSeconds += safeDt;
 
       if (playerDefeated) {
         this.fail(runtime.definition.id, 'Player defeated');
         continue;
       }
-      if (runtime.arena.boundaryPolicy === 'hard' && !insideBoundary) {
-        this.fail(runtime.definition.id, 'Player left the encounter boundary');
-        continue;
-      }
 
+      if (this.updateBoundary(runtime, insideBoundary, safeDt)) continue;
+
+      runtime.phaseElapsedSeconds += safeDt;
       this.processScheduledSpawns(runtime);
       this.evaluateReinforcements(runtime);
+      this.evaluateReinforcementControllers(runtime, safeDt);
       this.evaluatePhase(runtime, safeDt);
     }
   }
@@ -108,8 +128,11 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     runtime.defeatedEnemies = 0;
     runtime.failureReason = undefined;
     runtime.firedReinforcements.clear();
+    runtime.reinforcementControllers.clear();
     runtime.scheduledSpawns = [];
     runtime.spawnSequence = 0;
+    runtime.outsideBoundary = false;
+    runtime.boundaryGraceRemaining = null;
     this.activeEncounterId = encounterId;
 
     this.callbacks.emit('encounter.started', { encounterId });
@@ -131,7 +154,7 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     return true;
   }
 
-  reset(encounterId: string): boolean {
+  reset(encounterId: string, reason?: string): boolean {
     const runtime = this.runtimes.get(encounterId);
     if (!runtime) return false;
     runtime.state = 'resetting';
@@ -145,10 +168,14 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     runtime.defeatedEnemies = 0;
     runtime.failureReason = undefined;
     runtime.firedReinforcements.clear();
+    runtime.reinforcementControllers.clear();
     runtime.scheduledSpawns = [];
+    runtime.outsideBoundary = false;
+    runtime.boundaryGraceRemaining = null;
     runtime.state = 'available';
     if (this.activeEncounterId === encounterId) this.activeEncounterId = null;
-    this.callbacks.emit('encounter.reset', { encounterId });
+    this.callbacks.emit('encounter.reset', { encounterId, reason: reason ?? 'manual' });
+    if (reason) this.callbacks.notify('Encounter Reset', reason);
     this.changed();
     return true;
   }
@@ -160,6 +187,7 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     runtime.activeEnemyIds.clear();
     runtime.pendingSpawns = 0;
     runtime.scheduledSpawns = [];
+    runtime.reinforcementControllers.clear();
     this.completeCurrentPhase(runtime);
     return true;
   }
@@ -171,6 +199,7 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     runtime.activeEnemyIds.clear();
     runtime.pendingSpawns = 0;
     runtime.scheduledSpawns = [];
+    runtime.reinforcementControllers.clear();
     this.completeEncounter(runtime);
     return true;
   }
@@ -229,6 +258,9 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
       elapsedSeconds: runtime.elapsedSeconds,
       transitionRemaining: runtime.transitionRemaining,
       reinforcementStates: Object.fromEntries(runtime.firedReinforcements),
+      reinforcementControllers: this.controllerSnapshots(runtime),
+      outsideBoundary: runtime.outsideBoundary,
+      boundaryGraceRemaining: runtime.boundaryGraceRemaining,
       failureReason: runtime.failureReason,
       rewardGranted: runtime.rewardGranted,
     };
@@ -261,6 +293,8 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
       runtime.elapsedSeconds = saved.elapsedSeconds;
       runtime.rewardGranted = saved.rewardGranted;
       runtime.completedCount = saved.completedCount;
+      runtime.outsideBoundary = false;
+      runtime.boundaryGraceRemaining = null;
     }
     this.activeEncounterId = null;
     this.changed();
@@ -286,9 +320,12 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
       activeEnemyIds: new Set(),
       enemyRecords: new Map(),
       firedReinforcements: new Map(),
+      reinforcementControllers: new Map(),
       scheduledSpawns: [],
       spawnSequence: 0,
       playerInside: false,
+      outsideBoundary: false,
+      boundaryGraceRemaining: null,
     };
   }
 
@@ -301,6 +338,16 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     runtime.state = 'active';
     runtime.phaseElapsedSeconds = 0;
     runtime.transitionRemaining = 0;
+    runtime.reinforcementControllers.clear();
+    for (const definition of phase.reinforcementControllers ?? []) {
+      runtime.reinforcementControllers.set(definition.id, {
+        definition,
+        timerRemaining: null,
+        checkRemaining: 0,
+        totalSpawned: 0,
+        nextSpawnCount: 0,
+      });
+    }
     this.callbacks.emit('encounter.phaseStarted', {
       encounterId: runtime.definition.id,
       phaseId: phase.id,
@@ -310,22 +357,21 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     this.changed();
   }
 
-  private scheduleGroup(runtime: RuntimeState, groupId: string): void {
+  private scheduleGroup(runtime: RuntimeState, groupId: string, limit?: number): number {
     const group = runtime.definition.spawnGroups.find(candidate => candidate.id === groupId);
-    if (!group) return;
+    if (!group) return 0;
     const delay = Math.max(0, group.spawnDelaySeconds ?? 0);
-    let requestIndex = 0;
-    for (const entry of group.entries) {
-      for (let index = 0; index < entry.quantity; index += 1) {
-        runtime.scheduledSpawns.push({
-          at: runtime.phaseElapsedSeconds + delay + requestIndex * 0.16,
-          groupId,
-          requestIndex,
-        });
-        requestIndex += 1;
-        runtime.pendingSpawns += 1;
-      }
+    const expanded = this.expandGroup(group);
+    const count = Math.min(expanded.length, Math.max(0, limit ?? expanded.length));
+    for (let requestIndex = 0; requestIndex < count; requestIndex += 1) {
+      runtime.scheduledSpawns.push({
+        at: runtime.phaseElapsedSeconds + delay + requestIndex * 0.16,
+        groupId,
+        requestIndex,
+      });
+      runtime.pendingSpawns += 1;
     }
+    return count;
   }
 
   private processScheduledSpawns(runtime: RuntimeState): void {
@@ -341,10 +387,7 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     const group = runtime.definition.spawnGroups.find(candidate => candidate.id === groupId);
     const phase = runtime.definition.phases[runtime.phaseIndex];
     if (!group || !phase) return;
-    const expanded = group.entries.flatMap(entry =>
-      Array.from({ length: entry.quantity }, () => entry),
-    );
-    const entry = expanded[requestIndex];
+    const entry = this.expandGroup(group)[requestIndex];
     if (!entry) return;
 
     const points = runtime.arena.spawnPoints.filter(point =>
@@ -378,10 +421,16 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
       enemyDefinitionId: entry.enemyDefinitionId,
       tags: [
         ...(entry.elite ? ['elite'] : []),
+        ...(entry.tags ?? []),
         ...point.tags,
       ],
     });
     runtime.spawnedEnemies += 1;
+    for (const controller of runtime.reinforcementControllers.values()) {
+      if (controller.definition.spawnGroupIds.includes(group.id)) {
+        controller.totalSpawned += 1;
+      }
+    }
     this.callbacks.emit('encounter.enemySpawned', {
       encounterId: runtime.definition.id,
       phaseId: phase.id,
@@ -424,6 +473,99 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     }
   }
 
+  private evaluateReinforcementControllers(runtime: RuntimeState, dt: number): void {
+    for (const controller of runtime.reinforcementControllers.values()) {
+      const definition = controller.definition;
+      if (definition.enabled === false) continue;
+
+      const anchorAlive = this.hasAliveTag(runtime, definition.anchorTag);
+      if ((definition.stopWhenAnchorDies ?? true) && definition.anchorTag && !anchorAlive) {
+        controller.timerRemaining = null;
+        controller.nextSpawnCount = 0;
+        continue;
+      }
+
+      if (controller.timerRemaining !== null) {
+        controller.timerRemaining = Math.max(0, controller.timerRemaining - dt);
+      }
+      controller.checkRemaining = Math.max(0, controller.checkRemaining - dt);
+      if (controller.checkRemaining > 0) continue;
+      controller.checkRemaining = Math.max(0.1, definition.checkIntervalSeconds ?? 0.5);
+
+      const eligibleAlive = this.aliveEligibleForController(runtime, definition);
+      const totalAlive = runtime.activeEnemyIds.size + runtime.pendingSpawns;
+      const totalRemaining = Math.max(0, definition.maximumTotalSpawned - runtime.spawnedEnemies);
+      const aliveCapacity = Math.max(0, definition.maximumAlive - totalAlive);
+      const desired = Math.max(0, definition.targetAlive - eligibleAlive);
+      const nextSpawnCount = Math.min(desired, totalRemaining, aliveCapacity);
+
+      if (nextSpawnCount <= 0 || eligibleAlive > definition.lowPopulationThreshold) {
+        controller.timerRemaining = null;
+        controller.nextSpawnCount = 0;
+        continue;
+      }
+
+      const delay = eligibleAlive === 0
+        ? definition.emptyWaveDelaySeconds
+        : definition.replenishDelaySeconds;
+
+      if (controller.timerRemaining === null) {
+        controller.timerRemaining = Math.max(0, delay);
+        controller.nextSpawnCount = nextSpawnCount;
+        this.callbacks.emit('encounter.reinforcementQueued', {
+          encounterId: runtime.definition.id,
+          controllerId: definition.id,
+          delaySeconds: delay,
+          spawnCount: nextSpawnCount,
+        });
+        continue;
+      }
+
+      controller.nextSpawnCount = nextSpawnCount;
+      if (controller.timerRemaining > 0) continue;
+
+      const scheduled = this.scheduleControllerGroups(runtime, controller, nextSpawnCount);
+      controller.timerRemaining = null;
+      controller.nextSpawnCount = 0;
+      if (scheduled <= 0) continue;
+
+      this.callbacks.emit('encounter.reinforcementSpawned', {
+        encounterId: runtime.definition.id,
+        phaseId: runtime.definition.phases[runtime.phaseIndex]?.id,
+        reinforcementId: definition.id,
+        spawnCount: scheduled,
+      });
+      this.callbacks.notify('Reinforcements Incoming', runtime.definition.displayName);
+    }
+  }
+
+  private scheduleControllerGroups(
+    runtime: RuntimeState,
+    controller: ReinforcementControllerRuntime,
+    requested: number,
+  ): number {
+    let remaining = requested;
+    let scheduled = 0;
+    let budget = controller.definition.spawnBudget ?? Number.POSITIVE_INFINITY;
+
+    for (const groupId of controller.definition.spawnGroupIds) {
+      if (remaining <= 0 || budget <= 0) break;
+      const group = runtime.definition.spawnGroups.find(candidate => candidate.id === groupId);
+      if (!group) continue;
+      const entries = this.expandGroup(group);
+      let allowed = 0;
+      for (const entry of entries) {
+        const cost = Math.max(1, entry.spawnCost ?? 1);
+        if (allowed >= remaining || cost > budget) break;
+        budget -= cost;
+        allowed += 1;
+      }
+      scheduled += this.scheduleGroup(runtime, groupId, allowed);
+      remaining -= allowed;
+    }
+    return scheduled;
+  }
+
   private evaluatePhase(runtime: RuntimeState, dt: number): void {
     if (runtime.state === 'phase-transition') {
       runtime.transitionRemaining = Math.max(0, runtime.transitionRemaining - dt);
@@ -431,6 +573,7 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
       return;
     }
     if (runtime.pendingSpawns > 0 || runtime.activeEnemyIds.size > 0) return;
+    if (this.hasActiveReinforcementController(runtime)) return;
     this.completeCurrentPhase(runtime);
   }
 
@@ -443,6 +586,7 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
         phaseIndex: runtime.phaseIndex,
       });
     }
+    runtime.reinforcementControllers.clear();
     runtime.phaseIndex += 1;
     if (runtime.phaseIndex >= runtime.definition.phases.length) {
       this.completeEncounter(runtime);
@@ -457,6 +601,9 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
   private completeEncounter(runtime: RuntimeState): void {
     runtime.state = 'completed';
     runtime.completedCount += 1;
+    runtime.reinforcementControllers.clear();
+    runtime.outsideBoundary = false;
+    runtime.boundaryGraceRemaining = null;
     this.activeEncounterId = null;
     if (!runtime.rewardGranted || runtime.definition.resetPolicy.repeatable) {
       if (runtime.definition.rewards) {
@@ -472,12 +619,132 @@ export class EncounterManager implements SerializableRuntime<EncounterSerialized
     this.changed();
   }
 
+  private updateBoundary(runtime: RuntimeState, insideBoundary: boolean, dt: number): boolean {
+    const settings = this.boundarySettings(runtime.arena);
+    if (settings.policy === 'none') return false;
+
+    if (insideBoundary) {
+      if (runtime.outsideBoundary) {
+        runtime.outsideBoundary = false;
+        runtime.boundaryGraceRemaining = null;
+        this.callbacks.emit('encounter.boundaryReturned', {
+          encounterId: runtime.definition.id,
+        });
+        this.callbacks.notify('Encounter Resumed', runtime.definition.displayName);
+        this.changed();
+      }
+      return false;
+    }
+
+    if (settings.policy === 'immediate-reset') {
+      this.callbacks.emit('encounter.boundaryExpired', {
+        encounterId: runtime.definition.id,
+      });
+      this.reset(runtime.definition.id, 'Player left the encounter area');
+      return true;
+    }
+
+    if (!runtime.outsideBoundary) {
+      runtime.outsideBoundary = true;
+      runtime.boundaryGraceRemaining = Math.max(0, settings.graceSeconds ?? 5);
+      this.callbacks.emit('encounter.boundaryGraceStarted', {
+        encounterId: runtime.definition.id,
+        graceSeconds: runtime.boundaryGraceRemaining,
+      });
+      this.callbacks.notify(
+        'Return to the Encounter',
+        `Reset in ${Math.ceil(runtime.boundaryGraceRemaining)} seconds`,
+      );
+      this.changed();
+      return true;
+    }
+
+    runtime.boundaryGraceRemaining = Math.max(
+      0,
+      (runtime.boundaryGraceRemaining ?? 0) - dt,
+    );
+    if (runtime.boundaryGraceRemaining <= 0) {
+      this.callbacks.emit('encounter.boundaryExpired', {
+        encounterId: runtime.definition.id,
+      });
+      this.reset(runtime.definition.id, 'Player remained outside the encounter area');
+      return true;
+    }
+
+    if (settings.pauseSpawningDuringGrace ?? true) return true;
+    return false;
+  }
+
+  private boundarySettings(arena: EncounterArenaDefinition) {
+    if (arena.boundary) return arena.boundary;
+    switch (arena.boundaryPolicy) {
+      case 'hard':
+        return { policy: 'immediate-reset' as const };
+      case 'soft':
+        return { policy: 'grace-reset' as const, graceSeconds: 5 };
+      default:
+        return { policy: 'none' as const };
+    }
+  }
+
+  private controllerSnapshots(runtime: RuntimeState): EncounterReinforcementControllerSnapshot[] {
+    return [...runtime.reinforcementControllers.values()].map(controller => {
+      const definition = controller.definition;
+      return {
+        id: definition.id,
+        active: definition.enabled !== false,
+        anchorAlive: this.hasAliveTag(runtime, definition.anchorTag),
+        eligibleAlive: this.aliveEligibleForController(runtime, definition),
+        targetAlive: definition.targetAlive,
+        timerRemaining: controller.timerRemaining,
+        maximumAlive: definition.maximumAlive,
+        maximumTotalSpawned: definition.maximumTotalSpawned,
+        totalSpawned: runtime.spawnedEnemies,
+        nextSpawnCount: controller.nextSpawnCount,
+      };
+    });
+  }
+
+  private aliveEligibleForController(
+    runtime: RuntimeState,
+    definition: EncounterReinforcementControllerDefinition,
+  ): number {
+    return [...runtime.enemyRecords.values()].filter(record =>
+      record.alive &&
+      (!definition.anchorTag || !record.tags.includes(definition.anchorTag)),
+    ).length;
+  }
+
+  private hasAliveTag(runtime: RuntimeState, tag?: string): boolean {
+    if (!tag) return true;
+    return [...runtime.enemyRecords.values()].some(
+      record => record.alive && record.tags.includes(tag),
+    );
+  }
+
+  private hasActiveReinforcementController(runtime: RuntimeState): boolean {
+    return [...runtime.reinforcementControllers.values()].some(controller => {
+      const definition = controller.definition;
+      if (definition.enabled === false) return false;
+      if (!definition.anchorTag) return runtime.spawnedEnemies < definition.maximumTotalSpawned;
+      return this.hasAliveTag(runtime, definition.anchorTag) &&
+        runtime.spawnedEnemies < definition.maximumTotalSpawned;
+    });
+  }
+
+  private expandGroup(group: EncounterSpawnGroupDefinition): EncounterSpawnEntryDefinition[] {
+    return group.entries.flatMap(entry =>
+      Array.from({ length: entry.quantity }, () => entry),
+    );
+  }
+
   private clearRuntimeCombat(runtime: RuntimeState): void {
     for (const entityId of [...runtime.activeEnemyIds]) this.callbacks.removeEnemy(entityId);
     runtime.activeEnemyIds.clear();
     runtime.enemyRecords.clear();
     runtime.scheduledSpawns = [];
     runtime.pendingSpawns = 0;
+    runtime.reinforcementControllers.clear();
   }
 
   private distance2D(a: EncounterPosition, b: EncounterPosition): number {

@@ -5381,6 +5381,50 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Quest Runtime can record completed encounter objectives.
 - Engine Alpha snapshot version is now 0.6.6.
 
+# Changelog — 0.6.6b
+
+## Added
+
+- Grace-period encounter boundary policy
+- Automatic full reset and enemy despawn after grace expiration
+- Boundary return/resume handling
+- Reinforcement Controller definitions and runtime
+- Empty-wave and partial-replenishment timers
+- Anchor-controlled reinforcement shutdown
+- Maximum-alive and maximum-total-spawned limits
+- Optional reinforcement spawn budget and enemy spawn cost
+- Reinforcement and boundary diagnostics
+- Elite ranged reinforcement captain in Movement Trial III
+
+## Changed
+
+- Movement-playground arenas now use a five-second grace reset.
+- Encounter phase evaluation and spawning pause while outside the boundary.
+- Movement Trial III is now a persistent-pressure encounter rather than a one-shot reinforcement trigger.
+
+# Astral 0.6.6b Encounter Barrel Cleanup
+
+Copy the included `src` directory into the project root and allow the files to replace the existing versions.
+
+## Required fix
+
+`src/game/definitions/encounters/index.ts` now explicitly exports:
+
+```ts
+export {
+  encounterArenaDefinitions,
+  encounterDefinitions,
+} from './EncounterDefinitions';
+```
+
+## Included supporting files
+
+- `src/game/definitions/encounters/EncounterDefinitions.ts`
+- `src/game/encounters/index.ts`
+- `src/game/encounters/EncounterTypes.ts`
+
+The supporting files ensure the exported definition names and their runtime types remain aligned.
+
 ### Validate
 ```bash
 npm run build

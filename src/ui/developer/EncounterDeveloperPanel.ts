@@ -38,6 +38,14 @@ export class EncounterDeveloperPanel {
                 <dt>Spawns</dt><dd>${snapshot.spawnedEnemies} total · ${snapshot.pendingSpawns} pending</dd>
                 <dt>Time</dt><dd>${snapshot.elapsedSeconds.toFixed(1)}s</dd>
                 <dt>Reward</dt><dd>${snapshot.rewardGranted ? 'Granted' : 'Pending'}</dd>
+                <dt>Boundary</dt><dd>${snapshot.outsideBoundary ? `OUT · ${snapshot.boundaryGraceRemaining?.toFixed(1) ?? '0.0'}s` : 'Inside'}</dd>
+                ${snapshot.reinforcementControllers.map(controller => `
+                  <dt>Reinforce</dt><dd>${controller.id}</dd>
+                  <dt>Anchor</dt><dd>${controller.anchorAlive ? 'Alive' : 'Defeated'}</dd>
+                  <dt>Population</dt><dd>${controller.eligibleAlive}/${controller.targetAlive} · max alive ${controller.maximumAlive}</dd>
+                  <dt>Spawn cap</dt><dd>${controller.totalSpawned}/${controller.maximumTotalSpawned}</dd>
+                  <dt>Next spawn</dt><dd>${controller.timerRemaining === null ? 'Waiting' : `${controller.timerRemaining.toFixed(1)}s · ${controller.nextSpawnCount}`}</dd>
+                `).join('')}
                 ${snapshot.failureReason ? `<dt>Failure</dt><dd>${snapshot.failureReason}</dd>` : ''}
               </dl>
               <div class="encounter-dev-actions">

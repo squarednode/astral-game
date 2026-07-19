@@ -21,13 +21,22 @@ export interface EncounterSpawnPointDefinition {
   tags: readonly string[];
 }
 
+export interface EncounterBoundarySettings {
+  policy: 'none' | 'immediate-reset' | 'grace-reset';
+  graceSeconds?: number;
+  enemyLeashToArena?: boolean;
+  pauseSpawningDuringGrace?: boolean;
+}
+
 export interface EncounterArenaDefinition {
   id: string;
   displayName: string;
   center: EncounterPosition;
   radius: number;
   triggerRadius: number;
-  boundaryPolicy: 'none' | 'soft' | 'hard';
+  /** @deprecated Use boundary.policy. Retained for older encounter data. */
+  boundaryPolicy?: 'none' | 'soft' | 'hard';
+  boundary?: EncounterBoundarySettings;
   spawnPoints: readonly EncounterSpawnPointDefinition[];
   playerEntry?: EncounterPosition;
   playerReturn?: EncounterPosition;
@@ -40,6 +49,8 @@ export interface EncounterSpawnEntryDefinition {
   variantId?: string;
   modifierId?: string;
   spawnPointTags?: readonly string[];
+  tags?: readonly string[];
+  spawnCost?: number;
 }
 
 export interface EncounterSpawnGroupDefinition {
@@ -60,11 +71,32 @@ export interface EncounterReinforcementDefinition {
   repeatable?: boolean;
 }
 
+/**
+ * Maintains encounter pressure while a tagged anchor (normally a boss) lives.
+ * Empty waves and partial replenishment can use different delays.
+ */
+export interface EncounterReinforcementControllerDefinition {
+  id: string;
+  enabled?: boolean;
+  anchorTag?: string;
+  stopWhenAnchorDies?: boolean;
+  spawnGroupIds: readonly string[];
+  targetAlive: number;
+  lowPopulationThreshold: number;
+  emptyWaveDelaySeconds: number;
+  replenishDelaySeconds: number;
+  checkIntervalSeconds?: number;
+  maximumAlive: number;
+  maximumTotalSpawned: number;
+  spawnBudget?: number;
+}
+
 export interface EncounterPhaseDefinition {
   id: string;
   displayName: string;
   spawnGroupIds: readonly string[];
   reinforcements?: readonly EncounterReinforcementDefinition[];
+  reinforcementControllers?: readonly EncounterReinforcementControllerDefinition[];
   transitionDelaySeconds?: number;
 }
 
@@ -114,6 +146,19 @@ export interface EncounterEnemyRecord extends EncounterEnemyOwnership {
   tags: readonly string[];
 }
 
+export interface EncounterReinforcementControllerSnapshot {
+  id: string;
+  active: boolean;
+  anchorAlive: boolean;
+  eligibleAlive: number;
+  targetAlive: number;
+  timerRemaining: number | null;
+  maximumAlive: number;
+  maximumTotalSpawned: number;
+  totalSpawned: number;
+  nextSpawnCount: number;
+}
+
 export interface EncounterSnapshot {
   id: string;
   displayName: string;
@@ -129,6 +174,9 @@ export interface EncounterSnapshot {
   elapsedSeconds: number;
   transitionRemaining: number;
   reinforcementStates: Readonly<Record<string, number>>;
+  reinforcementControllers: readonly EncounterReinforcementControllerSnapshot[];
+  outsideBoundary: boolean;
+  boundaryGraceRemaining: number | null;
   failureReason?: string;
   rewardGranted: boolean;
 }

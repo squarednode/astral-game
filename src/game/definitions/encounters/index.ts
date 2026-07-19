@@ -1,1 +1,4 @@
-export * from './EncounterDefinitions';
+export {
+  encounterArenaDefinitions,
+  encounterDefinitions,
+} from './EncounterDefinitions';

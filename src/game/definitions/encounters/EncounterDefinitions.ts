@@ -14,7 +14,12 @@ const arena = (
   center: { x, y: 0, z },
   radius: 11,
   triggerRadius: 6.5,
-  boundaryPolicy: 'hard',
+  boundary: {
+    policy: 'grace-reset',
+    graceSeconds: 5,
+    enemyLeashToArena: true,
+    pauseSpawningDuringGrace: true,
+  },
   playerEntry: { x, y: 0, z: z - 8 },
   playerReturn: { x: 0, y: 0, z: 33 },
   spawnPoints: [
@@ -106,29 +111,53 @@ export const encounterDefinitions: readonly EncounterDefinition[] = [
     activation: 'trigger',
     spawnGroups: [
       {
+        id: 'reinforcement.boss',
+        entries: [
+          {
+            enemyDefinitionId: 'enemy.fire-mage',
+            quantity: 1,
+            elite: true,
+            variantId: 'astral',
+            modifierId: 'heavy',
+            spawnPointTags: ['ranged'],
+            tags: ['reinforcement-anchor', 'ranged-boss'],
+            spawnCost: 6,
+          },
+        ],
+      },
+      {
         id: 'reinforcement.initial',
         entries: [
-          { enemyDefinitionId: 'enemy.wolf', quantity: 4, spawnPointTags: ['ground'] },
+          { enemyDefinitionId: 'enemy.wolf', quantity: 4, spawnPointTags: ['ground'], spawnCost: 1 },
         ],
       },
       {
         id: 'reinforcement.response',
         entries: [
-          { enemyDefinitionId: 'enemy.assassin', quantity: 2, spawnPointTags: ['ground'] },
-          { enemyDefinitionId: 'enemy.fire-mage', quantity: 1, spawnPointTags: ['ranged'] },
+          { enemyDefinitionId: 'enemy.assassin', quantity: 4, spawnPointTags: ['ground'], spawnCost: 1 },
         ],
       },
     ],
     phases: [
       {
         id: 'phase.hold',
-        displayName: 'Hold the Pad',
-        spawnGroupIds: ['reinforcement.initial'],
-        reinforcements: [
+        displayName: 'Break the Reinforcement Captain',
+        spawnGroupIds: ['reinforcement.boss', 'reinforcement.initial'],
+        reinforcementControllers: [
           {
-            id: 'reinforcement.alive-two',
-            trigger: { type: 'alive-at-most', value: 2 },
+            id: 'reinforcement.population-control',
+            enabled: true,
+            anchorTag: 'reinforcement-anchor',
+            stopWhenAnchorDies: true,
             spawnGroupIds: ['reinforcement.response'],
+            targetAlive: 4,
+            lowPopulationThreshold: 2,
+            emptyWaveDelaySeconds: 5,
+            replenishDelaySeconds: 10,
+            checkIntervalSeconds: 0.5,
+            maximumAlive: 6,
+            maximumTotalSpawned: 20,
+            spawnBudget: 4,
           },
         ],
       },
