@@ -5100,6 +5100,32 @@ It continues to show:
 - Detection, leash, pack alert, HP, damage, speed, and presentation remain live-tunable.
 - Existing enemy navigation, traversal, and territory behavior are unchanged.
 
+# Changelog — 0.6.3
+
+## Added
+
+- `StatusRuntime`
+- `StatusComponent`
+- `StatusInstance`
+- Runtime status events
+- Immunity and resistance data
+- Cleanse support
+- Status definition map
+- Status developer panel
+- Chill, Freeze, Vulnerable, Haste, and Shielded definitions
+
+## Changed
+
+- Enemy movement consumes status-derived movement multipliers
+- Elemental player damage applies reusable runtime statuses
+- Timed status damage and healing update actor health
+- Entity component keys include `gameplay.statuses`
+- Status HUD page now supports runtime controls
+
+## Compatibility
+
+Legacy enemy elemental timers are retained temporarily for existing Shatter and Lightning-chain behavior while those reactions are migrated to gameplay tags and status events.
+
 ### Validate
 ```bash
 npm run build

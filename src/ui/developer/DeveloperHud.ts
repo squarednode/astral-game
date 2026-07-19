@@ -220,7 +220,7 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 

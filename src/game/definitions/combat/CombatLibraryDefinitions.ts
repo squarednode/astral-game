@@ -73,6 +73,11 @@ const statusSeeds: readonly StatusSeed[] = [
   { id: 'status.barrier', name: 'Barrier', description: 'Absorbs or reduces incoming damage.', duration: 4, maximumStacks: 1, stackingRule: 'replace', tags: ['defensive', 'buff'] },
   { id: 'status.regeneration', name: 'Regeneration', description: 'Restores health over time.', duration: 6, tickInterval: 1, powerPerTick: 5, maximumStacks: 1, stackingRule: 'refresh', tags: ['heal', 'buff', 'status'] },
   { id: 'status.stun', name: 'Stun', description: 'Prevents movement and actions.', duration: 1.25, movementMultiplier: 0, maximumStacks: 1, stackingRule: 'replace', tags: ['crowd-control', 'status'] },
+  { id: 'status.chill', name: 'Chill', description: 'Reduces movement and attack cadence.', duration: 4, movementMultiplier: 0.78, maximumStacks: 3, stackingRule: 'stack-intensity', tags: ['ice', 'crowd-control', 'status', 'debuff'] },
+  { id: 'status.freeze', name: 'Freeze', description: 'Prevents movement and ability use.', duration: 1.5, movementMultiplier: 0, maximumStacks: 1, stackingRule: 'replace', tags: ['ice', 'crowd-control', 'status', 'debuff'] },
+  { id: 'status.vulnerable', name: 'Vulnerable', description: 'Increases incoming damage.', duration: 5, maximumStacks: 3, stackingRule: 'stack-intensity', tags: ['offensive', 'debuff', 'status'] },
+  { id: 'status.haste', name: 'Haste', description: 'Increases movement and action cadence.', duration: 5, movementMultiplier: 1.2, maximumStacks: 1, stackingRule: 'refresh', tags: ['movement', 'buff', 'status'] },
+  { id: 'status.shielded', name: 'Shielded', description: 'Provides temporary absorb capacity.', duration: 5, maximumStacks: 1, stackingRule: 'replace', tags: ['defensive', 'buff', 'status'] },
 ];
 export const statusEffectDefinitions: readonly StatusEffectDefinition[] = statusSeeds.map(definition => ({ ...definition, kind: 'status-effect' as const, metadata: metadata('status-effect') }));
 

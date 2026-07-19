@@ -106,6 +106,9 @@ import { AbilityDeveloperPanel } from './ui/developer/AbilityDeveloperPanel';
 import { CombatLibraryPanel } from './ui/developer/CombatLibraryPanel';
 import { NavigationDeveloperPanel } from './ui/developer/NavigationDeveloperPanel';
 import { CombatSandboxPanel } from './ui/developer/CombatSandboxPanel';
+import { StatusDeveloperPanel } from './ui/developer/StatusDeveloperPanel';
+import { StatusRuntime, createStatusDefinitionMap } from './game/status';
+import type { StatusComponent } from './game/status';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
 import type { GameplayHudSnapshot } from './ui/gameplay';
@@ -221,6 +224,7 @@ interface Enemy {
   attackCd: number;
   abilityCooldowns: Map<string, number>;
   statuses: Partial<Record<Element, number>>;
+  statusComponent: StatusComponent;
   knockbackVelocity: Vector3;
   navigationCapabilities: EnemyNavigationCapabilities;
   navigationState: EnemyNavigationAgentState;
@@ -306,6 +310,8 @@ definitions.registerKind<AiAbilityUsageDefinition>(
 );
 definitions.registerMany(projectileDefinitions);
 definitions.registerMany(statusEffectDefinitions);
+const statusRuntime = new StatusRuntime();
+const statusDefinitionMap = createStatusDefinitionMap(statusEffectDefinitions);
 definitions.registerMany(telegraphDefinitions);
 definitions.registerMany(damageProfileDefinitions);
 definitions.registerMany(combatTagDefinitions);
@@ -684,6 +690,7 @@ const party: CharacterState[] = defs.map(d => ({
 }));
 let activeIndex = 0;
 let active = party[0];
+const playerStatusComponent = statusRuntime.createComponent();
 const abilityComponents = new Map<string, AbilityComponent>();
 const abilityEventLog: string[] = [];
 let freezeAbilityCastTimers = false;
@@ -870,6 +877,15 @@ const navigationDeveloperPanel = new NavigationDeveloperPanel(
 );
 const combatSandboxPanel = new CombatSandboxPanel(
   developerHud.getPageContent('sandbox'),
+);
+const statusDeveloperPanel = new StatusDeveloperPanel(
+  developerHud.getPageContent('status'),
+  statusRuntime,
+  statusEffectDefinitions,
+  () => [
+    { entityId: active.id, displayName: `Player: ${active.name}`, component: playerStatusComponent },
+    ...enemies.map(enemy => ({ entityId: enemy.entityId, displayName: enemy.displayName, component: enemy.statusComponent })),
+  ],
 );
 combatSandboxTuning.subscribe(values => {
   for (const enemy of enemies) {
@@ -1624,7 +1640,7 @@ function createEnemyStateMachine(
           return;
         }
 
-        const slow = (enemy.statuses.frost ?? 0) > 0 ? 0.58 : 1;
+        const slow = statusRuntime.getMovementMultiplier(enemy.statusComponent, statusDefinitionMap);
         const orbitDirection = blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
         const desiredPosition = enemy.mesh.position.clone();
         enemyTactics.movement.apply(
@@ -2081,6 +2097,7 @@ function spawnEnemy(
     attackCd: Math.random(),
     abilityCooldowns: new Map<string, number>(),
     statuses: {},
+    statusComponent: statusRuntime.createComponent(),
     knockbackVelocity: Vector3.Zero(),
     navigationCapabilities,
     navigationState: {
@@ -2193,7 +2210,22 @@ function damageEnemy(
 
   enemy.hp -= final;
   enemy.healthComponent.current = enemy.hp;
-  if (element !== 'physical') enemy.statuses[element] = 3.5;
+  if (element !== 'physical') {
+    enemy.statuses[element] = 3.5;
+    const statusId = element === 'fire'
+      ? 'status.burn'
+      : element === 'frost'
+        ? 'status.chill'
+        : element === 'lightning'
+          ? 'status.shock'
+          : undefined;
+    const definition = statusId ? statusDefinitionMap.get(statusId) : undefined;
+    if (definition) statusRuntime.apply(enemy.statusComponent, {
+      definition,
+      ownerEntityId: enemy.entityId,
+      sourceEntityId: active.id,
+    });
+  }
   combat.applyEnemyHit({ target: enemy, damage: final, element, worldPosition: hitPos, sourcePosition, weight: resolvedWeight });
 }
 function basicAttack(): void {
@@ -3333,6 +3365,24 @@ scene.onBeforeRenderObservable.add(() => {
         (e.statuses[k as Element] ?? 0) - dt,
       );
     });
+    statusRuntime.update(e.statusComponent, statusDefinitionMap, dt, {
+      damage: (_ownerEntityId, amount, definition) => {
+        e.hp -= amount;
+        e.healthComponent.current = e.hp;
+        combat.applyEnemyHit({
+          target: e,
+          damage: amount,
+          element: definition.tags.includes('fire') ? 'fire' : definition.tags.includes('ice') ? 'frost' : 'physical',
+          worldPosition: e.mesh.position,
+          sourcePosition: e.mesh.position,
+          weight: 'light',
+        });
+      },
+      heal: (_ownerEntityId, amount) => {
+        e.hp = Math.min(e.maxHp, e.hp + amount);
+        e.healthComponent.current = e.hp;
+      },
+    });
     e.attackCd -= dt;
 
     for (const [abilityId, remaining] of e.abilityCooldowns) {
@@ -3345,7 +3395,7 @@ scene.onBeforeRenderObservable.add(() => {
   [...enemies].filter(e => e.hp <= 0).forEach(killEnemy);
 
   const elite = enemies.find(e => e.elite);
-  if (Math.floor(now / 100) !== Math.floor((now - dt * 1000) / 100)) refreshHud();
+  if (Math.floor(now / 100) !== Math.floor((now - dt * 1000) / 100)) { refreshHud(); statusDeveloperPanel.refresh(); }
 
   entityStatusTimer -= dt;
   if (entityStatusTimer <= 0) {
