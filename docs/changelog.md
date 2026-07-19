@@ -5079,6 +5079,26 @@ It continues to show:
 - Shared enemy movement runtime
 - Navigation surface, bridge, platform, jump, and drop handling
 
+# Changelog - 0.6.2a
+
+## Added
+
+- `CombatSandboxDefaults.json` containing the Prototype Combat profile.
+- `EnemyRangePositioning.ts` with role defaults and individual override support.
+- Three-layer range-positioning resolution: global, role, and enemy override.
+
+## Changed
+
+- Combat Sandbox default values now match the user-tested baseline.
+- Ability preferred range now includes the enemy role multiplier.
+- Ranged enemies close to preferred range before holding to cast.
+- Advance and retreat buffers now include role-level multipliers.
+
+## Preserved
+
+- Ability maximum attack range remains controlled by `attackRangeScale`.
+- Detection, leash, pack alert, HP, damage, speed, and presentation remain live-tunable.
+- Existing enemy navigation, traversal, and territory behavior are unchanged.
 
 ### Validate
 ```bash

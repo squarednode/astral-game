@@ -1,0 +1,21 @@
+{
+  "profileName": "Prototype Combat",
+  "version": "0.6.2a",
+  "detectionRangeScale": 0.35,
+  "preferredRangeScale": 0.4,
+  "attackRangeScale": 0.85,
+  "retreatBufferScale": 0.6,
+  "advanceBufferScale": 0.5,
+  "leashRangeScale": 0.4,
+  "packAlertRangeScale": 0.75,
+  "decisionIntervalSeconds": 0.4,
+  "enemyHealthScale": 1,
+  "enemyDamageScale": 1,
+  "enemySpeedScale": 1,
+  "enemyCooldownScale": 1,
+  "targetVolumeScale": 0.5,
+  "projectileVisualScale": 0.5,
+  "projectileCollisionScale": 0.5,
+  "damageNumberScale": 0.75,
+  "healthBarScale": 0.8
+}

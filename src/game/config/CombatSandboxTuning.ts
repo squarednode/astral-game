@@ -19,14 +19,14 @@ export interface CombatSandboxValues {
 }
 
 export const COMBAT_SANDBOX_DEFAULTS: Readonly<CombatSandboxValues> = {
-  detectionRangeScale: 0.65,
-  preferredRangeScale: 0.65,
+  detectionRangeScale: 0.35,
+  preferredRangeScale: 0.4,
   attackRangeScale: 0.85,
-  retreatBufferScale: 0.75,
-  advanceBufferScale: 0.75,
-  leashRangeScale: 0.8,
+  retreatBufferScale: 0.6,
+  advanceBufferScale: 0.5,
+  leashRangeScale: 0.4,
   packAlertRangeScale: 0.75,
-  decisionIntervalSeconds: 0.45,
+  decisionIntervalSeconds: 0.4,
   enemyHealthScale: 1,
   enemyDamageScale: 1,
   enemySpeedScale: 1,

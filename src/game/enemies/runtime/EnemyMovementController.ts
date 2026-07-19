@@ -1,5 +1,6 @@
 import { Vector3 } from '@babylonjs/core';
 import { combatSandboxTuning } from '../../config/CombatSandboxTuning';
+import { resolveEnemyRangePositioning } from '../../config/EnemyRangePositioning';
 import type {
   EnemyAbilityDecision,
   EnemyMovementDirective,
@@ -14,21 +15,46 @@ export class EnemyMovementController {
   ): EnemyMovementDirective {
     const usage = ability.usage;
     const tuning = combatSandboxTuning.get();
-    const advanceThreshold = usage.maximumRange + (1 - tuning.advanceBufferScale) * 0.6;
-    const retreatThreshold = Math.max(0, usage.minimumRange - (1 - tuning.retreatBufferScale) * 0.6);
+    const positioning = resolveEnemyRangePositioning(actor.definition);
+    const preferredRange = usage.preferredRange;
+    const advanceBuffer =
+      (1 - tuning.advanceBufferScale) *
+      0.6 *
+      positioning.advanceBufferMultiplier;
+    const retreatBuffer =
+      (1 - tuning.retreatBufferScale) *
+      0.6 *
+      positioning.retreatBufferMultiplier;
+    const advanceThreshold = preferredRange + advanceBuffer;
+    const retreatThreshold = Math.max(
+      0,
+      Math.min(preferredRange, usage.minimumRange) - retreatBuffer,
+    );
 
-    if (ability.ready && ability.inRange) {
+    const shouldCloseToPreferred =
+      positioning.chaseUntilPreferredRange &&
+      distance > advanceThreshold;
+
+    if (ability.ready && ability.inRange && !shouldCloseToPreferred) {
       return {
         intent: 'hold',
-        reason: 'selected ability can execute',
+        reason: 'selected ability can execute inside preferred range',
         canCast: true,
+      };
+    }
+
+    if (ability.ready && ability.inRange && shouldCloseToPreferred) {
+      return {
+        intent: 'advance',
+        reason: `${actor.definition.role}: closing to preferred range ${preferredRange.toFixed(1)}m`,
+        canCast: positioning.allowAdvanceWhileCasting,
       };
     }
 
     if (distance > advanceThreshold) {
       return {
         intent: 'advance',
-        reason: `${actor.definition.movementStyle}: closing to ${usage.maximumRange.toFixed(1)}m`,
+        reason: `${actor.definition.movementStyle}: closing to preferred range ${preferredRange.toFixed(1)}m`,
         canCast: false,
       };
     }
