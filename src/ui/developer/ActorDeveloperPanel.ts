@@ -2,12 +2,14 @@ import type {
   ActorRuntime,
   DialogueRuntime,
   WorldStateRuntime,
+  QuestRuntime,
 } from '../../game/actors';
 
 export interface ActorDeveloperPanelOptions {
   actors(): readonly ActorRuntime[];
   dialogue(): DialogueRuntime;
   worldState(): WorldStateRuntime;
+  quests(): QuestRuntime;
   interact(actorId: string): void;
   setState(actorId: string, state: string): void;
 }
@@ -24,6 +26,8 @@ export class ActorDeveloperPanel {
   render(): void {
     const dialogue = this.options.dialogue().snapshot();
     const world = this.options.worldState().snapshot();
+    const quests = this.options.quests().all();
+    const tracked = this.options.quests().tracked();
 
     this.host.innerHTML = `
       <section class="actor-developer-panel">
@@ -71,7 +75,16 @@ WORLD FLAGS
 ${Object.entries(world.flags).map(([id, value]) => `${id}: ${value}`).join('\n') || 'None'}
 
 WORLD COUNTERS
-${Object.entries(world.counters).map(([id, value]) => `${id}: ${value}`).join('\n') || 'None'}</pre>
+${Object.entries(world.counters).map(([id, value]) => `${id}: ${value}`).join('\n') || 'None'}
+
+GAMEPLAY LOOP DEBUGGER
+${tracked ? `Current: ${tracked.displayName}
+State: ${tracked.state}
+${tracked.objectives.map(objective => `${objective.completed ? '✓' : '□'} ${objective.label} ${objective.current}/${objective.required}`).join('\n')}
+Next expected event: ${tracked.objectives.find(objective => !objective.completed)?.label ?? (tracked.state === 'ready-to-complete' ? 'Return to quest giver' : 'Reward claimed')}` : 'No tracked quest'}
+
+QUEST MANAGER
+${quests.map(quest => `${quest.state.toUpperCase()}  ${quest.displayName}`).join('\n') || 'None'}</pre>
       </section>
     `;
   }

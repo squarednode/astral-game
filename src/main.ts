@@ -2,6 +2,7 @@ import './style.css';
 import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
 import './ui/actors/DialogueOverlay.css';
+import './ui/gameplayloop/GameplayLoop.css';
 import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
@@ -173,6 +174,8 @@ import {
   ActorRuntime,
   ConditionEvaluator,
   DialogueRuntime,
+  MerchantRuntime,
+  QuestRuntime,
   WorldInteractionRuntime,
   WorldStateRuntime,
 } from './game/actors';
@@ -185,9 +188,13 @@ import {
   actorDialogueDefinitions,
   actorVisualProfiles,
   interactionProfiles,
+  merchantDefinitions,
+  questDefinitions,
 } from './game/definitions/actors';
 import { DialogueOverlay } from './ui/actors/DialogueOverlay';
 import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
+import { QuestTracker } from './ui/gameplayloop/QuestTracker';
+import { MerchantOverlay } from './ui/gameplayloop/MerchantOverlay';
 import type {
   GearFamily,
   GearSlot,
@@ -1165,6 +1172,10 @@ function collectGroundLoot(record: GroundLootRecord): boolean {
         record.payload.materialId,
         record.payload.amount,
       );
+      questRuntime?.syncMaterial(
+        record.payload.materialId,
+        inventoryRuntime.getMaterial(record.payload.materialId),
+      );
       feed(
         `Collected ${record.payload.amount} ${record.payload.materialId}.`,
         'loot',
@@ -1384,6 +1395,7 @@ actorDialogueDefinitions.forEach(definition =>
 const worldStateRuntime = new WorldStateRuntime();
 const actorRuntimes = new Map<string, ActorRuntime>();
 const actorMeshes = new Map<string, Mesh>();
+const actorMarkerMeshes = new Map<string, Mesh>();
 const actorInteractionRuntime = new WorldInteractionRuntime();
 let hoveredActorId: string | null = null;
 let dialogueActorId: string | null = null;
@@ -1408,6 +1420,10 @@ actorPrompt.style.cssText = [
 document.body.appendChild(actorPrompt);
 
 let dialogueRuntime: DialogueRuntime;
+let questRuntime: QuestRuntime;
+let merchantRuntime: MerchantRuntime;
+let questTracker: QuestTracker;
+let merchantOverlay: MerchantOverlay;
 const actorConditionEvaluator = new ConditionEvaluator({
   getWorldFlag: id => worldStateRuntime.getFlag(id),
   getWorldCounter: id => worldStateRuntime.getCounter(id),
@@ -1466,13 +1482,17 @@ const actorActionExecutor = new ActionExecutor({
     dialogueRuntime.start(id);
   },
   openMerchant: id => {
-    feed(`Merchant framework opened: ${id}.`, 'success');
+    if (merchantOverlay?.open(id)) {
+      input.setContext('inventory');
+      feed(`Opened merchant: ${id}.`, 'success');
+    }
   },
   startQuest: id => {
     worldStateRuntime.setFlag(`${id}.active`, true);
-    feed(`Quest accepted: ${id}.`, 'success');
+    questRuntime?.accept(id);
   },
   advanceQuest: (id, objectiveId, amount = 1) => {
+    if (objectiveId) questRuntime?.advance(id, objectiveId, amount);
     worldStateRuntime.incrementCounter(
       `${id}.${objectiveId ?? 'progress'}`,
       amount,
@@ -1488,6 +1508,55 @@ const actorActionExecutor = new ActionExecutor({
       ?.setState(state as ActorStateId);
   },
 });
+
+questRuntime = new QuestRuntime(
+  questDefinitions,
+  actorActionExecutor,
+  (title, detail) => {
+    feed(`${title}${detail ? `: ${detail}` : ''}`, 'success');
+    questTracker?.notify(title, detail);
+  },
+);
+merchantRuntime = new MerchantRuntime(
+  merchantDefinitions,
+  actorConditionEvaluator,
+  actorActionExecutor,
+);
+questTracker = new QuestTracker(
+  ui.getLayer('gameplay'),
+  questRuntime,
+);
+merchantOverlay = new MerchantOverlay(
+  ui.getLayer('menus'),
+  merchantRuntime,
+  {
+    inventory: () => bagItems(),
+    wallet: () => inventoryRuntime.snapshot(bagItems()),
+    removeItem: itemId => {
+      const index = loot.findIndex(item => item.id === itemId);
+      if (index < 0) return null;
+      const [item] = loot.splice(index, 1);
+      renderPartyManagement();
+      refreshWalletStatus();
+      return item ?? null;
+    },
+    restoreItem: item => {
+      if (!inventoryRuntime.canStore(bagItems())) {
+        feed('Inventory full. Buyback item could not be restored.', 'warning');
+        return;
+      }
+      loot.unshift(item);
+      renderPartyManagement();
+      refreshWalletStatus();
+    },
+    onClose: () => input.setContext('gameplay'),
+    onChanged: () => {
+      renderPartyManagement();
+      refreshWalletStatus();
+      questTracker.render();
+    },
+  },
+);
 
 dialogueRuntime = new DialogueRuntime(
   actorConditionEvaluator,
@@ -1505,7 +1574,7 @@ const dialogueOverlay = new DialogueOverlay(
       actorRuntimes.get(dialogueActorId)?.finishInteraction();
     }
     dialogueActorId = null;
-    input.setContext('gameplay');
+    input.setContext(merchantRuntime?.active() ? 'inventory' : 'gameplay');
   },
 );
 
@@ -1586,8 +1655,27 @@ for (const definition of actorRegistry.allActors()) {
   };
   mesh.isPickable = true;
 
+  const marker = MeshBuilder.CreateSphere(
+    `actor-marker-${definition.id}`,
+    { diameter: 0.22, segments: 8 },
+    scene,
+  );
+  marker.position.set(
+    definition.position.x,
+    definition.position.y + profile.height + 0.45,
+    definition.position.z,
+  );
+  const markerMaterial = new StandardMaterial(
+    `actor-marker-material-${definition.id}`,
+    scene,
+  );
+  markerMaterial.disableLighting = true;
+  marker.material = markerMaterial;
+  marker.isPickable = false;
+
   actorRuntimes.set(definition.id, runtime);
   actorMeshes.set(definition.id, mesh);
+  actorMarkerMeshes.set(definition.id, marker);
 }
 
 function dialogueIdForActor(actorId: string): string | undefined {
@@ -1601,6 +1689,15 @@ function interactWithActor(actorId: string): void {
   const runtime = actorRuntimes.get(actorId);
   const dialogueId = dialogueIdForActor(actorId);
   if (!runtime) return;
+
+  questRuntime?.recordActorInteraction(actorId);
+  if (
+    actorId === 'actor.hunter-mara' &&
+    questRuntime?.canTurnIn('quest.wolf-problem')
+  ) {
+    questRuntime.complete('quest.wolf-problem');
+    worldStateRuntime.setFlag('quest.wolf-problem.completed', true);
+  }
 
   if (dialogueId) {
     runtime.beginInteraction('talking');
@@ -1624,6 +1721,7 @@ const actorDeveloperPanel = new ActorDeveloperPanel(
     actors: () => [...actorRuntimes.values()],
     dialogue: () => dialogueRuntime,
     worldState: () => worldStateRuntime,
+    quests: () => questRuntime,
     interact: interactWithActor,
     setState: (actorId, state) =>
       actorRuntimes
@@ -1677,6 +1775,29 @@ function updateActors(dt: number): void {
         candidate.actor.machine.getCurrentStateId() === 'hidden' ? 0 : 1;
       const targetedScale = targeted === candidate.actor ? 1.08 : 1;
       mesh.scaling.setAll(targetedScale);
+    }
+
+    const marker = actorMarkerMeshes.get(candidate.actor.definition.id);
+    const markerMaterial = marker?.material as StandardMaterial | undefined;
+    if (marker && markerMaterial) {
+      const roles = candidate.actor.definition.roleTags;
+      let color = roles.includes('merchant')
+        ? new Color3(1, 0.55, 0.18)
+        : roles.includes('transport')
+          ? new Color3(0.2, 0.75, 1)
+          : new Color3(0.72, 0.42, 1);
+      let visible = roles.some(role =>
+        ['merchant', 'transport', 'quest-giver', 'blacksmith'].includes(role),
+      );
+      if (candidate.actor.definition.id === 'actor.hunter-mara') {
+        const quest = questRuntime.snapshot('quest.wolf-problem');
+        if (quest?.state === 'ready-to-complete') color = new Color3(1, 0.85, 0.15);
+        if (quest?.state === 'completed') visible = false;
+      }
+      marker.visibility = visible ? 1 : 0;
+      markerMaterial.diffuseColor = color;
+      markerMaterial.emissiveColor = color.scale(0.75);
+      marker.scaling.setAll(1 + Math.sin(performance.now() / 260) * 0.12);
     }
   }
 
@@ -3615,6 +3736,18 @@ function killEnemy(enemy: Enemy): void {
     wave,
     totalKills: kills,
   });
+  questRuntime?.recordKill(
+    [
+      enemy.definition.role.toLowerCase(),
+      enemy.family.familyId.toLowerCase(),
+      ...(enemy.definition.role.toLowerCase().includes('wolf') ||
+      enemy.family.familyId.toLowerCase().includes('wolf')
+        ? ['wolf']
+        : []),
+    ],
+    enemy.entityId,
+    enemy.definition.role === 'boss',
+  );
   generateLoot(enemy);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
   enemies = enemies.filter(e => e !== enemy);
@@ -3964,6 +4097,8 @@ scene.onBeforeRenderObservable.add(() => {
 
   if (dialogueRuntime.snapshot().active && input.consumeEscapePressed()) {
     dialogueOverlay.close();
+  } else if (merchantRuntime.active() && input.consumeEscapePressed()) {
+    merchantOverlay.close();
   } else if (
     input.consumeEscapePressed() ||
     input.consumePressed('toggleSettings')

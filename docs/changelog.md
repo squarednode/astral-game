@@ -5274,6 +5274,29 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Inventory Runtime supports material removal.
 - Developer HUD includes an Actors & World page.
 
+# Changelog — 0.6.5a
+
+## Added
+
+- Quest Manager Runtime
+- Objective progress and completion evaluation
+- Quest turn-in and generic rewards
+- Gameplay quest tracker
+- Quest journal
+- Gameplay toast notifications
+- Merchant Runtime
+- Buy, Sell, Buyback, and Services tabs
+- Merchant equipment selling
+- Twenty-item buyback history
+- Actor world-state markers
+- Gameplay Loop Debugger
+
+## Changed
+
+- Merchant dialogue actions open the merchant interface.
+- Hunter Mara can complete and reward `The Wolf Problem`.
+- Wolf, boss, material, and actor interactions feed quest objectives.
+- Actor developer diagnostics include quest state and next expected event.
 
 ### Validate
 ```bash

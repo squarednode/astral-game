@@ -10,3 +10,5 @@ export * from './ActionExecutor';
 export * from './DialogueTypes';
 export * from './DialogueRuntime';
 export * from './ActorComponentTypes';
+export * from './QuestRuntime';
+export * from './MerchantRuntime';
