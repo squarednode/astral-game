@@ -1,15 +1,19 @@
+export const ACTOR_STATES = {
+  spawned: 'spawned',
+  idle: 'idle',
+  targeted: 'targeted',
+  interacting: 'interacting',
+  talking: 'talking',
+  trading: 'trading',
+  travelling: 'travelling',
+  performing: 'performing',
+  returning: 'returning',
+  disabled: 'disabled',
+  hidden: 'hidden',
+} as const;
+
 export type ActorStateId =
-  | 'spawned'
-  | 'idle'
-  | 'targeted'
-  | 'interacting'
-  | 'talking'
-  | 'trading'
-  | 'travelling'
-  | 'performing'
-  | 'returning'
-  | 'disabled'
-  | 'hidden';
+  (typeof ACTOR_STATES)[keyof typeof ACTOR_STATES];
 
 export type ActorComponentType =
   | 'interaction'

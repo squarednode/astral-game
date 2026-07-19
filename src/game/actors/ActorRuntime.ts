@@ -1,10 +1,11 @@
 import { StateMachine } from '../../engine/state';
 import type { ConditionEvaluator } from './ConditionEvaluator';
-import type {
-  ActorDefinition,
-  ActorRuntimeSnapshot,
-  ActorStateId,
-  InteractionProfile,
+import {
+  ACTOR_STATES,
+  type ActorDefinition,
+  type ActorRuntimeSnapshot,
+  type ActorStateId,
+  type InteractionProfile,
 } from './ActorTypes';
 
 interface ActorContext {
@@ -31,7 +32,11 @@ export class ActorRuntime {
     readonly interaction: InteractionProfile | undefined,
     private readonly conditions: ConditionEvaluator,
   ) {
-    this.machine = new StateMachine(
+    this.machine = new StateMachine<
+      ActorContext,
+      ActorStateId,
+      ActorBlackboard
+    >(
       `actor-${definition.id}`,
       { definition },
       {},
@@ -43,54 +48,88 @@ export class ActorRuntime {
         failedCondition: null,
       },
     )
-      .addState({ id: 'spawned', duration: 0, timeout: { to: definition.defaultState ?? 'idle' } })
-      .addState({ id: 'idle' })
-      .addState({ id: 'targeted' })
-      .addState({ id: 'interacting' })
-      .addState({ id: 'talking' })
-      .addState({ id: 'trading' })
-      .addState({ id: 'travelling' })
-      .addState({ id: 'performing' })
-      .addState({ id: 'returning' })
-      .addState({ id: 'disabled' })
-      .addState({ id: 'hidden' });
+      .addState({
+        id: ACTOR_STATES.spawned,
+        duration: 0,
+        timeout: {
+          to: definition.defaultState ?? ACTOR_STATES.idle,
+        },
+      })
+      .addState({ id: ACTOR_STATES.idle })
+      .addState({ id: ACTOR_STATES.targeted })
+      .addState({ id: ACTOR_STATES.interacting })
+      .addState({ id: ACTOR_STATES.talking })
+      .addState({ id: ACTOR_STATES.trading })
+      .addState({ id: ACTOR_STATES.travelling })
+      .addState({ id: ACTOR_STATES.performing })
+      .addState({ id: ACTOR_STATES.returning })
+      .addState({ id: ACTOR_STATES.disabled })
+      .addState({ id: ACTOR_STATES.hidden });
 
-    this.machine.start('spawned');
+    this.machine.start(ACTOR_STATES.spawned);
   }
 
-  update(dt: number, distanceToPlayer: number, targeted: boolean): void {
+  update(
+    dt: number,
+    distanceToPlayer: number,
+    targeted: boolean,
+  ): void {
     this.machine.blackboard.patch({
       distanceToPlayer,
       targeted,
     });
 
     const state = this.machine.getCurrentStateId();
-    if (state === 'disabled' || state === 'hidden') {
+    if (
+      state === ACTOR_STATES.disabled ||
+      state === ACTOR_STATES.hidden
+    ) {
       this.machine.update(dt);
       return;
     }
 
-    if (targeted && state === 'idle') {
-      this.machine.blackboard.set('goal', 'Waiting for player interaction');
-      this.machine.request('targeted', 'player-targeted');
-    } else if (!targeted && state === 'targeted') {
+    if (targeted && state === ACTOR_STATES.idle) {
+      this.machine.blackboard.set(
+        'goal',
+        'Waiting for player interaction',
+      );
+      this.machine.request(
+        ACTOR_STATES.targeted,
+        'player-targeted',
+      );
+    } else if (!targeted && state === ACTOR_STATES.targeted) {
       this.machine.blackboard.set('goal', 'Waiting');
-      this.machine.request('idle', 'target-cleared');
+      this.machine.request(ACTOR_STATES.idle, 'target-cleared');
     }
 
     this.machine.update(dt);
   }
 
-  beginInteraction(mode: 'talking' | 'trading' | 'travelling' | 'performing'): boolean {
+  beginInteraction(
+    mode:
+      | typeof ACTOR_STATES.talking
+      | typeof ACTOR_STATES.trading
+      | typeof ACTOR_STATES.travelling
+      | typeof ACTOR_STATES.performing,
+  ): boolean {
     const state = this.machine.getCurrentStateId();
-    if (state === 'disabled' || state === 'hidden') return false;
+    if (
+      state === ACTOR_STATES.disabled ||
+      state === ACTOR_STATES.hidden
+    ) {
+      return false;
+    }
+
     this.machine.blackboard.set('goal', mode);
     return this.machine.request(mode, 'interaction-started').accepted;
   }
 
   finishInteraction(): void {
     this.machine.blackboard.set('goal', 'Waiting');
-    this.machine.request('idle', 'interaction-completed');
+    this.machine.request(
+      ACTOR_STATES.idle,
+      'interaction-completed',
+    );
   }
 
   setState(state: ActorStateId): void {
@@ -101,14 +140,18 @@ export class ActorRuntime {
     return {
       actorId: this.definition.id,
       displayName: this.definition.displayName,
-      state: this.machine.getCurrentStateId() ?? 'spawned',
+      state:
+        this.machine.getCurrentStateId() ?? ACTOR_STATES.spawned,
       goal: this.machine.blackboard.get('goal'),
-      distanceToPlayer: this.machine.blackboard.get('distanceToPlayer'),
+      distanceToPlayer:
+        this.machine.blackboard.get('distanceToPlayer'),
       targeted: this.machine.blackboard.get('targeted'),
       available: this.machine.blackboard.get('available'),
       failedCondition:
         this.machine.blackboard.get('failedCondition') ?? undefined,
-      components: this.definition.components.map(component => component.type),
+      components: this.definition.components.map(
+        component => component.type,
+      ),
     };
   }
 }
