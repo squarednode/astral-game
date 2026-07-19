@@ -4984,6 +4984,23 @@ It continues to show:
 - Traversal-link planning
 - Navigation debug routes
 
+# Changelog — 0.6.1g4
+
+## Fixed
+
+- Enemy meshes snapping one shape-height below their intended elevation
+- Capsules and spherical enemies appearing partially submerged
+- Landing and ground-snap logic treating mesh centers as foot positions
+- Repeated local nudges causing very high recovery counts
+- Stale support percentage and support-surface diagnostics
+
+## Added
+
+- Explicit actor ground offset in the shared movement runtime
+- Foot-space collision and support resolution
+- Ring-based validated escape-waypoint search
+- Escalating validated local reset after extended route failure
+- Support diagnostic refresh after resolved movement
 
 ### Validate
 ```bash

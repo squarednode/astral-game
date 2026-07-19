@@ -1382,9 +1382,18 @@ function applyWorldAwareEnemyMovement(
   enemy.navigationState.grounded = movementResult.grounded;
   enemy.navigationState.verticalVelocity = enemy.movementRuntime.getVerticalVelocity();
   enemy.navigationState.supportHeight = movementResult.supportHeight;
-  if (movementResult.supportSurfaceId !== null) {
-    enemy.navigationState.supportSurfaceId = movementResult.supportSurfaceId;
-  }
+  const resolvedSupport = enemyNavigationSurfaces.sampleSupport(
+    enemy.mesh.position.x,
+    enemy.mesh.position.z,
+  );
+  const resolvedFootprint = enemyNavigationSurfaces.sampleFootprint(
+    enemy.mesh.position,
+    enemy.navigationCapabilities.radius + enemy.navigationCapabilities.navigationSkin,
+  );
+  enemy.navigationState.supportRatio = resolvedFootprint.ratio;
+  enemy.navigationState.surfaceType = resolvedSupport.type;
+  enemy.navigationState.supportSurfaceId =
+    movementResult.supportSurfaceId ?? resolvedSupport.surfaceId;
   enemy.navigationState.sweepResult = movementResult.blocked
     ? 'blocked'
     : movementResult.slid
@@ -1792,20 +1801,72 @@ function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
   }
 
   if (result.action === 'replan-nudge') {
-    const toPlayer = playerRoot.position.subtract(enemy.mesh.position);
-    toPlayer.y = 0;
-    if (toPlayer.lengthSquared() > 0.001) {
-      toPlayer.normalize();
-      const tangent = new Vector3(-toPlayer.z, 0, toPlayer.x);
-      const direction = machine.blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
-      const nudgeGoal = enemy.mesh.position.add(tangent.scale(0.35 * direction));
+    const recoveryCount = machine.blackboard.get('recoveryCount');
+    const movementGoal = machine.getCurrentStateId() === 'return-home'
+      ? machine.blackboard.get('homePosition')
+      : playerRoot.position;
+    const actorOffset = Math.max(0, enemy.mesh.position.y - enemy.movementRuntime.getSupportHeight());
+    const escape = recoveryCount >= 3
+      ? enemyNavigationSurfaces.findEscapePosition(
+          enemy.mesh.position,
+          movementGoal,
+          enemy.navigationCapabilities.radius + enemy.navigationCapabilities.navigationSkin,
+          actorOffset,
+          enemy.navigationCapabilities.minimumSupportRatio,
+          Math.min(5.5, enemy.definition.leashRange * 0.35),
+        )
+      : null;
+
+    if (escape) {
       enemy.lastMovementResult = enemy.movementRuntime.resolveToward(
-        nudgeGoal,
-        nudgeGoal,
+        escape,
+        movementGoal,
         dt,
       );
+      enemy.navigationState.routeGoal = escape.clone();
+      enemy.navigationState.pathAge = 0;
+      enemy.navigationState.pathGeneration += 1;
+      enemy.navigationState.lastBlockedReason = 'none';
+      machine.blackboard.set('recoveryCount', 0);
+      machine.blackboard.set('movementReason', 'movement: escape waypoint');
+    } else if (recoveryCount >= 12) {
+      const occupied = enemies
+        .filter(candidate => candidate !== enemy && candidate.hp > 0)
+        .map(candidate => candidate.mesh.position);
+      const safeReset = enemySpawnResolver.resolve(
+        enemy.mesh.position,
+        enemy.navigationCapabilities,
+        occupied,
+        4.5,
+        20,
+      );
+      if (safeReset.position) {
+        enemy.mesh.position.x = safeReset.position.x;
+        enemy.mesh.position.z = safeReset.position.z;
+        enemy.movementRuntime.reset(safeReset.supportHeight);
+        enemy.navigationState.lastValidPosition.copyFrom(enemy.mesh.position);
+        enemy.navigationState.pathAge = 0;
+        enemy.navigationState.pathGeneration += 1;
+        enemy.navigationState.lastBlockedReason = 'none';
+        machine.blackboard.set('recoveryCount', 0);
+        machine.blackboard.set('movementReason', 'movement: validated local reset');
+      }
+    } else {
+      const toGoal = movementGoal.subtract(enemy.mesh.position);
+      toGoal.y = 0;
+      if (toGoal.lengthSquared() > 0.001) {
+        toGoal.normalize();
+        const tangent = new Vector3(-toGoal.z, 0, toGoal.x);
+        const direction = machine.blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
+        const nudgeGoal = enemy.mesh.position.add(tangent.scale(0.45 * direction));
+        enemy.lastMovementResult = enemy.movementRuntime.resolveToward(
+          nudgeGoal,
+          movementGoal,
+          dt,
+        );
+      }
     }
-    machine.request('evaluate', 'watchdog-replan-nudge');
+    machine.request('evaluate', escape ? 'watchdog-escape-waypoint' : 'watchdog-replan-nudge');
     return;
   }
 
@@ -1984,6 +2045,7 @@ function spawnEnemy(
     outdoorZone.colliders,
     outdoorZone.traversalSurfaces,
     navigationCapabilities.radius + navigationCapabilities.navigationSkin,
+    y,
   );
   enemy.movementRuntime.reset(spawnResolution.supportHeight);
   enemy.stateMachine = createEnemyStateMachine(enemy);

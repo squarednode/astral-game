@@ -49,16 +49,17 @@ export class SharedGroundMovementRuntime {
     colliders: ReadonlyArray<WorldCollider>,
     traversalSurfaces: ReadonlyArray<TraversalSurface>,
     actorRadius: number,
+    private readonly actorGroundOffset = 0,
     private readonly config: Readonly<MovementConfig> = DEFAULT_MOVEMENT_CONFIG,
   ) {
     this.collision = new WorldCollisionSystem(colliders, actorRadius);
     this.supports = new TraversalSurfaceSystem(traversalSurfaces);
-    this.reset(actor.position.y);
+    this.reset(Math.max(0, actor.position.y - this.actorGroundOffset));
   }
 
   reset(height = 0): void {
     this.supportHeight = Math.max(0, height);
-    this.actor.position.y = this.supportHeight;
+    this.actor.position.y = this.supportHeight + this.actorGroundOffset;
     this.verticalVelocity = 0;
     this.grounded = true;
     this.lastGoalDistance = Number.POSITIVE_INFINITY;
@@ -85,7 +86,9 @@ export class SharedGroundMovementRuntime {
     jumpRequested = false,
   ): SharedMovementResult {
     const previous = this.actor.position.clone();
+    const previousFoot = previous.subtract(new Vector3(0, this.actorGroundOffset, 0));
     const desired = requestedPosition.clone();
+    const desiredFoot = desired.subtract(new Vector3(0, this.actorGroundOffset, 0));
 
     if (jumpRequested && this.grounded) {
       this.grounded = false;
@@ -93,15 +96,15 @@ export class SharedGroundMovementRuntime {
     }
 
     const step = this.supports.queryStepUp(
-      previous,
-      desired,
+      previousFoot,
+      desiredFoot,
       this.grounded,
       this.supportHeight,
     );
 
     const preliminarySupport = this.supports.querySupport(
-      previous,
-      desired,
+      previousFoot,
+      desiredFoot,
       this.grounded,
       this.verticalVelocity,
       this.supportHeight,
@@ -110,9 +113,9 @@ export class SharedGroundMovementRuntime {
     const ignoredLabels = new Set(preliminarySupport.ignoredColliderLabels);
     if (step) ignoredLabels.add(step.colliderLabel);
 
-    const resolved = this.collision.resolvePosition(
-      previous,
-      desired,
+    const resolvedFoot = this.collision.resolvePosition(
+      previousFoot,
+      desiredFoot,
       ignoredLabels,
     );
 
@@ -122,17 +125,17 @@ export class SharedGroundMovementRuntime {
       desired.z - previous.z,
     );
     const resolvedHorizontal = new Vector3(
-      resolved.x - previous.x,
+      resolvedFoot.x - previousFoot.x,
       0,
-      resolved.z - previous.z,
+      resolvedFoot.z - previousFoot.z,
     );
 
-    this.actor.position.x = resolved.x;
-    this.actor.position.z = resolved.z;
+    this.actor.position.x = resolvedFoot.x;
+    this.actor.position.z = resolvedFoot.z;
 
     const finalSupport = this.supports.querySupport(
-      previous,
-      this.actor.position,
+      previousFoot,
+      this.actor.position.subtract(new Vector3(0, this.actorGroundOffset, 0)),
       this.grounded,
       this.verticalVelocity,
       this.supportHeight,
@@ -149,7 +152,7 @@ export class SharedGroundMovementRuntime {
         this.verticalVelocity = 0;
       } else {
         this.supportHeight = nextSupportHeight;
-        this.actor.position.y = nextSupportHeight;
+        this.actor.position.y = nextSupportHeight + this.actorGroundOffset;
       }
     }
 
@@ -157,8 +160,8 @@ export class SharedGroundMovementRuntime {
       this.verticalVelocity -= this.config.gravity * dt;
       this.actor.position.y += this.verticalVelocity * dt;
       this.supportHeight = nextSupportHeight;
-      if (this.actor.position.y <= this.supportHeight) {
-        this.actor.position.y = this.supportHeight;
+      if (this.actor.position.y - this.actorGroundOffset <= this.supportHeight) {
+        this.actor.position.y = this.supportHeight + this.actorGroundOffset;
         this.verticalVelocity = 0;
         this.grounded = true;
       }
@@ -186,7 +189,7 @@ export class SharedGroundMovementRuntime {
 
     let failure: SharedMovementFailure = 'none';
     if (blocked) failure = 'blocked';
-    else if (!this.grounded && nextSupportHeight <= 0 && this.actor.position.y <= 0.01) {
+    else if (!this.grounded && nextSupportHeight <= 0 && this.actor.position.y - this.actorGroundOffset <= 0.01) {
       failure = 'ground-lost';
     } else if (this.progressAccumulator >= 0.5) {
       failure = 'no-progress';

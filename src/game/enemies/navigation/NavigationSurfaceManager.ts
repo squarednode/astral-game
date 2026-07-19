@@ -179,6 +179,59 @@ export class NavigationSurfaceManager {
     };
   }
 
+
+  findEscapePosition(
+    current: Vector3,
+    goal: Vector3,
+    radius: number,
+    actorOffset: number,
+    minimumSupportRatio: number,
+    maximumSearchRadius = 4.5,
+  ): Vector3 | null {
+    const directDistance = Vector3.Distance(current, goal);
+    let best: Vector3 | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    const rings = [radius * 1.5, radius * 2.25, radius * 3.25, maximumSearchRadius];
+
+    for (const ring of rings) {
+      const clampedRing = Math.min(maximumSearchRadius, Math.max(radius + 0.15, ring));
+      for (let index = 0; index < 16; index += 1) {
+        const angle = (Math.PI * 2 * index) / 16;
+        const candidate = current.add(new Vector3(
+          Math.cos(angle) * clampedRing,
+          0,
+          Math.sin(angle) * clampedRing,
+        ));
+        const support = this.sampleSupport(candidate.x, candidate.z);
+        if (!support.walkable) continue;
+        candidate.y = support.height + actorOffset;
+        const footprint = this.sampleFootprint(candidate, radius);
+        if (footprint.ratio < minimumSupportRatio) continue;
+        if (this.isBlocked(candidate, radius, support)) continue;
+        if (this.isDynamicBlocked(candidate, radius, support)) continue;
+
+        const sweep = this.sweepBody(
+          current,
+          candidate,
+          radius,
+          actorOffset,
+          minimumSupportRatio,
+        );
+        if (!sweep.clear) continue;
+
+        const goalDistance = Vector3.Distance(candidate, goal);
+        const improvement = directDistance - goalDistance;
+        const score = goalDistance - improvement * 0.75 + clampedRing * 0.15;
+        if (score < bestScore) {
+          best = candidate.clone();
+          bestScore = score;
+        }
+      }
+      if (best) return best;
+    }
+    return best;
+  }
+
   projectToSupport(position: Vector3, actorOffset: number): NavigationSupportSample {
     const sample = this.sampleSupport(position.x, position.z);
     if (sample.walkable) position.y = sample.height + actorOffset;
