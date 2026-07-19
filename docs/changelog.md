@@ -5151,6 +5151,36 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Combat Library definitions
 - Existing status definition IDs
 
+# Changelog — 0.6.4
+
+## Added
+
+- Data-driven item base definitions
+- Affix definitions and weighted affix rolling
+- Loot-table definitions
+- Loot registry and item generator
+- Generated item instances with item levels
+- Legendary power definitions
+- Central equipment-stat aggregation
+- Loot & Equipment developer HUD page
+- Starter vertical-slice drops for wolves, crabs, elites, and Wolf Keeper
+
+## Changed
+
+- Enemy loot now resolves through named loot tables.
+- Equipment-derived combat values now use one aggregator.
+- Existing party-management items use generated item instances.
+- Prototype random prefix/base generation was removed.
+
+## Preserved
+
+- Existing inventory screen
+- Equipment comparison
+- Favorite and destroy behavior
+- Legendary power display
+- Character equipment slots
+
+
 ### Validate
 ```bash
 npm run build

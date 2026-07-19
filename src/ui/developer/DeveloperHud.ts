@@ -9,7 +9,8 @@ export type DeveloperHudPageId =
   | 'combat'
   | 'sandbox'
   | 'ai'
-  | 'status';
+  | 'status'
+  | 'loot';
 
 export interface DeveloperOverviewMetrics {
   fps: number;
@@ -36,6 +37,7 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   sandbox: 'Combat Sandbox',
   ai: 'AI',
   status: 'Status Effects',
+  loot: 'Loot & Equipment',
 };
 
 export class DeveloperHud {
@@ -49,7 +51,7 @@ export class DeveloperHud {
   >();
   private readonly pages = new Map<DeveloperHudPageId, HTMLElement>();
   private readonly textPages = new Map<
-    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox'>,
+    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot'>,
     HTMLPreElement
   >();
   private open = false;
@@ -159,6 +161,13 @@ export class DeveloperHud {
     body.appendChild(sandbox);
     this.pages.set('sandbox', sandbox);
 
+    const loot = document.createElement('article');
+    loot.className = 'developer-hud-page developer-loot-page';
+    loot.dataset.page = 'loot';
+    loot.hidden = true;
+    body.appendChild(loot);
+    this.pages.set('loot', loot);
+
     const movement = document.createElement('article');
     movement.className = 'developer-hud-page developer-movement-page';
     movement.dataset.page = 'movement';
@@ -213,12 +222,12 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 
   setPageText(
-    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox'>,
+    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot'>,
     text: string,
   ): void {
     this.textPages.get(pageId)!.textContent = text;

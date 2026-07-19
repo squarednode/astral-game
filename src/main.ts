@@ -111,6 +111,15 @@ import { CombatLibraryPanel } from './ui/developer/CombatLibraryPanel';
 import { NavigationDeveloperPanel } from './ui/developer/NavigationDeveloperPanel';
 import { CombatSandboxPanel } from './ui/developer/CombatSandboxPanel';
 import { StatusDeveloperPanel } from './ui/developer/StatusDeveloperPanel';
+import { LootDeveloperPanel } from './ui/developer/LootDeveloperPanel';
+import { aggregateEquipmentStats, LootGenerator, LootRegistry } from './game/loot';
+import type { GeneratedItemInstance, ItemRarity } from './game/loot';
+import {
+  itemDefinitions,
+  itemAffixDefinitions,
+  legendaryPowerDefinitions,
+  lootTableDefinitions,
+} from './game/definitions/loot';
 import { StatusRuntime, createStatusDefinitionMap } from './game/status';
 import type { StatusComponent } from './game/status';
 import { GameplayHud } from './ui/gameplay';
@@ -150,17 +159,13 @@ import type {
 } from './ui/party/PartyManagementTypes';
 
 type Element = CharacterElement;
-type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
+type Rarity = ItemRarity;
 type ItemFamily = GearFamily;
 type ItemSlot = GearSlot;
 type SkillKey = 'Q' | 'E';
 type AbilitySlot = 1 | 2 | 3 | 4;
 
 type CharacterDef = CharacterDefinition;
-
-function isAbilityActive(state: AbilityStateId): boolean {
-  return state === 'casting' || state === 'executing';
-}
 
 interface CharacterState extends CharacterDef {
   hp: number;
@@ -240,22 +245,7 @@ interface Enemy {
   stateMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>;
 }
 
-interface LootItem {
-  id: number;
-  name: string;
-  rarity: Rarity;
-  power: number;
-  attackBonus: number;
-  maxHpBonus: number;
-  swapBonus: number;
-  family: ItemFamily;
-  slot: ItemSlot;
-  focus: number;
-  precision: number;
-  technique: number;
-  favorite: boolean;
-  legendaryPower?: string;
-}
+type LootItem = GeneratedItemInstance;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#renderCanvas')!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
@@ -278,6 +268,17 @@ shadows.blurKernel = 18;
 
 const assets = new AssetRegistry();
 const definitions = new DefinitionRegistry();
+
+const lootRegistry = new LootRegistry();
+for (const definition of itemDefinitions) lootRegistry.registerItem(definition);
+for (const definition of itemAffixDefinitions) lootRegistry.registerAffix(definition);
+for (const definition of legendaryPowerDefinitions) {
+  lootRegistry.registerLegendaryPower(definition);
+}
+for (const definition of lootTableDefinitions) {
+  lootRegistry.registerLootTable(definition);
+}
+const lootGenerator = new LootGenerator(lootRegistry);
 
 definitions.registerKind<CharacterDefinition>(
   'character',
@@ -770,7 +771,6 @@ let inventoryOpen = false;
 let gameOver = false;
 let wave = 1;
 let kills = 0;
-let lootId = 1;
 let enemies: Enemy[] = [];
 let hoveredEnemy: Enemy | null = null;
 let loot: LootItem[] = [];
@@ -894,6 +894,33 @@ const statusDeveloperPanel = new StatusDeveloperPanel(
     ...enemies.map(enemy => ({ entityId: enemy.entityId, displayName: enemy.displayName, component: enemy.statusComponent })),
   ],
 );
+const lootDeveloperPanel = new LootDeveloperPanel(
+  developerHud.getPageContent('loot'),
+  lootRegistry,
+  {
+    inventory: () => loot,
+    generate: (tableId, rarity) => {
+      const generated = lootGenerator.generateFromTable(tableId, {
+        itemLevel: Math.max(1, wave),
+        forcedRarity: rarity,
+      });
+      loot.unshift(...generated);
+      for (const item of generated) {
+        feed(`${item.rarity.toUpperCase()} DROP: ${item.name}`, 'loot');
+      }
+      renderPartyManagement();
+    },
+    clearUnequipped: () => {
+      const equippedIds = new Set(
+        party.flatMap(character =>
+          equippedItems(character).map(item => item.id),
+        ),
+      );
+      loot = loot.filter(item => equippedIds.has(item.id) || item.favorite);
+      renderPartyManagement();
+    },
+  },
+);
 combatSandboxTuning.subscribe(values => {
   for (const enemy of enemies) {
     const healthRatio = enemy.maxHp > 0 ? Math.max(0, enemy.hp / enemy.maxHp) : 1;
@@ -937,34 +964,34 @@ const partyManagement = new PartyManagementScreen(inventoryEl, {
   assignSkill: assignSkillSlot,
 });
 
+function isAbilityActive(state: AbilityStateId): boolean {
+  return state === 'casting' || state === 'executing';
+}
+
 function equippedItems(c: CharacterState): LootItem[] {
   return Object.values(c.equipment).filter(
     (item): item is LootItem => Boolean(item),
   );
 }
 
+function equipmentStatsFor(c: CharacterState) {
+  return aggregateEquipmentStats(equippedItems(c));
+}
+
 function powerFor(c = active): number {
-  return 100 + equippedItems(c).reduce((sum, item) => sum + item.power, 0);
+  return 100 + equipmentStatsFor(c).power;
 }
 
 function attackFor(c = active): number {
-  return Math.max(
-    1,
-    c.attackDamage +
-      equippedItems(c).reduce((sum, item) => sum + item.attackBonus, 0),
-  );
+  return Math.max(1, c.attackDamage + equipmentStatsFor(c).attack);
 }
 
 function hpMax(c: CharacterState): number {
-  return Math.max(
-    25,
-    c.maxHp +
-      equippedItems(c).reduce((sum, item) => sum + item.maxHpBonus, 0),
-  );
+  return Math.max(25, c.maxHp + equipmentStatsFor(c).maximumHealth);
 }
 
 function swapBonusFor(c: CharacterState): number {
-  return equippedItems(c).reduce((sum, item) => sum + item.swapBonus, 0);
+  return equipmentStatsFor(c).swapDamage;
 }
 
 function hasLegendaryPower(c: CharacterState, text: string): boolean {
@@ -1099,12 +1126,32 @@ function partyManagementModel(): PartyManagementModel {
         },
       ],
       skillSlots: character.skillSlots,
-      summary: {
-        power: Math.min(100, 35 + attackFor(character) * 1.6),
-        defense: Math.min(100, 25 + hpMax(character) * 0.28 + (character.preferredFamily === 'fortified' ? 22 : 0)),
-        mobility: Math.min(100, character.speed * 8 + equippedItems(character).reduce((sum, item) => sum + item.technique, 0)),
-        support: Math.min(100, 18 + equippedItems(character).reduce((sum, item) => sum + item.focus * 2, 0) + (character.id === 'warden' ? 35 : 0)),
-      },
+      summary: (() => {
+        const equipment = equipmentStatsFor(character);
+        return {
+          power: Math.min(100, 35 + attackFor(character) * 1.6),
+          defense: Math.min(
+            100,
+            25 +
+              hpMax(character) * 0.28 +
+              equipment.armor * 4 +
+              (character.preferredFamily === 'fortified' ? 22 : 0),
+          ),
+          mobility: Math.min(
+            100,
+            character.speed * 8 +
+              equipment.technique +
+              equipment.movementSpeedPercent * 100,
+          ),
+          support: Math.min(
+            100,
+            18 +
+              equipment.focus * 2 +
+              equipment.statusPotencyPercent * 100 +
+              (character.id === 'warden' ? 35 : 0),
+          ),
+        };
+      })(),
     })),
     items: loot,
   };
@@ -1129,6 +1176,7 @@ function equipItemToCharacter(itemId: number, characterId: string): void {
   character.equipment[item.slot] = item;
   character.hp = Math.min(hpMax(character), character.hp + Math.max(0, hpMax(character) - priorMax));
   feed(`${character.name} equipped ${item.name}.`);
+  lootDeveloperPanel.render();
   refreshHud();
 }
 
@@ -1153,6 +1201,7 @@ function destroyLootItems(itemIds: number[]): void {
   loot = loot.filter(item => !destroyable.has(item.id));
   feed(`Destroyed ${destroyable.size} item${destroyable.size === 1 ? '' : 's'}.`);
   renderPartyManagement();
+  lootDeveloperPanel.render();
 }
 
 function toggleFavoriteLoot(itemId: number): void {
@@ -1161,6 +1210,7 @@ function toggleFavoriteLoot(itemId: number): void {
   item.favorite = !item.favorite;
   feed(`${item.favorite ? 'Favorited' : 'Unfavorited'} ${item.name}.`);
   renderPartyManagement();
+  lootDeveloperPanel.render();
 }
 
 function assignSkillSlot(
@@ -2615,65 +2665,35 @@ function cycleControl(direction: 1 | -1): void {
   }
 }
 
-function generateLoot(elite: boolean, forcedRarity?: Rarity): void {
-  if (!forcedRarity && !elite && Math.random() > 0.42) return;
-  const roll = Math.random();
-  const rarity: Rarity = forcedRarity ?? (elite && roll > 0.55 ? 'legendary' : roll > 0.72 ? 'rare' : roll > 0.35 ? 'magic' : 'common');
-  const power = ({ common: 6, magic: 12, rare: 20, legendary: 30 }[rarity]) + Math.floor(Math.random() * 8) + wave * 2;
-  const prefixes = ['Jagged', 'Runed', 'Stormbound', 'Glacial', 'Astral', 'Bloodforged'];
-  const bases = ['Loop', 'Sigil', 'Blade', 'Charm', 'Crest', 'Relic'];
-  const families: ItemFamily[] = ['fortified', 'agile', 'focused'];
-  const slots: ItemSlot[] = ['weapon', 'armor', 'relic'];
-  const family = families[Math.floor(Math.random() * families.length)];
-  const slot = slots[Math.floor(Math.random() * slots.length)];
-  const item: LootItem = {
-    id: lootId++,
-    name: `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${bases[Math.floor(Math.random() * bases.length)]}`,
-    rarity,
-    power,
-    attackBonus:
-      family === 'agile'
-        ? Math.floor(power * 0.62)
-        : family === 'focused'
-          ? Math.floor(power * 0.24)
-          : Math.floor(power * 0.18),
-    maxHpBonus:
-      family === 'fortified'
-        ? Math.floor(power * 1.75)
-        : family === 'agile'
-          ? -Math.floor(power * 0.42)
-          : -Math.floor(power * 0.2),
-    swapBonus:
-      rarity === 'common'
-        ? 0
-        : family === 'agile'
-          ? Math.floor(power * 0.58)
-          : Math.floor(power * 0.28),
-    family,
-    slot,
-    focus:
-      family === 'focused'
-        ? Math.floor(power * 0.56)
-        : family === 'fortified'
-          ? Math.floor(power * 0.22)
-          : -Math.floor(power * 0.08),
-    precision:
-      family === 'agile'
-        ? Math.floor(power * 0.52)
-        : family === 'focused'
-          ? Math.floor(power * 0.24)
-          : -Math.floor(power * 0.08),
-    favorite: false,
-    technique:
-      family === 'focused'
-        ? Math.floor(power * 0.48)
-        : family === 'agile'
-          ? Math.floor(power * 0.22)
-          : -Math.floor(power * 0.18),
-  };
-  if (rarity === 'legendary') item.legendaryPower = Math.random() > .5 ? 'Swapping out leaves a frost trail.' : 'Swap attacks deal greatly increased damage.';
-  loot.unshift(item);
-  feed(`${rarity.toUpperCase()} DROP: ${item.name}`);
+function lootTableForEnemy(enemy: Enemy): string {
+  if (enemy.definition.role === 'boss') return 'loot.wolf-keeper';
+  if (enemy.elite) return 'loot.elite';
+
+  const role = enemy.definition.role.toLowerCase();
+  const family = enemy.family.familyId.toLowerCase();
+  if (role.includes('crab') || family.includes('crab')) return 'loot.crab';
+  if (role.includes('wolf') || family.includes('wolf')) return 'loot.wolf';
+
+  return 'loot.standard-enemy';
+}
+
+function generateLoot(enemy: Enemy, forcedRarity?: Rarity): void {
+  const tableId = lootTableForEnemy(enemy);
+  const generated = lootGenerator.generateFromTable(tableId, {
+    itemLevel: Math.max(1, wave),
+    elite: enemy.elite,
+    boss: enemy.definition.role === 'boss',
+    forcedRarity,
+  });
+
+  if (generated.length === 0) return;
+
+  loot.unshift(...generated);
+  for (const item of generated) {
+    feed(`${item.rarity.toUpperCase()} DROP: ${item.name}`, 'loot');
+  }
+
+  lootDeveloperPanel.render();
   renderPartyManagement();
 }
 
@@ -2697,7 +2717,7 @@ function killEnemy(enemy: Enemy): void {
     wave,
     totalKills: kills,
   });
-  generateLoot(enemy.elite);
+  generateLoot(enemy);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
   enemies = enemies.filter(e => e !== enemy);
   enemyRuntimeWatchdog.remove(enemy.entityId);
@@ -2783,7 +2803,21 @@ const developerActions: DeveloperActions = {
   },
 
   spawnLoot: (rarity: Rarity) => {
-    generateLoot(rarity === 'legendary', rarity);
+    const generated = lootGenerator.generateFromTable(
+      rarity === 'legendary' ? 'loot.elite' : 'loot.standard-enemy',
+      {
+        itemLevel: Math.max(1, wave),
+        forcedRarity: rarity,
+      },
+    );
+
+    loot.unshift(...generated);
+    for (const item of generated) {
+      feed(`${item.rarity.toUpperCase()} DROP: ${item.name}`, 'loot');
+    }
+
+    lootDeveloperPanel.render();
+    renderPartyManagement();
   },
 
   clearInventory: () => {
@@ -3450,11 +3484,7 @@ scene.onBeforeRenderObservable.add(() => {
       rejectedTransitions,
       activeStatuses: statusDeveloperPanel.getActiveInstanceCount(),
       activeAbilities: [...abilityComponents.values()].reduce(
-        (count, component) =>
-          count +
-          component
-            .all()
-            .filter((runtime) => isAbilityActive(runtime.snapshot().state)).length,
+        (count, component) => count + component.all().filter(runtime => isAbilityActive(runtime.snapshot().state)).length,
         0,
       ),
       aiDecisions: enemies.reduce(

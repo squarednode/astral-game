@@ -467,3 +467,47 @@
   color: #eef5ff;
   cursor: pointer;
 }
+
+
+.loot-dev-panel {
+  display: grid;
+  gap: 12px;
+  padding: 4px;
+}
+
+.loot-dev-panel header strong,
+.loot-dev-panel header small {
+  display: block;
+}
+
+.loot-dev-panel header small {
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.loot-dev-summary,
+.loot-dev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.loot-dev-summary span {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.loot-dev-panel label {
+  display: grid;
+  gap: 5px;
+}
+
+.loot-dev-panel select,
+.loot-dev-actions button {
+  background: rgba(10, 18, 28, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  color: inherit;
+  padding: 7px 9px;
+}
