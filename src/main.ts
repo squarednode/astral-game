@@ -105,6 +105,7 @@ import { DeveloperHud } from './ui/developer/DeveloperHud';
 import { AbilityDeveloperPanel } from './ui/developer/AbilityDeveloperPanel';
 import { CombatLibraryPanel } from './ui/developer/CombatLibraryPanel';
 import { NavigationDeveloperPanel } from './ui/developer/NavigationDeveloperPanel';
+import { CombatSandboxPanel } from './ui/developer/CombatSandboxPanel';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
 import type { GameplayHudSnapshot } from './ui/gameplay';
@@ -115,7 +116,7 @@ import { HitFeedbackController } from './game/combat/HitFeedbackController';
 import type { HitWeight } from './game/combat/CombatTypes';
 import { GameBalance } from './game/config/GameBalance';
 import { CombatTuning } from './game/config/CombatTuning';
-import { CombatPresentation } from './game/config/CombatPresentation';
+import { combatSandboxTuning } from './game/config/CombatSandboxTuning';
 import { DeveloperConsole } from './devtools/DeveloperConsole';
 import { developerState } from './devtools/DeveloperState';
 import type { DeveloperActions } from './devtools/DeveloperActions';
@@ -867,6 +868,36 @@ const navigationDeveloperPanel = new NavigationDeveloperPanel(
   developerHud.getPageContent('ai'),
   developerState,
 );
+const combatSandboxPanel = new CombatSandboxPanel(
+  developerHud.getPageContent('sandbox'),
+);
+combatSandboxTuning.subscribe(values => {
+  for (const enemy of enemies) {
+    const healthRatio = enemy.maxHp > 0 ? Math.max(0, enemy.hp / enemy.maxHp) : 1;
+    const waveScale = 1 + (wave - 1) * 0.18;
+    const roleHealthScale = enemy.elite
+      ? CombatTuning.elites.healthScale
+      : enemy.definition.role === 'boss'
+        ? CombatTuning.bosses.healthScale
+        : CombatTuning.enemies.healthScale;
+    enemy.maxHp =
+      enemy.definition.maxHp *
+      enemy.variant.hpMultiplier *
+      enemy.modifier.hpMultiplier *
+      roleHealthScale *
+      values.enemyHealthScale *
+      waveScale;
+    enemy.hp = Math.min(enemy.maxHp, enemy.maxHp * healthRatio);
+    enemy.healthComponent.maximum = enemy.maxHp;
+    enemy.healthComponent.current = enemy.hp;
+
+    const baseTargetScale = 0.5;
+    const visualRatio = values.targetVolumeScale / baseTargetScale;
+    enemy.targetMesh.scaling.setAll(visualRatio);
+    enemy.targetRadius = enemy.definition.targetRadius * values.targetVolumeScale;
+    enemy.stateMachine.request('evaluate', 'combat-sandbox-updated');
+  }
+});
 const damageNumbers = new DamageNumberManager(scene, camera, engine);
 const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
@@ -1180,9 +1211,21 @@ function enemyTargetDistance(enemy: Enemy, point: Vector3): number {
   return Vector3.Distance(enemyTargetPoint(enemy), point);
 }
 
+function effectiveDetectionRange(enemy: Enemy): number {
+  return enemy.definition.detectionRange * combatSandboxTuning.get().detectionRangeScale;
+}
+
+function effectiveLeashRange(enemy: Enemy): number {
+  return enemy.definition.leashRange * combatSandboxTuning.get().leashRangeScale;
+}
+
+function effectivePackAlertRange(enemy: Enemy): number {
+  return enemy.family.alertRadius * combatSandboxTuning.get().packAlertRangeScale;
+}
+
 function enemyIsOutsideTerritory(enemy: Enemy): boolean {
   const home = enemy.stateMachine.blackboard.get('homePosition');
-  return Vector3.Distance(enemy.mesh.position, home) > enemy.definition.leashRange;
+  return Vector3.Distance(enemy.mesh.position, home) > effectiveLeashRange(enemy);
 }
 
 function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
@@ -1203,7 +1246,7 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
         0.12,
         (projectileDefinition?.radius ?? 0.16) *
           2 *
-          CombatPresentation.projectiles.visualScale,
+          combatSandboxTuning.get().projectileVisualScale,
       ) },
       scene,
     );
@@ -1230,7 +1273,7 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
       owner: 'enemy',
       collisionRadius:
       (projectileDefinition?.radius ?? 0.16) *
-      CombatPresentation.projectiles.collisionScale,
+      combatSandboxTuning.get().projectileCollisionScale,
     });
   } else if (ability.id === 'ability.retreat') {
     const away = enemy.mesh.position.subtract(playerRoot.position);
@@ -1264,7 +1307,7 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
     if (enemy.definition.role === 'mother-wolf') {
       for (const ally of enemies) {
         if (ally === enemy || ally.definition.familyId !== 'wolf') continue;
-        if (Vector3.Distance(ally.mesh.position, enemy.mesh.position) > enemy.family.alertRadius) continue;
+        if (Vector3.Distance(ally.mesh.position, enemy.mesh.position) > effectivePackAlertRange(enemy)) continue;
         ally.attackCd = 0;
         ally.stateMachine.blackboard.set('packAlerted', true);
         ally.stateMachine.request('evaluate', 'mother-wolf-howl');
@@ -1279,7 +1322,7 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
     resolvedDistance <= hitRange &&
     !ability.abilityTags.includes('defensive')
   ) {
-    hurtActive(Math.max(enemy.damage, power));
+    hurtActive(Math.max(enemy.damage * combatSandboxTuning.get().enemyDamageScale, power));
   }
 
   const color = ability.element === 'fire'
@@ -1290,7 +1333,10 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
         ? new Color3(0.75, 0.65, 1)
         : new Color3(1, 0.55, 0.2);
   vfxRing(enemy.mesh.position, color, Math.max(1.5, ability.radius ?? 2.2), 0.28);
-  enemy.abilityCooldowns.set(ability.id, ability.cooldown * usage.cooldownMultiplier);
+  enemy.abilityCooldowns.set(
+    ability.id,
+    ability.cooldown * usage.cooldownMultiplier * combatSandboxTuning.get().enemyCooldownScale,
+  );
   enemy.attackCd = 0.2;
 }
 
@@ -1298,7 +1344,7 @@ function toEnemyRuntimeActor(enemy: Enemy): EnemyRuntimeActor {
   return {
     definition: enemy.definition,
     position: enemy.mesh.position,
-    speed: enemy.speed,
+    speed: enemy.speed * combatSandboxTuning.get().enemySpeedScale,
     hp: enemy.hp,
     maxHp: enemy.maxHp,
     abilityCooldowns: enemy.abilityCooldowns,
@@ -1364,7 +1410,7 @@ function applyWorldAwareEnemyMovement(
     currentPosition: enemy.mesh.position,
     desiredPosition,
     homePosition,
-    leashRange: enemy.definition.leashRange,
+    leashRange: effectiveLeashRange(enemy),
     role: enemy.definition.role,
     capabilities: enemy.navigationCapabilities,
     state: enemy.navigationState,
@@ -1456,7 +1502,7 @@ function createEnemyStateMachine(
       lastSeenPosition: playerRoot.position.clone(),
       desiredRange: enemy.definition.preferredRange,
       minimumRange: 0,
-      maximumRange: enemy.definition.detectionRange,
+      maximumRange: effectiveDetectionRange(enemy),
       currentAbilityId: null,
       currentUsageId: null,
       committed: enemy.definition.policy === 'boss',
@@ -1489,7 +1535,7 @@ function createEnemyStateMachine(
         blackboard.set('decisionCount', blackboard.get('decisionCount') + 1);
         const homeDistance = Vector3.Distance(enemy.mesh.position, blackboard.get('homePosition'));
         blackboard.set('distanceFromHome', homeDistance);
-        if (homeDistance > enemy.definition.leashRange) {
+        if (homeDistance > effectiveLeashRange(enemy)) {
           blackboard.set('territoryStatus', 'returning');
           blackboard.set('movementReason', 'outside leash radius');
           blackboard.set('positioningIntent', 'advance');
@@ -1498,6 +1544,17 @@ function createEnemyStateMachine(
         }
         blackboard.set('territoryStatus', homeDistance < 0.4 ? 'home' : 'inside');
         const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
+        if (
+          distance > effectiveDetectionRange(enemy) &&
+          !blackboard.get('packAlerted')
+        ) {
+          blackboard.set('distanceToTarget', distance);
+          blackboard.set('canCast', false);
+          blackboard.set('positioningIntent', 'none');
+          blackboard.set('movementReason', 'player outside detection zone');
+          activeMachine.request('recover', 'outside-detection-zone');
+          return;
+        }
         const plan = enemyTactics.plan(toEnemyRuntimeActor(enemy), distance);
 
         applyEnemyPlanToBlackboard(
@@ -1530,7 +1587,7 @@ function createEnemyStateMachine(
         const blackboard = activeMachine.blackboard;
         const homeDistance = Vector3.Distance(enemy.mesh.position, blackboard.get('homePosition'));
         blackboard.set('distanceFromHome', homeDistance);
-        if (homeDistance > enemy.definition.leashRange) {
+        if (homeDistance > effectiveLeashRange(enemy)) {
           blackboard.set('territoryStatus', 'returning');
           activeMachine.request('return-home', 'territory-leash-exceeded');
           return;
@@ -1574,13 +1631,13 @@ function createEnemyStateMachine(
           desiredPosition,
           playerRoot.position,
           movement,
-          enemy.speed * slow,
+          enemy.speed * combatSandboxTuning.get().enemySpeedScale * slow,
           dt,
           orbitDirection,
         );
         applyWorldAwareEnemyMovement(enemy, desiredPosition, dt);
 
-        if (activeMachine.getTimeInState() >= 0.45) {
+        if (activeMachine.getTimeInState() >= combatSandboxTuning.get().decisionIntervalSeconds) {
           activeMachine.request('evaluate', 'tactical-replan');
         }
       },
@@ -1708,7 +1765,12 @@ function createEnemyStateMachine(
         if (toHome.lengthSquared() > 0.001) {
           toHome.normalize();
           const desiredPosition = enemy.mesh.position.add(
-            toHome.scale(enemy.speed * enemy.definition.returnSpeedMultiplier * dt),
+            toHome.scale(
+              enemy.speed *
+              combatSandboxTuning.get().enemySpeedScale *
+              enemy.definition.returnSpeedMultiplier *
+              dt,
+            ),
           );
           applyWorldAwareEnemyMovement(enemy, desiredPosition, dt);
         }
@@ -1783,7 +1845,7 @@ function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
       home,
       enemy.navigationCapabilities,
       occupied,
-      Math.min(6, enemy.definition.leashRange),
+      Math.min(6, effectiveLeashRange(enemy)),
       16,
     );
     if (!spawnResolution.position) {
@@ -1824,7 +1886,7 @@ function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
           enemy.navigationCapabilities.radius + enemy.navigationCapabilities.navigationSkin,
           actorOffset,
           enemy.navigationCapabilities.minimumSupportRatio,
-          Math.min(5.5, enemy.definition.leashRange * 0.35),
+          Math.min(5.5, effectiveLeashRange(enemy) * 0.35),
         )
       : null;
 
@@ -1954,6 +2016,7 @@ function spawnEnemy(
     variant.hpMultiplier *
     modifier.hpMultiplier *
     roleHealthScale *
+    combatSandboxTuning.get().enemyHealthScale *
     waveScale;
   const healthComponent: HealthComponent = { current: hp, maximum: hp };
   const enemyEntity = entities.create({
@@ -1972,7 +2035,7 @@ function spawnEnemy(
       diameter:
         definition.targetRadius *
         2 *
-        CombatPresentation.targeting.hoverVolumeScale,
+        combatSandboxTuning.get().targetVolumeScale,
       segments: 12,
     },
     scene,
@@ -1999,7 +2062,7 @@ function spawnEnemy(
     targetMesh,
     targetRadius:
       definition.targetRadius *
-      CombatPresentation.targeting.targetVolumeScale,
+      combatSandboxTuning.get().targetVolumeScale,
     targetHeight: definition.targetHeight,
     hp,
     maxHp: hp,
@@ -2122,7 +2185,7 @@ function damageEnemy(
   if (enemy.definition.familyId === 'wolf') {
     for (const ally of enemies) {
       if (ally === enemy || ally.definition.familyId !== 'wolf') continue;
-      if (Vector3.Distance(ally.mesh.position, enemy.mesh.position) > enemy.family.alertRadius) continue;
+      if (Vector3.Distance(ally.mesh.position, enemy.mesh.position) > effectivePackAlertRange(enemy)) continue;
       ally.stateMachine.blackboard.set('packAlerted', true);
       ally.stateMachine.request('evaluate', 'pack-alert');
     }
@@ -2151,7 +2214,7 @@ function basicAttack(): void {
       {
         diameter:
           0.36 *
-          CombatPresentation.projectiles.visualScale,
+          combatSandboxTuning.get().projectileVisualScale,
       },
       scene,
     );
@@ -2159,7 +2222,7 @@ function basicAttack(): void {
     orb.material = mat('projectile', active.color, 0.8);
     projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player', collisionRadius:
       0.18 *
-      CombatPresentation.projectiles.collisionScale,
+      combatSandboxTuning.get().projectileCollisionScale,
     });
   }
 }
@@ -2206,7 +2269,7 @@ function executeAbility(context: AbilityExecutionContext): void {
     const orb = MeshBuilder.CreateSphere('ability-fireball', {
         diameter:
           0.52 *
-          CombatPresentation.projectiles.visualScale,
+          combatSandboxTuning.get().projectileVisualScale,
       },
       scene,
     );
@@ -2222,7 +2285,7 @@ function executeAbility(context: AbilityExecutionContext): void {
       owner: 'player',
       collisionRadius:
         0.26 *
-        CombatPresentation.projectiles.collisionScale,
+        combatSandboxTuning.get().projectileCollisionScale,
     });
     vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
     return;
@@ -2234,10 +2297,10 @@ function executeAbility(context: AbilityExecutionContext): void {
       {
         diameter:
           0.28 *
-          CombatPresentation.projectiles.visualScale,
+          combatSandboxTuning.get().projectileVisualScale,
         height:
           1.4 *
-          CombatPresentation.projectiles.visualScale,
+          combatSandboxTuning.get().projectileVisualScale,
         tessellation: 8,
       },
       scene,
@@ -2256,7 +2319,7 @@ function executeAbility(context: AbilityExecutionContext): void {
       owner: 'player',
       collisionRadius:
         0.18 *
-        CombatPresentation.projectiles.collisionScale,
+        combatSandboxTuning.get().projectileCollisionScale,
     });
     return;
   }

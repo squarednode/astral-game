@@ -1,5 +1,6 @@
 import type { DefinitionRegistry } from '../../../engine/definitions';
 import type { AiAbilityUsageDefinition } from '../../definitions/combat/CombatLibraryTypes';
+import { combatSandboxTuning } from '../../config/CombatSandboxTuning';
 import type {
   EnemyAbilityDecision,
   EnemyRuntimeActor,
@@ -8,6 +9,26 @@ import type {
 interface WeightedUsage {
   usage: Readonly<AiAbilityUsageDefinition>;
   score: number;
+}
+
+function tuneUsage(
+  usage: Readonly<AiAbilityUsageDefinition>,
+): Readonly<AiAbilityUsageDefinition> {
+  const tuning = combatSandboxTuning.get();
+  const minimumRange = usage.minimumRange * tuning.attackRangeScale;
+  const maximumRange = Math.max(
+    minimumRange,
+    usage.maximumRange * tuning.attackRangeScale,
+  );
+  return {
+    ...usage,
+    minimumRange,
+    maximumRange,
+    preferredRange: Math.min(
+      maximumRange,
+      Math.max(minimumRange, usage.preferredRange * tuning.preferredRangeScale),
+    ),
+  };
 }
 
 export class EnemyAbilityController {
@@ -20,9 +41,12 @@ export class EnemyAbilityController {
     const usages = actor.definition.abilityUsage
       .map(reference => ({
         reference,
-        usage: this.definitions.get<AiAbilityUsageDefinition>(
-          reference.usageId,
-        ),
+        usage: (() => {
+          const resolved = this.definitions.get<AiAbilityUsageDefinition>(
+            reference.usageId,
+          );
+          return resolved ? tuneUsage(resolved) : undefined;
+        })(),
       }))
       .filter((candidate): candidate is {
         reference: EnemyRuntimeActor['definition']['abilityUsage'][number];
@@ -128,6 +152,7 @@ export class EnemyAbilityController {
     usage: Readonly<AiAbilityUsageDefinition>,
     distance: number,
   ): EnemyAbilityDecision {
+    usage = tuneUsage(usage);
     const cooldownRemaining = actor.abilityCooldowns.get(usage.abilityId) ?? 0;
     const ready = cooldownRemaining <= 0;
     const inRange =

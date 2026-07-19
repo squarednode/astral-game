@@ -1,4 +1,5 @@
 import { Vector3 } from '@babylonjs/core';
+import { combatSandboxTuning } from '../../config/CombatSandboxTuning';
 import type {
   EnemyAbilityDecision,
   EnemyMovementDirective,
@@ -12,6 +13,9 @@ export class EnemyMovementController {
     distance: number,
   ): EnemyMovementDirective {
     const usage = ability.usage;
+    const tuning = combatSandboxTuning.get();
+    const advanceThreshold = usage.maximumRange + (1 - tuning.advanceBufferScale) * 0.6;
+    const retreatThreshold = Math.max(0, usage.minimumRange - (1 - tuning.retreatBufferScale) * 0.6);
 
     if (ability.ready && ability.inRange) {
       return {
@@ -21,7 +25,7 @@ export class EnemyMovementController {
       };
     }
 
-    if (distance > usage.maximumRange) {
+    if (distance > advanceThreshold) {
       return {
         intent: 'advance',
         reason: `${actor.definition.movementStyle}: closing to ${usage.maximumRange.toFixed(1)}m`,
@@ -29,7 +33,7 @@ export class EnemyMovementController {
       };
     }
 
-    if (distance < usage.minimumRange) {
+    if (distance < retreatThreshold) {
       const retreat =
         actor.definition.movementStyle === 'hold-range' ||
         actor.definition.movementStyle === 'hit-and-run';

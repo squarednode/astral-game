@@ -5053,6 +5053,33 @@ It continues to show:
 - Explicit `traversalMovementMode` state for atomic jump and drop execution.
 - Shared movement runtime support for `none`, `jump`, and `drop` traversal requests.
 
+# Changelog — 0.6.2
+
+## Added
+
+- Combat Sandbox developer HUD page
+- Live engagement-zone tuning store
+- Engagement, balance, and presentation sliders
+- Tiny Arena, Dungeon, Open World, Boss Fight, Stress Test, and Reset presets
+- JSON export of current tuning values
+- Live active-enemy reevaluation after tuning changes
+
+## Changed
+
+- Enemy ability ranges now use live preferred and attack-range scaling
+- Enemy detection and leash zones now use live multipliers
+- Pack alert radius now uses live tuning
+- Tactical replan interval is configurable
+- Enemy HP, damage, speed, and cooldowns are configurable
+- Target volumes and new projectile sizing use live presentation values
+
+## Preserved
+
+- 0.6.1g7a bidirectional traversal behavior
+- Shared enemy movement runtime
+- Navigation surface, bridge, platform, jump, and drop handling
+
+
 ### Validate
 ```bash
 npm run build

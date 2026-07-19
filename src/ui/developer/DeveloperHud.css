@@ -324,3 +324,66 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.combat-sandbox-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.combat-sandbox-panel h3,
+.combat-sandbox-panel p {
+  margin: 0;
+}
+
+.combat-sandbox-panel p {
+  color: #8fa3c1;
+  font-size: 10px;
+}
+
+.combat-sandbox-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.combat-sandbox-panel button {
+  padding: 6px 8px;
+  border: 1px solid rgba(117, 186, 255, 0.38);
+  border-radius: 6px;
+  background: rgba(117, 186, 255, 0.1);
+  color: #eef5ff;
+  cursor: pointer;
+}
+
+.combat-sandbox-panel details {
+  padding: 7px;
+  border: 1px solid rgba(165, 190, 225, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.combat-sandbox-panel summary {
+  cursor: pointer;
+  color: #cfe0fa;
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+
+.combat-sandbox-slider {
+  display: grid;
+  grid-template-columns: minmax(105px, 1fr) minmax(105px, 1.4fr) 48px;
+  align-items: center;
+  gap: 7px;
+  margin: 7px 0;
+  font-size: 10px;
+}
+
+.combat-sandbox-slider input {
+  min-width: 0;
+}
+
+.combat-sandbox-slider output {
+  color: #71e3a4;
+  font: 700 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-align: right;
+}

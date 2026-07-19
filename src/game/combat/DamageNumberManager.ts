@@ -3,6 +3,7 @@ import { DEFAULT_COMBAT_CONFIG } from './CombatConfig';
 import type { CombatConfig } from './CombatConfig';
 import type { DamageElement } from './CombatTypes';
 import { CombatPresentation } from '../config/CombatPresentation';
+import { combatSandboxTuning } from '../config/CombatSandboxTuning';
 
 interface DamageNumber {
   element: HTMLDivElement;
@@ -41,7 +42,7 @@ export class DamageNumberManager {
     Object.assign(node.style, {
       position: 'absolute', transform: 'translate(-50%, -50%)',
       fontFamily: 'system-ui, sans-serif', fontWeight: '800',
-      fontSize: `${(label ? 22 : 18) * CombatPresentation.damageNumbers.scale}px`,
+      fontSize: `${(label ? 22 : 18) * combatSandboxTuning.get().damageNumberScale}px`,
       letterSpacing: '0.02em', color: COLORS[element],
       textShadow: '0 2px 3px rgba(0,0,0,0.95)', whiteSpace: 'nowrap',
     });
