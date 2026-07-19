@@ -25,6 +25,12 @@ export interface StepUpCandidate {
   supportHeight: number;
 }
 
+export interface LandingSurfaceCandidate {
+  surfaceId: string;
+  colliderLabel: string;
+  supportHeight: number;
+}
+
 interface GuidedProjection {
   progress: number;
   lateralDistance: number;
@@ -145,6 +151,27 @@ export class TraversalSurfaceSystem {
       colliderLabel: selected.surface.colliderLabel,
       supportHeight: selected.supportHeight,
     };
+  }
+
+  /**
+   * Finds the highest walkable traversal surface beneath an X/Z landing point.
+   * Unlike querySupport, this deliberately ignores the actor's current vertical
+   * phase so a jump can plan toward an elevated surface before descending.
+   */
+  queryLandingSurface(position: Vector3): LandingSurfaceCandidate | null {
+    if (!this.enabled) return null;
+
+    const candidates = this.surfaces
+      .filter(surface => this.containsFootPoint(surface, position))
+      .filter(surface => this.isWalkableSlope(surface))
+      .map(surface => ({
+        surfaceId: surface.id,
+        colliderLabel: surface.colliderLabel,
+        supportHeight: this.sampleHeight(surface, position.x, position.z),
+      }))
+      .sort((a, b) => b.supportHeight - a.supportHeight);
+
+    return candidates[0] ?? null;
   }
 
   /**

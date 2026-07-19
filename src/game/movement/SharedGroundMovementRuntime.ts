@@ -26,6 +26,8 @@ export interface SharedMovementResult {
   slid: boolean;
   meaningfulProgress: boolean;
   failure: SharedMovementFailure;
+  airborneHorizontalSpeed: number;
+  jumpLandingSurfaceId: string | null;
 }
 
 /**
@@ -43,6 +45,9 @@ export class SharedGroundMovementRuntime {
   private verticalVelocity = 0;
   private lastGoalDistance = Number.POSITIVE_INFINITY;
   private progressAccumulator = 0;
+  private airborneHorizontalVelocity = Vector3.Zero();
+  private jumpLandingSurfaceId: string | null = null;
+  private jumpLandingColliderLabel: string | null = null;
 
   constructor(
     private readonly actor: TransformNode,
@@ -64,6 +69,9 @@ export class SharedGroundMovementRuntime {
     this.grounded = true;
     this.lastGoalDistance = Number.POSITIVE_INFINITY;
     this.progressAccumulator = 0;
+    this.airborneHorizontalVelocity.setAll(0);
+    this.jumpLandingSurfaceId = null;
+    this.jumpLandingColliderLabel = null;
     this.supports.reset();
   }
 
@@ -88,11 +96,41 @@ export class SharedGroundMovementRuntime {
     const previous = this.actor.position.clone();
     const previousFoot = previous.subtract(new Vector3(0, this.actorGroundOffset, 0));
     const desired = requestedPosition.clone();
-    const desiredFoot = desired.subtract(new Vector3(0, this.actorGroundOffset, 0));
+    let desiredFoot = desired.subtract(new Vector3(0, this.actorGroundOffset, 0));
 
     if (jumpRequested && this.grounded) {
-      this.grounded = false;
-      this.verticalVelocity = this.config.jumpVelocity;
+      const landing = this.supports.queryLandingSurface(desiredFoot);
+      const landingHeight = landing?.supportHeight ?? desiredFoot.y;
+      const heightDelta = landingHeight - this.supportHeight;
+      const discriminant =
+        this.config.jumpVelocity * this.config.jumpVelocity -
+        2 * this.config.gravity * heightDelta;
+
+      if (discriminant >= 0 && heightDelta <= this.config.maximumJumpOntoHeight) {
+        const flightTime = Math.max(
+          0.18,
+          (this.config.jumpVelocity + Math.sqrt(discriminant)) /
+            this.config.gravity,
+        );
+        const horizontalDelta = new Vector3(
+          desiredFoot.x - previousFoot.x,
+          0,
+          desiredFoot.z - previousFoot.z,
+        );
+        this.airborneHorizontalVelocity = horizontalDelta.scale(1 / flightTime);
+        const maximumHorizontalJumpSpeed = 7.5;
+        if (this.airborneHorizontalVelocity.length() > maximumHorizontalJumpSpeed) {
+          this.airborneHorizontalVelocity.normalize().scaleInPlace(maximumHorizontalJumpSpeed);
+        }
+        this.jumpLandingSurfaceId = landing?.surfaceId ?? null;
+        this.jumpLandingColliderLabel = landing?.colliderLabel ?? null;
+        this.grounded = false;
+        this.verticalVelocity = this.config.jumpVelocity;
+      }
+    }
+
+    if (!this.grounded && this.airborneHorizontalVelocity.lengthSquared() > 0.000001) {
+      desiredFoot = previousFoot.add(this.airborneHorizontalVelocity.scale(dt));
     }
 
     const step = this.supports.queryStepUp(
@@ -112,6 +150,9 @@ export class SharedGroundMovementRuntime {
 
     const ignoredLabels = new Set(preliminarySupport.ignoredColliderLabels);
     if (step) ignoredLabels.add(step.colliderLabel);
+    if (!this.grounded && this.jumpLandingColliderLabel) {
+      ignoredLabels.add(this.jumpLandingColliderLabel);
+    }
 
     const resolvedFoot = this.collision.resolvePosition(
       previousFoot,
@@ -164,6 +205,9 @@ export class SharedGroundMovementRuntime {
         this.actor.position.y = this.supportHeight + this.actorGroundOffset;
         this.verticalVelocity = 0;
         this.grounded = true;
+        this.airborneHorizontalVelocity.setAll(0);
+        this.jumpLandingSurfaceId = null;
+        this.jumpLandingColliderLabel = null;
       }
     }
 
@@ -207,6 +251,8 @@ export class SharedGroundMovementRuntime {
       slid,
       meaningfulProgress,
       failure,
+      airborneHorizontalSpeed: this.airborneHorizontalVelocity.length(),
+      jumpLandingSurfaceId: this.jumpLandingSurfaceId,
     };
   }
 }

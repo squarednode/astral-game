@@ -5002,6 +5002,22 @@ It continues to show:
 - Escalating validated local reset after extended route failure
 - Support diagnostic refresh after resolved movement
 
+# Changelog — 0.6.1g5
+
+## Fixed
+
+- Enemies jumping vertically without forward travel
+- Traversal collider front faces blocking valid jump landings
+- Jump attempts against surfaces above the enemy's supported jump height
+- Airborne horizontal intent being lost after takeoff
+
+## Added
+
+- Ballistic horizontal jump planning
+- Landing-surface preselection
+- Horizontal jump-speed cap
+- Jump landing diagnostics in shared movement results
+
 ### Validate
 ```bash
 npm run build
