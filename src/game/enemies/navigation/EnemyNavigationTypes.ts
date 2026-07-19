@@ -8,6 +8,15 @@ export type EnemyTraversalType =
   | 'lift'
   | 'climb';
 
+export type EnemyTraversalPhase =
+  | 'idle'
+  | 'approach'
+  | 'takeoff'
+  | 'airborne'
+  | 'landing'
+  | 'settle'
+  | 'complete';
+
 export type EnemyNavigationMode =
   | 'idle'
   | 'walk'
@@ -81,7 +90,17 @@ export interface EnemyNavigationAgentState {
   sweepResult: 'clear' | 'slide' | 'blocked';
   pathGeneration: number;
   lastGoalPosition: Vector3 | null;
+  traversalPhase: EnemyTraversalPhase;
+  traversalLandingPosition: Vector3 | null;
+  traversalExitPosition: Vector3 | null;
+  traversalSettleRemaining: number;
+  traversalAttemptCount: number;
+  traversalLastAttemptAt: number;
+  traversalCooldownUntil: number;
+  traversalOwner: 'planner' | null;
+  reservedLandingSurfaceId: string | null;
 }
+
 
 export interface EnemyNavigationRequest {
   currentPosition: Vector3;
@@ -93,7 +112,9 @@ export interface EnemyNavigationRequest {
   state: EnemyNavigationAgentState;
   dt: number;
   nearbyObstaclePositions: readonly Vector3[];
+  agentId: string;
 }
+
 
 export interface EnemyNavigationResolution {
   position: Vector3;

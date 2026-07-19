@@ -5018,6 +5018,26 @@ It continues to show:
 - Horizontal jump-speed cap
 - Jump landing diagnostics in shared movement results
 
+# Changelog — 0.6.1g6
+
+## Added
+
+- Planner-owned traversal phases
+- Landing connectivity validation
+- Post-landing waypoint storage
+- Landing-surface reservation
+- Traversal attempt limits and cooldowns
+- Landing settle period
+- Traversal diagnostics
+
+## Fixed
+
+- Repeated jumps onto the same platform
+- Enemies becoming trapped after landing
+- Supporting surfaces reporting body overlap
+- Watchdog and navigation independently requesting jumps
+- Multiple enemies choosing the same small landing position
+
 ### Validate
 ```bash
 npm run build

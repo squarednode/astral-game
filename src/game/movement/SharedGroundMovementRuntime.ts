@@ -98,7 +98,7 @@ export class SharedGroundMovementRuntime {
     const desired = requestedPosition.clone();
     let desiredFoot = desired.subtract(new Vector3(0, this.actorGroundOffset, 0));
 
-    if (jumpRequested && this.grounded) {
+    if (jumpRequested && this.grounded && this.airborneHorizontalVelocity.lengthSquared() <= 0.000001) {
       const landing = this.supports.queryLandingSurface(desiredFoot);
       const landingHeight = landing?.supportHeight ?? desiredFoot.y;
       const heightDelta = landingHeight - this.supportHeight;

@@ -1370,15 +1370,24 @@ function applyWorldAwareEnemyMovement(
     state: enemy.navigationState,
     dt,
     nearbyObstaclePositions,
+    agentId: enemy.entityId,
   });
 
   const movementResult = enemy.movementRuntime.resolveToward(
     resolution.position,
     desiredPosition,
     dt,
-    resolution.mode === 'jump',
+    enemy.navigationState.traversalPhase === 'takeoff',
   );
   enemy.lastMovementResult = movementResult;
+  if (enemy.navigationState.traversalPhase === 'takeoff' && !movementResult.grounded) {
+    enemy.navigationState.traversalPhase = 'airborne';
+  } else if (enemy.navigationState.traversalPhase === 'airborne' && movementResult.grounded) {
+    enemy.navigationState.traversalPhase = 'landing';
+    enemy.navigationState.traversalSettleRemaining = 0.2;
+  } else if (enemy.navigationState.traversalPhase === 'landing') {
+    enemy.navigationState.traversalPhase = 'settle';
+  }
   enemy.navigationState.grounded = movementResult.grounded;
   enemy.navigationState.verticalVelocity = enemy.movementRuntime.getVerticalVelocity();
   enemy.navigationState.supportHeight = movementResult.supportHeight;
@@ -2036,6 +2045,15 @@ function spawnEnemy(
       lastReplanAt: performance.now(),
       blockedTime: 0,
       platformWaitTime: 0,
+      traversalPhase: 'idle',
+      traversalLandingPosition: null,
+      traversalExitPosition: null,
+      traversalSettleRemaining: 0,
+      traversalAttemptCount: 0,
+      traversalLastAttemptAt: 0,
+      traversalCooldownUntil: 0,
+      traversalOwner: null,
+      reservedLandingSurfaceId: null,
     },
     movementRuntime: null as unknown as SharedGroundMovementRuntime,
     lastMovementResult: null,
@@ -3451,6 +3469,9 @@ scene.onBeforeRenderObservable.add(() => {
           `Last Block   ${inspectedEnemy.navigationState.lastBlockedReason}`,
           `Last Replan  ${((performance.now() - inspectedEnemy.navigationState.lastReplanAt) / 1000).toFixed(2)}s`,
           `Traversal    ${inspectedEnemy.navigationState.activeTraversalLinkId ?? 'none'}`,
+          `Trav Phase   ${inspectedEnemy.navigationState.traversalPhase}`,
+          `Trav Attempts ${inspectedEnemy.navigationState.traversalAttemptCount}`,
+          `Landing Res  ${inspectedEnemy.navigationState.reservedLandingSurfaceId ?? 'none'}`,
           `Blocked      ${inspectedEnemy.navigationState.blockedTime.toFixed(2)}s`,
           `Can Jump     ${inspectedEnemy.navigationCapabilities.canJump ? 'yes' : 'no'}`,
           `Can Drop     ${inspectedEnemy.navigationCapabilities.canDrop ? 'yes' : 'no'}`,

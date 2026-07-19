@@ -8,6 +8,7 @@ import type {
 import { NavigationSurfaceManager } from './NavigationSurfaceManager';
 
 export class EnemyNavigationSystem {
+  private readonly landingReservations = new Map<string, string>();
   constructor(
     private readonly surfaces: NavigationSurfaceManager,
     private readonly links: ReadonlyArray<EnemyTraversalLink>,
@@ -16,6 +17,38 @@ export class EnemyNavigationSystem {
   resolve(request: EnemyNavigationRequest): EnemyNavigationResolution {
     const { state, capabilities } = request;
     const desired = request.desiredPosition.clone();
+    const now = performance.now();
+
+    if (state.traversalPhase === 'takeoff' || state.traversalPhase === 'airborne' || state.traversalPhase === 'landing') {
+      const landing = state.traversalLandingPosition ?? request.currentPosition;
+      state.mode = state.traversalPhase === 'landing' ? 'idle' : 'jump';
+      return this.success(landing.clone(), state.mode, state.activeTraversalLinkId, false);
+    }
+    if (state.traversalPhase === 'settle') {
+      state.traversalSettleRemaining = Math.max(0, state.traversalSettleRemaining - request.dt);
+      if (state.traversalSettleRemaining > 0) {
+        state.mode = 'idle';
+        return this.success(request.currentPosition.clone(), 'idle', state.activeTraversalLinkId, false);
+      }
+      state.traversalPhase = 'complete';
+    }
+    if (state.traversalPhase === 'complete') {
+      const reserved = state.reservedLandingSurfaceId;
+      if (reserved && this.landingReservations.get(reserved) === request.agentId) {
+        this.landingReservations.delete(reserved);
+      }
+      state.reservedLandingSurfaceId = null;
+      state.activeTraversalLinkId = null;
+      state.traversalOwner = null;
+      state.traversalPhase = 'idle';
+      state.traversalAttemptCount = 0;
+      state.traversalCooldownUntil = 0;
+      if (state.traversalExitPosition) {
+        desired.copyFrom(state.traversalExitPosition);
+        state.traversalExitPosition = null;
+      }
+      state.traversalLandingPosition = null;
+    }
     const current = request.currentPosition.clone();
     const homeDistance = Vector3.Distance(desired, request.homePosition);
 
@@ -146,32 +179,48 @@ export class EnemyNavigationSystem {
     support: number,
     mode: 'jump' | 'drop',
   ): EnemyNavigationResolution {
-    const state = request.state;
-    const next = target.clone();
-    const gravity = 18;
-    if (mode === 'jump' && state.grounded) {
-      state.verticalVelocity = Math.sqrt(
-        2 * gravity * Math.max(0.35, support - request.currentPosition.y + 0.5),
-      );
-      state.grounded = false;
+    const { state, capabilities } = request;
+    const radius = capabilities.radius + capabilities.navigationSkin;
+    const landingValidation = this.surfaces.validateLanding(
+      target, radius, Math.max(0, state.lastValidPosition.y - state.supportHeight),
+      capabilities.minimumSupportRatio,
+    );
+    if (!landingValidation.valid) {
+      state.traversalAttemptCount += 1;
+      state.traversalCooldownUntil = performance.now() + 2200;
+      return this.fail(request.currentPosition, state, 'invalid-landing');
     }
-    state.verticalVelocity -= gravity * request.dt;
-    next.y = request.currentPosition.y + state.verticalVelocity * request.dt;
-    if (next.y <= support) {
-      next.y = support;
-      state.verticalVelocity = 0;
-      state.grounded = true;
-      const landed = this.surfaces.sampleSupport(next.x, next.z);
-      state.supportHeight = landed.height;
-      state.surfaceType = landed.type;
-      state.supportSurfaceId = landed.surfaceId;
+    const postLanding = this.surfaces.findConnectedExit(
+      landingValidation.position, request.desiredPosition, radius,
+      Math.max(0, state.lastValidPosition.y - state.supportHeight),
+      capabilities.minimumSupportRatio,
+    );
+    const goalIsLanding = Vector3.Distance(landingValidation.position, request.desiredPosition) <= radius * 1.5;
+    if (!postLanding && !goalIsLanding) {
+      state.traversalAttemptCount += 1;
+      state.traversalCooldownUntil = performance.now() + 2500;
+      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
     }
+    const surfaceId = landingValidation.support.surfaceId;
+    if (surfaceId) {
+      const owner = this.landingReservations.get(surfaceId);
+      if (owner && owner !== request.agentId) {
+        return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
+      }
+      this.landingReservations.set(surfaceId, request.agentId);
+      state.reservedLandingSurfaceId = surfaceId;
+    }
+    state.traversalPhase = mode === 'jump' ? 'takeoff' : 'airborne';
+    state.traversalOwner = 'planner';
+    state.traversalLandingPosition = landingValidation.position.clone();
+    state.traversalExitPosition = postLanding?.clone() ?? null;
+    state.traversalSettleRemaining = 0.2;
+    state.traversalLastAttemptAt = performance.now();
+    state.traversalAttemptCount += 1;
     state.mode = mode;
     state.failureReason = 'none';
-    state.lastBlockedReason = 'none';
     state.pathValid = true;
-    state.lastValidPosition.copyFrom(next);
-    return this.success(next, mode, state.activeTraversalLinkId, false);
+    return this.success(landingValidation.position.clone(), mode, state.activeTraversalLinkId, true);
   }
 
   private useTraversal(
@@ -180,45 +229,27 @@ export class EnemyNavigationSystem {
     actorOffset: number,
   ): EnemyNavigationResolution {
     const { capabilities, state } = request;
-    if (link.maximumEnemyRadius && capabilities.radius > link.maximumEnemyRadius) {
+    const now = performance.now();
+    if (now < state.traversalCooldownUntil || state.traversalAttemptCount >= 2) {
       return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
     }
-    if (link.allowedRoles && !link.allowedRoles.includes(request.role)) {
-      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
-    }
-    if (link.type === 'platform' && !capabilities.canUsePlatforms) {
-      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
-    }
-    if (link.type === 'jump' && !capabilities.canJump) {
-      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
-    }
-    if (link.type === 'drop' && !capabilities.canDrop) {
-      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
-    }
+    if (link.maximumEnemyRadius && capabilities.radius > link.maximumEnemyRadius) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
+    if (link.allowedRoles && !link.allowedRoles.includes(request.role)) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
+    if (link.type === 'platform' && !capabilities.canUsePlatforms) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
+    if (link.type === 'jump' && !capabilities.canJump) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
+    if (link.type === 'drop' && !capabilities.canDrop) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
 
-    const towardExit = link.exitPosition.subtract(request.currentPosition);
-    const distance = towardExit.length();
-    if (distance > 0.001) towardExit.normalize();
-    const step = Math.min(distance, Math.max(0.05, request.dt * 4.2));
-    const next = request.currentPosition.add(towardExit.scale(step));
-    const support = this.surfaces.sampleSupport(next.x, next.z);
-    if (support.walkable) next.y = support.height + actorOffset;
-
-    state.supportHeight = support.height;
-    state.surfaceType = support.type;
-    state.supportSurfaceId = support.surfaceId;
     state.activeTraversalLinkId = link.id;
-    state.mode =
-      link.type === 'platform' || link.type === 'lift'
-        ? 'platform'
-        : link.type === 'drop'
-          ? 'drop'
-          : 'jump';
-    state.failureReason = 'none';
-    state.lastBlockedReason = 'none';
-    state.pathValid = true;
-    state.lastValidPosition.copyFrom(next);
-    return this.success(next, state.mode, link.id, true);
+    if (link.type === 'platform' || link.type === 'lift') {
+      state.traversalPhase = 'approach';
+      state.traversalOwner = 'planner';
+      state.mode = 'platform';
+      return this.success(link.entryPosition.clone(), 'platform', link.id, true);
+    }
+    return this.beginBallisticMove(
+      request, link.exitPosition.clone(), link.exitPosition.y + actorOffset,
+      link.type === 'drop' ? 'drop' : 'jump',
+    );
   }
 
   private findTraversalLink(
@@ -228,6 +259,7 @@ export class EnemyNavigationSystem {
   ): EnemyTraversalLink | null {
     let best: EnemyTraversalLink | null = null;
     let bestScore = Number.POSITIVE_INFINITY;
+    if (performance.now() < request.state.traversalCooldownUntil || request.state.traversalAttemptCount >= 2) return null;
     for (const link of this.links) {
       const entryDistance = Vector3.Distance(current, link.entryPosition);
       if (entryDistance > link.activationRadius + request.capabilities.maximumJumpDistance) continue;

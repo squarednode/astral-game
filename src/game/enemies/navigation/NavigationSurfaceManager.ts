@@ -232,6 +232,54 @@ export class NavigationSurfaceManager {
     return best;
   }
 
+  findConnectedExit(
+    landing: Vector3,
+    goal: Vector3,
+    radius: number,
+    actorOffset: number,
+    minimumSupportRatio: number,
+  ): Vector3 | null {
+    const toGoal = goal.subtract(landing);
+    toGoal.y = 0;
+    if (toGoal.lengthSquared() <= 0.0001) return landing.clone();
+    toGoal.normalize();
+    const tangent = new Vector3(-toGoal.z, 0, toGoal.x);
+    const stride = Math.max(radius * 1.35, 0.65);
+    const candidates = [
+      landing.add(toGoal.scale(stride)),
+      landing.add(toGoal.scale(stride * 0.65)).add(tangent.scale(stride * 0.8)),
+      landing.add(toGoal.scale(stride * 0.65)).add(tangent.scale(-stride * 0.8)),
+    ];
+    for (const candidate of candidates) {
+      const support = this.sampleSupport(candidate.x, candidate.z);
+      if (!support.walkable) continue;
+      candidate.y = support.height + actorOffset;
+      const footprint = this.sampleFootprint(candidate, radius);
+      if (footprint.ratio < minimumSupportRatio) continue;
+      if (this.isBlocked(candidate, radius, support)) continue;
+      if (this.isDynamicBlocked(candidate, radius, support)) continue;
+      return candidate;
+    }
+    return null;
+  }
+
+  validateLanding(
+    landing: Vector3,
+    radius: number,
+    actorOffset: number,
+    minimumSupportRatio: number,
+  ): { valid: boolean; position: Vector3; support: NavigationSupportSample; ratio: number } {
+    const position = landing.clone();
+    const support = this.sampleSupport(position.x, position.z);
+    position.y = support.height + actorOffset;
+    const footprint = this.sampleFootprint(position, radius);
+    const valid = support.walkable &&
+      footprint.ratio >= minimumSupportRatio &&
+      !this.isBlocked(position, radius, support) &&
+      !this.isDynamicBlocked(position, radius, support);
+    return { valid, position, support, ratio: footprint.ratio };
+  }
+
   projectToSupport(position: Vector3, actorOffset: number): NavigationSupportSample {
     const sample = this.sampleSupport(position.x, position.z);
     if (sample.walkable) position.y = sample.height + actorOffset;
@@ -239,8 +287,15 @@ export class NavigationSurfaceManager {
   }
 
   isBlocked(position: Vector3, radius: number, support: NavigationSupportSample): boolean {
+    const supportingSurface = support.surfaceId
+      ? this.surfaces.find(surface => surface.id === support.surfaceId)
+      : undefined;
     return this.colliders.some(collider => {
       if (collider.interaction === 'hazard') return false;
+      if (supportingSurface?.colliderLabel === collider.label) {
+        const supportTop = support.height;
+        if (position.y - radius >= supportTop - 0.16) return false;
+      }
       if (
         collider.interaction === 'traversable' &&
         support.height >= (collider.clearanceHeight ?? 0.65) - 0.08
