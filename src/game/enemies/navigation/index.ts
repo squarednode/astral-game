@@ -4,3 +4,4 @@ export * from './EnemySpawnResolver';
 export * from './EnemyTraversalLinkBuilder';
 export * from './EnemyNavigationSystem';
 export * from './EnemyNavigationDebugOverlay';
+export * from './NavigationSurfaceManager';

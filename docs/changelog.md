@@ -4912,6 +4912,33 @@ It continues to show:
 - Enemy combat definitions
 - Combat presentation tuning
 
+# Changelog — 0.6.1g1
+
+## Added
+
+- `NavigationSurfaceManager`
+- Navigation support classification
+- Final ground/support projection
+- Surface-aware spawn elevation
+- Path validity and path-age diagnostics
+- Categorized navigation rejection diagnostics
+- Grouped navigation debug controls
+
+## Fixed
+
+- Water volumes blocking valid bridge routes
+- Enemies losing or retaining incorrect vertical elevation
+- Dynamic supports being treated as obstacles while an enemy stood on them
+- Spawned enemies ignoring elevated support height
+
+## Unchanged
+
+- Enemy tactical ability selection
+- Detection and preferred ranges
+- Leash behavior
+- Combat values
+- Targeting and projectile tuning
+
 ### Validate
 ```bash
 npm run build

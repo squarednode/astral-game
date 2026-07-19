@@ -1,4 +1,5 @@
 import type { Vector3 } from '@babylonjs/core';
+import type { NavigationSurfaceType } from './NavigationSurfaceManager';
 
 export type EnemyTraversalType =
   | 'jump'
@@ -65,6 +66,11 @@ export interface EnemyNavigationAgentState {
   lastReplanAt: number;
   blockedTime: number;
   platformWaitTime: number;
+  surfaceType: NavigationSurfaceType;
+  supportSurfaceId: string | null;
+  pathValid: boolean;
+  pathAge: number;
+  lastBlockedReason: EnemyNavigationFailureReason;
 }
 
 export interface EnemyNavigationRequest {

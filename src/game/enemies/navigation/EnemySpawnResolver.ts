@@ -1,23 +1,20 @@
 import { Vector3 } from '@babylonjs/core';
-import type { WorldCollider } from '../../world/WorldTypes';
-import type { WorldVolume } from '../../world/WorldVolumeTypes';
 import type {
   EnemyNavigationCapabilities,
   EnemyNavigationFailureReason,
   EnemySpawnCandidateDebug,
 } from './EnemyNavigationTypes';
+import { NavigationSurfaceManager } from './NavigationSurfaceManager';
 
 export interface EnemySpawnResolution {
   position: Vector3 | null;
+  supportHeight: number;
   candidates: readonly EnemySpawnCandidateDebug[];
   failureReason: EnemyNavigationFailureReason;
 }
 
 export class EnemySpawnResolver {
-  constructor(
-    private readonly colliders: ReadonlyArray<WorldCollider>,
-    private readonly volumes: ReadonlyArray<WorldVolume>,
-  ) {}
+  constructor(private readonly surfaces: NavigationSurfaceManager) {}
 
   resolve(
     requested: Vector3,
@@ -33,27 +30,33 @@ export class EnemySpawnResolver {
       const radius = (searchRadius * ring) / 4;
       for (let index = 0; index < searchSteps; index += 1) {
         const angle = (index / searchSteps) * Math.PI * 2 + ring * 0.31;
-        points.push(
-          new Vector3(
-            requested.x + Math.cos(angle) * radius,
-            0,
-            requested.z + Math.sin(angle) * radius,
-          ),
-        );
+        points.push(new Vector3(
+          requested.x + Math.cos(angle) * radius,
+          0,
+          requested.z + Math.sin(angle) * radius,
+        ));
       }
     }
 
     for (const point of points) {
-      const reason = this.validate(point, capabilities, occupied);
+      const support = this.surfaces.sampleSupport(point.x, point.z);
+      point.y = support.height;
+      const reason = this.validate(point, support.walkable, capabilities, occupied);
       const valid = reason === 'none';
       candidates.push({ position: point.clone(), valid, reason });
       if (valid) {
-        return { position: point, candidates, failureReason: 'none' };
+        return {
+          position: point,
+          supportHeight: support.height,
+          candidates,
+          failureReason: 'none',
+        };
       }
     }
 
     return {
       position: null,
+      supportHeight: 0,
       candidates,
       failureReason: 'spawn-position-invalid',
     };
@@ -61,59 +64,26 @@ export class EnemySpawnResolver {
 
   private validate(
     point: Vector3,
+    walkable: boolean,
     capabilities: Readonly<EnemyNavigationCapabilities>,
     occupied: readonly Vector3[],
   ): EnemyNavigationFailureReason {
-    if (this.isBlocked(point, capabilities.radius)) {
+    if (!walkable) return 'outside-navigation-zone';
+    const support = this.surfaces.sampleSupport(point.x, point.z);
+    if (this.surfaces.isBlocked(point, capabilities.radius, support)) {
       return 'blocked-by-solid';
     }
-
-    if (this.isRestrictedVolume(point)) {
-      return 'outside-navigation-zone';
-    }
-
-    const minimumSeparation = capabilities.radius * 2 + 0.25;
-    if (
-      occupied.some(
-        position => Vector3.DistanceSquared(position, point) < minimumSeparation * minimumSeparation,
-      )
-    ) {
+    if (this.surfaces.isDynamicBlocked(point, capabilities.radius, support)) {
       return 'blocked-by-dynamic-obstacle';
     }
 
+    const minimumSeparation = capabilities.radius * 2 + 0.25;
+    if (occupied.some(position => {
+      const dx = position.x - point.x;
+      const dz = position.z - point.z;
+      return dx * dx + dz * dz < minimumSeparation * minimumSeparation;
+    })) return 'blocked-by-dynamic-obstacle';
+
     return 'none';
-  }
-
-  private isBlocked(point: Vector3, radius: number): boolean {
-    return this.colliders.some(collider => {
-      if (collider.interaction === 'hazard') return false;
-      if (collider.kind === 'circle') {
-        const dx = point.x - collider.centerX;
-        const dz = point.z - collider.centerZ;
-        const combined = collider.radius + radius;
-        return dx * dx + dz * dz < combined * combined;
-      }
-      return (
-        Math.abs(point.x - collider.centerX) < collider.halfWidth + radius &&
-        Math.abs(point.z - collider.centerZ) < collider.halfDepth + radius
-      );
-    });
-  }
-
-  private isRestrictedVolume(point: Vector3): boolean {
-    return this.volumes.some(volume => {
-      if (
-        volume.kind !== 'water-hazard' &&
-        volume.kind !== 'hazard' &&
-        volume.kind !== 'constraint'
-      ) {
-        return false;
-      }
-      const footprint = volume.footprint;
-      return (
-        Math.abs(point.x - footprint.centerX) <= footprint.halfWidth &&
-        Math.abs(point.z - footprint.centerZ) <= footprint.halfDepth
-      );
-    });
   }
 }

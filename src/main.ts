@@ -85,6 +85,7 @@ import type { EnemyRuntimeActor } from './game/enemies/runtime';
 import {
   EnemyNavigationDebugOverlay,
   EnemyNavigationSystem,
+  NavigationSurfaceManager,
   EnemySpawnResolver,
   buildEnemyTraversalLinks,
   capabilitiesForEnemy,
@@ -425,15 +426,15 @@ const worldVolumes = new WorldVolumeSystem(
 const enemyTraversalLinks = buildEnemyTraversalLinks(
   outdoorZone.traversalSurfaces,
 );
-const enemySpawnResolver = new EnemySpawnResolver(
-  outdoorZone.colliders,
-  outdoorZone.worldVolumes,
-);
-const enemyNavigation = new EnemyNavigationSystem(
+const enemyNavigationSurfaces = new NavigationSurfaceManager(
   outdoorZone.colliders,
   outdoorZone.traversalSurfaces,
   outdoorZone.dynamicColliders,
   outdoorZone.worldVolumes,
+);
+const enemySpawnResolver = new EnemySpawnResolver(enemyNavigationSurfaces);
+const enemyNavigation = new EnemyNavigationSystem(
+  enemyNavigationSurfaces,
   enemyTraversalLinks,
 );
 const enemyNavigationDebug = new EnemyNavigationDebugOverlay(
@@ -1795,7 +1796,11 @@ function spawnEnemy(
       ? MeshBuilder.CreateBox('enemy-crab', { width: 1.5, height: 0.55, depth: 1.05 }, scene)
       : MeshBuilder.CreateCapsule(`enemy-${definition.role}`, { height: definition.role.includes('mage') || definition.role === 'frost-caster' || definition.role === 'mother-wolf' ? 1.8 : 1.5, radius: definition.role === 'wolf' ? 0.40 : elite ? 0.56 : 0.46 }, scene);
   const y = definition.role === 'boss' ? 1.45 : definition.role === 'brute' ? (elite ? 1.1 : 0.9) : definition.role === 'crab' ? 0.3 : 0.75;
-  mesh.position.set(spawnResolution.position.x, y, spawnResolution.position.z);
+  mesh.position.set(
+    spawnResolution.position.x,
+    spawnResolution.supportHeight + y,
+    spawnResolution.position.z,
+  );
   const [r, g, b] = definition.color;
   const [mr, mg, mb] = modifier.colorShift;
   mesh.material = mat(`enemy-${definition.role}-${variant.variantId}-${modifier.modifierId}`, new Color3(Math.min(1, r + mr), Math.min(1, g + mg), Math.min(1, b + mb)), elite ? 0.2 : 0.04);
@@ -1883,7 +1888,18 @@ function spawnEnemy(
       failureReason: 'none',
       verticalVelocity: 0,
       grounded: true,
-      supportHeight: 0,
+      supportHeight: spawnResolution.supportHeight,
+      surfaceType: enemyNavigationSurfaces.sampleSupport(
+        spawnResolution.position.x,
+        spawnResolution.position.z,
+      ).type,
+      supportSurfaceId: enemyNavigationSurfaces.sampleSupport(
+        spawnResolution.position.x,
+        spawnResolution.position.z,
+      ).surfaceId,
+      pathValid: true,
+      pathAge: 0,
+      lastBlockedReason: 'none',
       activeTraversalLinkId: null,
       routeGoal: null,
       lastValidPosition: mesh.position.clone(),
@@ -3284,6 +3300,12 @@ scene.onBeforeRenderObservable.add(() => {
           `Nav Failure  ${inspectedEnemy.navigationState.failureReason}`,
           `Grounded     ${inspectedEnemy.navigationState.grounded ? 'yes' : 'no'}`,
           `Support      ${inspectedEnemy.navigationState.supportHeight.toFixed(2)}`,
+          `Surface      ${inspectedEnemy.navigationState.surfaceType}`,
+          `Surface ID   ${inspectedEnemy.navigationState.supportSurfaceId ?? 'ground'}`,
+          `Path Valid   ${inspectedEnemy.navigationState.pathValid ? 'yes' : 'no'}`,
+          `Path Age     ${inspectedEnemy.navigationState.pathAge.toFixed(2)}s`,
+          `Last Block   ${inspectedEnemy.navigationState.lastBlockedReason}`,
+          `Last Replan  ${((performance.now() - inspectedEnemy.navigationState.lastReplanAt) / 1000).toFixed(2)}s`,
           `Traversal    ${inspectedEnemy.navigationState.activeTraversalLinkId ?? 'none'}`,
           `Blocked      ${inspectedEnemy.navigationState.blockedTime.toFixed(2)}s`,
           `Can Jump     ${inspectedEnemy.navigationCapabilities.canJump ? 'yes' : 'no'}`,
@@ -3292,6 +3314,15 @@ scene.onBeforeRenderObservable.add(() => {
           `Decisions    ${inspectedEnemy.stateMachine.blackboard.get('decisionCount') ?? 0}`,
         ] : []),
       ].join('\n'),
+    );
+
+    const navigationFailureCounts = enemies.reduce<Record<string, number>>(
+      (counts, enemy) => {
+        const reason = enemy.navigationState.lastBlockedReason;
+        if (reason !== 'none') counts[reason] = (counts[reason] ?? 0) + 1;
+        return counts;
+      },
+      {},
     );
 
     developerHud.setPageText(
@@ -3323,6 +3354,15 @@ scene.onBeforeRenderObservable.add(() => {
         `Dead        ${standardEnemyStateCounts.dead}`,
         `Rejected    ${standardEnemyRejected}`,
         `Elites      ${enemies.filter(enemy => enemy.elite).length}`,
+        '',
+        'NAVIGATION REJECTIONS',
+        `Solid       ${navigationFailureCounts['blocked-by-solid'] ?? 0}`,
+        `Dynamic     ${navigationFailureCounts['blocked-by-dynamic-obstacle'] ?? 0}`,
+        `No Ground   ${navigationFailureCounts['no-ground-ahead'] ?? 0}`,
+        `Landing     ${navigationFailureCounts['invalid-landing'] ?? 0}`,
+        `Traversal   ${navigationFailureCounts['traversal-link-unavailable'] ?? 0}`,
+        `Territory   ${navigationFailureCounts['outside-navigation-zone'] ?? 0}`,
+        `Platform    ${navigationFailureCounts['platform-timeout'] ?? 0}`,
       ].join('\n'),
     );
 

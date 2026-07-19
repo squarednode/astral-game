@@ -1,23 +1,15 @@
 import { Vector3 } from '@babylonjs/core';
 import type {
-  DynamicBoxCollider,
-  TraversalSurface,
-  WorldCollider,
-} from '../../world/WorldTypes';
-import type { WorldVolume } from '../../world/WorldVolumeTypes';
-import type {
   EnemyNavigationFailureReason,
   EnemyNavigationRequest,
   EnemyNavigationResolution,
   EnemyTraversalLink,
 } from './EnemyNavigationTypes';
+import { NavigationSurfaceManager } from './NavigationSurfaceManager';
 
 export class EnemyNavigationSystem {
   constructor(
-    private readonly colliders: ReadonlyArray<WorldCollider>,
-    private readonly surfaces: ReadonlyArray<TraversalSurface>,
-    private readonly dynamicColliders: ReadonlyArray<DynamicBoxCollider>,
-    private readonly volumes: ReadonlyArray<WorldVolume>,
+    private readonly surfaces: NavigationSurfaceManager,
     private readonly links: ReadonlyArray<EnemyTraversalLink>,
   ) {}
 
@@ -28,6 +20,7 @@ export class EnemyNavigationSystem {
     const homeDistance = Vector3.Distance(desired, request.homePosition);
 
     state.routeGoal = desired.clone();
+    state.pathAge += request.dt;
     if (homeDistance > request.leashRange + 0.5) {
       return this.fail(current, state, 'outside-navigation-zone');
     }
@@ -35,6 +28,7 @@ export class EnemyNavigationSystem {
     if (capabilities.flying) {
       state.mode = 'walk';
       state.failureReason = 'none';
+      state.pathValid = true;
       state.lastValidPosition.copyFrom(desired);
       return this.success(desired, 'walk', null, false);
     }
@@ -45,56 +39,75 @@ export class EnemyNavigationSystem {
       capabilities.radius,
       request.nearbyObstaclePositions,
     );
-    const support = this.sampleSupport(dynamicAvoided.x, dynamicAvoided.z);
-    const currentSupport = this.sampleSupport(current.x, current.z);
-    const actorOffset = state.lastValidPosition.y - state.supportHeight;
-    const heightDelta = support - currentSupport;
+    const targetSupport = this.surfaces.sampleSupport(dynamicAvoided.x, dynamicAvoided.z);
+    const currentSupport = this.surfaces.sampleSupport(current.x, current.z);
+    const actorOffset = Math.max(0, state.lastValidPosition.y - state.supportHeight);
+    const heightDelta = targetSupport.height - currentSupport.height;
 
-    if (this.isRestricted(dynamicAvoided)) {
-      return this.tryLocalDetour(request, 'outside-navigation-zone');
+    if (!targetSupport.walkable) {
+      const traversal = this.findTraversalLink(request, current, desired);
+      if (traversal) return this.useTraversal(request, traversal, actorOffset);
+      return this.tryLocalDetour(request, 'outside-navigation-zone', actorOffset);
     }
 
+    dynamicAvoided.y = targetSupport.height + actorOffset;
     if (
-      this.isBlocked(dynamicAvoided, capabilities.radius, support) ||
-      this.isPathBlocked(current, dynamicAvoided, capabilities.radius)
+      this.surfaces.isBlocked(dynamicAvoided, capabilities.radius, targetSupport) ||
+      this.isPathBlocked(current, dynamicAvoided, capabilities.radius, actorOffset)
     ) {
       const traversal = this.findTraversalLink(request, current, desired);
-      if (traversal) return this.useTraversal(request, traversal);
-      return this.tryLocalDetour(request, 'blocked-by-solid');
+      if (traversal) return this.useTraversal(request, traversal, actorOffset);
+      return this.tryLocalDetour(request, 'blocked-by-solid', actorOffset);
     }
 
-    if (this.isDynamicBlocked(dynamicAvoided, capabilities.radius)) {
-      return this.tryLocalDetour(request, 'blocked-by-dynamic-obstacle');
+    if (this.surfaces.isDynamicBlocked(dynamicAvoided, capabilities.radius, targetSupport)) {
+      return this.tryLocalDetour(request, 'blocked-by-dynamic-obstacle', actorOffset);
     }
 
     if (heightDelta > capabilities.maximumStepHeight) {
       const traversal = this.findTraversalLink(request, current, desired);
-      if (traversal) return this.useTraversal(request, traversal);
+      if (traversal) return this.useTraversal(request, traversal, actorOffset);
       if (
         capabilities.canJump &&
         heightDelta <= capabilities.maximumJumpHeight &&
         Vector3.Distance(current, desired) <= capabilities.maximumJumpDistance
       ) {
-        return this.beginBallisticMove(request, dynamicAvoided, support + actorOffset, 'jump');
+        return this.beginBallisticMove(
+          request,
+          dynamicAvoided,
+          targetSupport.height + actorOffset,
+          'jump',
+        );
       }
-      return this.tryLocalDetour(request, 'invalid-landing');
+      return this.tryLocalDetour(request, 'invalid-landing', actorOffset);
     }
 
     if (heightDelta < -capabilities.maximumSafeDrop) {
       if (capabilities.canDrop) {
-        return this.beginBallisticMove(request, dynamicAvoided, support + actorOffset, 'drop');
+        return this.beginBallisticMove(
+          request,
+          dynamicAvoided,
+          targetSupport.height + actorOffset,
+          'drop',
+        );
       }
-      return this.tryLocalDetour(request, 'no-ground-ahead');
+      return this.tryLocalDetour(request, 'no-ground-ahead', actorOffset);
     }
 
-    dynamicAvoided.y = support + actorOffset;
-    state.supportHeight = support;
+    // Final projection is authoritative. It prevents movement updates from
+    // retaining stale Y values after stepping between terrain and platforms.
+    const finalSupport = this.surfaces.projectToSupport(dynamicAvoided, actorOffset);
+    state.supportHeight = finalSupport.height;
+    state.surfaceType = finalSupport.type;
+    state.supportSurfaceId = finalSupport.surfaceId;
     state.verticalVelocity = 0;
     state.grounded = true;
     state.mode = Math.abs(heightDelta) > 0.04 ? 'step' : 'walk';
     state.failureReason = 'none';
+    state.lastBlockedReason = 'none';
     state.activeTraversalLinkId = null;
     state.blockedTime = 0;
+    state.pathValid = true;
     state.lastValidPosition.copyFrom(dynamicAvoided);
     return this.success(dynamicAvoided, state.mode, null, false);
   }
@@ -120,9 +133,15 @@ export class EnemyNavigationSystem {
       next.y = support;
       state.verticalVelocity = 0;
       state.grounded = true;
+      const landed = this.surfaces.sampleSupport(next.x, next.z);
+      state.supportHeight = landed.height;
+      state.surfaceType = landed.type;
+      state.supportSurfaceId = landed.surfaceId;
     }
     state.mode = mode;
     state.failureReason = 'none';
+    state.lastBlockedReason = 'none';
+    state.pathValid = true;
     state.lastValidPosition.copyFrom(next);
     return this.success(next, mode, state.activeTraversalLinkId, false);
   }
@@ -130,6 +149,7 @@ export class EnemyNavigationSystem {
   private useTraversal(
     request: EnemyNavigationRequest,
     link: EnemyTraversalLink,
+    actorOffset: number,
   ): EnemyNavigationResolution {
     const { capabilities, state } = request;
     if (link.maximumEnemyRadius && capabilities.radius > link.maximumEnemyRadius) {
@@ -153,8 +173,12 @@ export class EnemyNavigationSystem {
     if (distance > 0.001) towardExit.normalize();
     const step = Math.min(distance, Math.max(0.05, request.dt * 4.2));
     const next = request.currentPosition.add(towardExit.scale(step));
-    next.y = Math.max(next.y, this.sampleSupport(next.x, next.z));
+    const support = this.surfaces.sampleSupport(next.x, next.z);
+    if (support.walkable) next.y = support.height + actorOffset;
 
+    state.supportHeight = support.height;
+    state.surfaceType = support.type;
+    state.supportSurfaceId = support.surfaceId;
     state.activeTraversalLinkId = link.id;
     state.mode =
       link.type === 'platform' || link.type === 'lift'
@@ -163,6 +187,8 @@ export class EnemyNavigationSystem {
           ? 'drop'
           : 'jump';
     state.failureReason = 'none';
+    state.lastBlockedReason = 'none';
+    state.pathValid = true;
     state.lastValidPosition.copyFrom(next);
     return this.success(next, state.mode, link.id, true);
   }
@@ -189,6 +215,7 @@ export class EnemyNavigationSystem {
   private tryLocalDetour(
     request: EnemyNavigationRequest,
     initialReason: EnemyNavigationFailureReason,
+    actorOffset: number,
   ): EnemyNavigationResolution {
     const current = request.currentPosition;
     const toGoal = request.desiredPosition.subtract(current);
@@ -204,16 +231,22 @@ export class EnemyNavigationSystem {
       const candidate = current
         .add(toGoal.scale(stride * 0.55))
         .add(tangent.scale(stride * side));
-      const support = this.sampleSupport(candidate.x, candidate.z);
-      candidate.y = support + (request.state.lastValidPosition.y - request.state.supportHeight);
+      const support = this.surfaces.sampleSupport(candidate.x, candidate.z);
+      if (!support.walkable) continue;
+      candidate.y = support.height + actorOffset;
       if (
-        !this.isBlocked(candidate, request.capabilities.radius, support) &&
-        !this.isDynamicBlocked(candidate, request.capabilities.radius) &&
-        !this.isRestricted(candidate)
+        !this.surfaces.isBlocked(candidate, request.capabilities.radius, support) &&
+        !this.surfaces.isDynamicBlocked(candidate, request.capabilities.radius, support)
       ) {
         request.state.mode = 'walk';
         request.state.failureReason = initialReason;
+        request.state.lastBlockedReason = initialReason;
         request.state.lastReplanAt = performance.now();
+        request.state.pathAge = 0;
+        request.state.pathValid = true;
+        request.state.supportHeight = support.height;
+        request.state.surfaceType = support.type;
+        request.state.supportSurfaceId = support.surfaceId;
         request.state.lastValidPosition.copyFrom(candidate);
         request.state.blockedTime = 0;
         return this.success(candidate, 'walk', null, true);
@@ -245,115 +278,25 @@ export class EnemyNavigationSystem {
     return adjusted;
   }
 
-  private sampleSupport(x: number, z: number): number {
-    let support = 0;
-    for (const surface of this.surfaces) {
-      if (!this.surfaceContains(surface, x, z)) continue;
-      const height = surface.sampleHeight
-        ? surface.sampleHeight(x, z)
-        : surface.surfaceHeight;
-      support = Math.max(support, height);
-    }
-    for (const collider of this.dynamicColliders) {
-      if (
-        Math.abs(x - collider.center.x) <= collider.halfWidth &&
-        Math.abs(z - collider.center.z) <= collider.halfDepth
-      ) {
-        support = Math.max(support, collider.center.y + collider.halfHeight);
-      }
-    }
-    return support;
-  }
-
-  private surfaceContains(surface: TraversalSurface, x: number, z: number): boolean {
-    if (surface.mode === 'guided') {
-      const axis = surface.end.subtract(surface.start);
-      axis.y = 0;
-      const lengthSquared = axis.lengthSquared();
-      if (lengthSquared <= 0.0001) return false;
-      const relative = new Vector3(x, 0, z).subtract(surface.start);
-      const progress = Math.max(0, Math.min(1, Vector3.Dot(relative, axis) / lengthSquared));
-      const closest = surface.start.add(axis.scale(progress));
-      return Vector3.DistanceSquared(closest, new Vector3(x, closest.y, z)) <= (surface.width * 0.5) ** 2;
-    }
-    if (surface.shape === 'circle') {
-      const dx = x - surface.center.x;
-      const dz = z - surface.center.z;
-      return dx * dx + dz * dz <= surface.radius * surface.radius;
-    }
-    return (
-      Math.abs(x - surface.center.x) <= surface.halfWidth &&
-      Math.abs(z - surface.center.z) <= surface.halfDepth
-    );
-  }
-
-
-  private isPathBlocked(start: Vector3, end: Vector3, radius: number): boolean {
+  private isPathBlocked(
+    start: Vector3,
+    end: Vector3,
+    radius: number,
+    actorOffset: number,
+  ): boolean {
     const distance = Vector3.Distance(start, end);
     const steps = Math.max(1, Math.ceil(distance / 0.35));
     for (let index = 1; index <= steps; index += 1) {
       const point = Vector3.Lerp(start, end, index / steps);
-      const support = this.sampleSupport(point.x, point.z);
-      point.y = support;
+      const support = this.surfaces.sampleSupport(point.x, point.z);
+      if (!support.walkable) return true;
+      point.y = support.height + actorOffset;
       if (
-        this.isBlocked(point, radius, support) ||
-        this.isDynamicBlocked(point, radius) ||
-        this.isRestricted(point)
-      ) {
-        return true;
-      }
+        this.surfaces.isBlocked(point, radius, support) ||
+        this.surfaces.isDynamicBlocked(point, radius, support)
+      ) return true;
     }
     return false;
-  }
-
-  private isBlocked(position: Vector3, radius: number, support: number): boolean {
-    return this.colliders.some(collider => {
-      if (collider.interaction === 'hazard') return false;
-      if (
-        collider.interaction === 'traversable' &&
-        support >= (collider.clearanceHeight ?? 0.65) - 0.08
-      ) {
-        return false;
-      }
-      if (collider.kind === 'circle') {
-        const dx = position.x - collider.centerX;
-        const dz = position.z - collider.centerZ;
-        const combined = collider.radius + radius;
-        return dx * dx + dz * dz < combined * combined;
-      }
-      return (
-        Math.abs(position.x - collider.centerX) < collider.halfWidth + radius &&
-        Math.abs(position.z - collider.centerZ) < collider.halfDepth + radius
-      );
-    });
-  }
-
-  private isDynamicBlocked(position: Vector3, radius: number): boolean {
-    return this.dynamicColliders.some(collider => {
-      const onTop = position.y >= collider.center.y + collider.halfHeight - 0.08;
-      if (onTop) return false;
-      return (
-        Math.abs(position.x - collider.center.x) < collider.halfWidth + radius &&
-        Math.abs(position.z - collider.center.z) < collider.halfDepth + radius
-      );
-    });
-  }
-
-  private isRestricted(position: Vector3): boolean {
-    return this.volumes.some(volume => {
-      if (
-        volume.kind !== 'constraint' &&
-        volume.kind !== 'hazard' &&
-        volume.kind !== 'water-hazard'
-      ) {
-        return false;
-      }
-      const footprint = volume.footprint;
-      return (
-        Math.abs(position.x - footprint.centerX) <= footprint.halfWidth &&
-        Math.abs(position.z - footprint.centerZ) <= footprint.halfDepth
-      );
-    });
   }
 
   private success(
@@ -378,6 +321,8 @@ export class EnemyNavigationSystem {
   ): EnemyNavigationResolution {
     state.mode = 'blocked';
     state.failureReason = reason;
+    state.lastBlockedReason = reason;
+    state.pathValid = false;
     state.blockedTime += 1 / 60;
     return {
       position: state.lastValidPosition.clone(),
