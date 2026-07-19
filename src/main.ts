@@ -7,6 +7,7 @@ import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
 import './ui/menus/SettingsMenu.css';
+import './ui/shared/InteractionPrompt.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -31,6 +32,7 @@ import { EventBus } from './engine/events';
 import { StateMachine } from './engine/state';
 import { AssetRegistry } from './engine/assets';
 import { DefinitionRegistry } from './engine/definitions';
+import { EngineAlphaSnapshotRuntime } from './engine/persistence';
 import {
   CHARACTER_DEFINITION_SCHEMA_VERSION,
   characterDefinitions,
@@ -174,10 +176,13 @@ import {
   ActorRuntime,
   ConditionEvaluator,
   DialogueRuntime,
+  DestinationRegistry,
   MerchantRuntime,
   QuestRuntime,
   WorldInteractionRuntime,
+  WorldMarkerRegistry,
   WorldStateRuntime,
+  WorldTriggerRuntime,
 } from './game/actors';
 import type {
   ActorStateId,
@@ -191,11 +196,13 @@ import {
   merchantDefinitions,
   questDefinitions,
   destinationDefinitions,
+  worldMarkerProfiles,
 } from './game/definitions/actors';
 import { DialogueOverlay } from './ui/actors/DialogueOverlay';
 import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
 import { QuestTracker } from './ui/gameplayloop/QuestTracker';
 import { MerchantOverlay } from './ui/gameplayloop/MerchantOverlay';
+import { InteractionPrompt } from './ui/shared/InteractionPrompt';
 import type {
   GearFamily,
   GearSlot,
@@ -1271,6 +1278,7 @@ function updateGroundLoot(dt: number): void {
   const target = hoveredGroundLoot ?? nearestEquipmentDrop();
   if (target) {
     lootInteractionRuntime.target(target.id);
+    requestInteractionPrompt(100, 'Pick up', target.label);
   } else {
     lootInteractionRuntime.clear();
   }
@@ -1401,24 +1409,43 @@ const actorInteractionRuntime = new WorldInteractionRuntime();
 let hoveredActorId: string | null = null;
 let dialogueActorId: string | null = null;
 
-const actorPrompt = document.createElement('div');
-actorPrompt.id = 'actor-interaction-prompt';
-actorPrompt.hidden = true;
-actorPrompt.style.cssText = [
-  'position:fixed',
-  'left:50%',
-  'bottom:112px',
-  'transform:translateX(-50%)',
-  'z-index:80',
-  'padding:8px 12px',
-  'border:1px solid rgba(125,174,242,.38)',
-  'border-radius:7px',
-  'background:rgba(7,13,23,.91)',
-  'color:white',
-  'font:700 13px system-ui,sans-serif',
-  'pointer-events:none',
-].join(';');
-document.body.appendChild(actorPrompt);
+const interactionPrompt = new InteractionPrompt(document.body);
+let pendingInteractionPrompt: {
+  priority: number;
+  action: string;
+  subject: string;
+  detail?: string;
+  disabled?: boolean;
+} | null = null;
+
+function beginInteractionPromptFrame(): void {
+  pendingInteractionPrompt = null;
+}
+
+function requestInteractionPrompt(
+  priority: number,
+  action: string,
+  subject: string,
+  detail?: string,
+  disabled = false,
+): void {
+  if (pendingInteractionPrompt && pendingInteractionPrompt.priority > priority) return;
+  pendingInteractionPrompt = { priority, action, subject, detail, disabled };
+}
+
+function renderInteractionPrompt(): void {
+  if (!pendingInteractionPrompt) {
+    interactionPrompt.hide();
+    return;
+  }
+  interactionPrompt.show({
+    action: pendingInteractionPrompt.action,
+    subject: pendingInteractionPrompt.subject,
+    detail: pendingInteractionPrompt.detail,
+    disabled: pendingInteractionPrompt.disabled,
+    keyLabel: input.getBindingLabel('interact'),
+  });
+}
 
 let dialogueRuntime: DialogueRuntime;
 let questRuntime: QuestRuntime;
@@ -1436,9 +1463,8 @@ const actorConditionEvaluator = new ConditionEvaluator({
     actorRuntimes.get(id)?.machine.getCurrentStateId() ?? undefined,
 });
 
-const destinationRegistry = new Map(
-  destinationDefinitions.map(destination => [destination.id, destination]),
-);
+const destinationRegistry = new DestinationRegistry(destinationDefinitions);
+const worldMarkerRegistry = new WorldMarkerRegistry(worldMarkerProfiles);
 
 function teleportPlayerToLandmark(
   landmarkId: string,
@@ -1469,6 +1495,7 @@ function travelToDestination(destinationId: string): boolean {
     return false;
   }
 
+  events.emit('travel.started', { destinationId });
   const travelled = teleportPlayerToLandmark(
     destination.landmarkId,
     'Travelled',
@@ -1479,6 +1506,7 @@ function travelToDestination(destinationId: string): boolean {
     playerRoot.rotation.y = destination.facing;
   }
   worldStateRuntime.setValue('last-destination', destination.id);
+  events.emit('travel.finished', { destinationId });
   return true;
 }
 
@@ -1535,6 +1563,7 @@ const actorActionExecutor = new ActionExecutor({
   openMerchant: id => {
     if (merchantOverlay?.open(id)) {
       input.setContext('inventory');
+      events.emit('merchant.opened', { merchantId: id });
       feed(`Opened merchant: ${id}.`, 'success');
     }
   },
@@ -1542,6 +1571,7 @@ const actorActionExecutor = new ActionExecutor({
     if (questRuntime?.accept(id)) {
       worldStateRuntime.setFlag(`${id}.active`, true);
       worldStateRuntime.setFlag(`${id}.completed`, false);
+      events.emit('quest.accepted', { questId: id });
     }
   },
   completeQuest: id => {
@@ -1549,6 +1579,8 @@ const actorActionExecutor = new ActionExecutor({
     if (completed) {
       worldStateRuntime.setFlag(`${id}.active`, false);
       worldStateRuntime.setFlag(`${id}.completed`, true);
+      events.emit('quest.completed', { questId: id });
+      events.emit('reward.granted', { sourceId: id, rewardType: 'quest' });
     }
     return completed;
   },
@@ -1557,6 +1589,7 @@ const actorActionExecutor = new ActionExecutor({
     if (abandoned) {
       worldStateRuntime.setFlag(`${id}.active`, false);
       worldStateRuntime.setFlag(`${id}.completed`, false);
+      events.emit('quest.abandoned', { questId: id });
     }
     return abandoned;
   },
@@ -1594,6 +1627,53 @@ merchantRuntime = new MerchantRuntime(
   actorConditionEvaluator,
   actorActionExecutor,
 );
+
+const testAreaLandmark = outdoorZone.landmarks.find(landmark => landmark.id === 'movement-course');
+const worldTriggerRuntime = new WorldTriggerRuntime(
+  testAreaLandmark
+    ? [{
+        id: 'trigger.test-area-arrival',
+        displayName: 'Test Area Arrival',
+        shape: {
+          type: 'sphere' as const,
+          center: {
+            x: testAreaLandmark.position.x,
+            y: testAreaLandmark.position.y,
+            z: testAreaLandmark.position.z,
+          },
+          radius: 4,
+        },
+        activation: 'enter' as const,
+        once: false,
+        cooldownSeconds: 2,
+        actions: [
+          { type: 'set-world-flag' as const, flagId: 'test-area-visited', value: true },
+          { type: 'show-notification' as const, text: 'Entered the test area.', tone: 'success' },
+        ],
+      }]
+    : [],
+  actorConditionEvaluator,
+  actorActionExecutor,
+  triggerId => events.emit('world.triggerActivated', { triggerId }),
+);
+
+const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
+  world: worldStateRuntime,
+  inventory: inventoryRuntime,
+  quests: questRuntime,
+  merchants: merchantRuntime,
+  actors: () => Object.fromEntries(actorRuntimes),
+});
+
+Object.assign(globalThis, {
+  astralEngineAlpha: {
+    exportSnapshot: () => engineAlphaSnapshots.serialize(),
+    importSnapshot: (snapshot: ReturnType<typeof engineAlphaSnapshots.serialize>) =>
+      engineAlphaSnapshots.deserialize(snapshot),
+    destinations: () => destinationRegistry.all(),
+    triggers: () => worldTriggerRuntime.snapshot(),
+  },
+});
 questRuntime.subscribe(() => {
   const state = questRuntime.state('quest.wolf-problem');
   worldStateRuntime.setFlag(
@@ -1851,11 +1931,13 @@ function interactWithActor(actorId: string): void {
   if (!runtime) return;
 
   questRuntime?.recordActorInteraction(actorId);
+  events.emit('interaction.started', { actorId, interactionType: dialogueId ? 'dialogue' : 'actor' });
 
   if (dialogueId) {
     runtime.beginInteraction('talking');
     dialogueActorId = actorId;
     if (dialogueRuntime.start(dialogueId)) {
+      events.emit('dialogue.started', { dialogueId, actorId });
       dialogueOverlay.render();
       input.setContext('inventory');
       actorDeveloperPanel.render();
@@ -1875,6 +1957,9 @@ const actorDeveloperPanel = new ActorDeveloperPanel(
     dialogue: () => dialogueRuntime,
     worldState: () => worldStateRuntime,
     quests: () => questRuntime,
+    destinations: () => destinationRegistry.all(),
+    triggers: () => worldTriggerRuntime.snapshot(),
+    exportSnapshot: () => engineAlphaSnapshots.serialize(),
     interact: interactWithActor,
     setState: (actorId, state) =>
       actorRuntimes
@@ -1957,20 +2042,42 @@ function updateActors(dt: number): void {
           visible = false;
         }
       }
+      let markerProfileId = roles.includes('blacksmith')
+        ? 'marker.blacksmith'
+        : roles.includes('merchant')
+          ? 'marker.merchant'
+          : roles.includes('transport')
+            ? 'marker.travel'
+            : 'marker.story';
+      if (candidate.actor.definition.id === 'actor.hunter-mara') {
+        const state = questRuntime.state('quest.wolf-problem');
+        markerProfileId = state === 'available'
+          ? 'marker.quest.available'
+          : state === 'ready-to-complete'
+            ? 'marker.quest.turn-in'
+            : 'marker.quest.active';
+      }
+      const markerProfile = worldMarkerRegistry.get(markerProfileId);
+      if (markerProfile) {
+        color = new Color3(
+          markerProfile.color.r,
+          markerProfile.color.g,
+          markerProfile.color.b,
+        );
+      }
       marker.visibility = visible ? 1 : 0;
       markerMaterial.diffuseColor = color;
       markerMaterial.emissiveColor = color.scale(0.75);
-      marker.scaling.setAll(1 + Math.sin(performance.now() / 260) * 0.12);
+      const pulse = markerProfile?.pulse === true
+        ? 1 + Math.sin(performance.now() / 260) * 0.12
+        : 1;
+      marker.scaling.setAll(pulse);
     }
   }
 
   if (targeted && !dialogueRuntime.snapshot().active) {
     const profile = targeted.interaction;
-    actorPrompt.textContent =
-      `[E] ${profile?.promptVerb ?? 'Interact with'} ${targeted.definition.displayName}`;
-    actorPrompt.hidden = false;
-  } else {
-    actorPrompt.hidden = true;
+    requestInteractionPrompt(50, profile?.promptVerb ?? 'Interact with', targeted.definition.displayName);
   }
 
   if (
@@ -4240,10 +4347,13 @@ scene.onBeforeRenderObservable.add(() => {
   const now = performance.now();
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  beginInteractionPromptFrame();
   updateGroundLoot(realDt);
   input.update();
   const dt = combat.update(realDt);
   updateActors(dt);
+  worldTriggerRuntime.update(playerRoot.position, dt);
+  renderInteractionPrompt();
   enemyTelegraphs.update(realDt);
   validationStateMachine.update(realDt);
 

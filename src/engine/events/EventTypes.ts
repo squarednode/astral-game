@@ -61,6 +61,19 @@ export interface EngineEventMap {
   'world.triggerActivated': {
     triggerId: string;
   };
+  'interaction.started': { actorId?: string; interactionType: string };
+  'interaction.completed': { actorId?: string; interactionType: string };
+  'dialogue.started': { dialogueId: string; actorId?: string };
+  'dialogue.completed': { dialogueId: string; actorId?: string };
+  'merchant.opened': { merchantId: string };
+  'merchant.closed': { merchantId: string };
+  'quest.accepted': { questId: string };
+  'quest.completed': { questId: string };
+  'quest.abandoned': { questId: string };
+  'quest.objectiveUpdated': { questId: string; objectiveId: string; current: number; required: number };
+  'travel.started': { destinationId: string };
+  'travel.finished': { destinationId: string };
+  'reward.granted': { sourceId: string; rewardType: string };
   'ui.notification': {
     text: string;
     tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'loot';

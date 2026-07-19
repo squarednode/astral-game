@@ -27,6 +27,12 @@ export interface QuestSnapshot {
   objectives: readonly QuestObjectiveSnapshot[];
 }
 
+
+export interface QuestRuntimeSerializedState {
+  trackedQuestId: string | null;
+  quests: Record<string, { state: QuestState; progress: Record<string, number> }>;
+}
+
 export interface QuestRuntimeStateReader {
   getMaterial(materialId: string): number;
   getWorldFlag?(flagId: string): boolean;
@@ -254,6 +260,34 @@ export class QuestRuntime {
   track(id: string | null): void {
     if (id && !this.quests.has(id)) return;
     this.trackedQuestId = id;
+    this.changed();
+  }
+
+  serialize(): QuestRuntimeSerializedState {
+    return {
+      trackedQuestId: this.trackedQuestId,
+      quests: Object.fromEntries(
+        [...this.quests.entries()].map(([id, record]) => [id, {
+          state: record.state,
+          progress: Object.fromEntries(record.progress),
+        }]),
+      ),
+    };
+  }
+
+  deserialize(state: QuestRuntimeSerializedState): void {
+    for (const [id, saved] of Object.entries(state.quests ?? {})) {
+      const record = this.quests.get(id);
+      if (!record) continue;
+      record.state = saved.state;
+      record.progress.clear();
+      Object.entries(saved.progress ?? {}).forEach(([objectiveId, value]) => {
+        record.progress.set(objectiveId, Math.max(0, Math.floor(value)));
+      });
+    }
+    this.trackedQuestId = state.trackedQuestId && this.quests.has(state.trackedQuestId)
+      ? state.trackedQuestId
+      : null;
     this.changed();
   }
 

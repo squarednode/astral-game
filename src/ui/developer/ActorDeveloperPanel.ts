@@ -10,6 +10,9 @@ export interface ActorDeveloperPanelOptions {
   dialogue(): DialogueRuntime;
   worldState(): WorldStateRuntime;
   quests(): QuestRuntime;
+  destinations?(): readonly { id: string; displayName: string }[];
+  triggers?(): readonly { id: string; inside: boolean; activated: boolean; activationCount: number }[];
+  exportSnapshot?(): unknown;
   interact(actorId: string): void;
   setState(actorId: string, state: string): void;
 }
@@ -28,6 +31,8 @@ export class ActorDeveloperPanel {
     const world = this.options.worldState().snapshot();
     const quests = this.options.quests().all();
     const tracked = this.options.quests().tracked();
+    const destinations = this.options.destinations?.() ?? [];
+    const triggers = this.options.triggers?.() ?? [];
 
     this.host.innerHTML = `
       <section class="actor-developer-panel">
@@ -84,7 +89,13 @@ ${tracked.objectives.map(objective => `${objective.completed ? '✓' : '□'} ${
 Next expected event: ${tracked.objectives.find(objective => !objective.completed)?.label ?? (tracked.state === 'ready-to-complete' ? 'Return to quest giver' : 'Reward claimed')}` : 'No tracked quest'}
 
 QUEST MANAGER
-${quests.map(quest => `${quest.state.toUpperCase()}  ${quest.displayName}`).join('\n') || 'None'}</pre>
+${quests.map(quest => `${quest.state.toUpperCase()}  ${quest.displayName}`).join('\n') || 'None'}
+
+DESTINATIONS
+${destinations.map(destination => `${destination.id}  ${destination.displayName}`).join('\n') || 'None'}
+
+WORLD TRIGGERS
+${triggers.map(trigger => `${trigger.activated ? '✓' : '□'} ${trigger.id} inside=${trigger.inside} count=${trigger.activationCount}`).join('\n') || 'None'}</pre>
       </section>
     `;
   }

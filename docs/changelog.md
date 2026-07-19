@@ -5333,6 +5333,27 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Quest offer remaining available after acceptance
 - Existing materials not counting when a pickup quest is accepted
 
+# Changelog — 0.6.5c
+
+## Added
+
+- Serializable runtime contract and combined Engine Alpha snapshot runtime
+- Serialization hooks for actors, quests, merchants, world state, and inventory resources
+- Formal Destination Registry
+- Generic World Trigger Runtime
+- Unified Interaction Prompt
+- Data-driven World Marker Registry and profiles
+- Expanded gameplay Event Bus contracts
+- Destination and trigger diagnostics
+
+## Changed
+
+- Actor and loot interactions now share prompt arbitration.
+- Travel emits start and finish events.
+- Quest acceptance, abandonment, completion, and reward delivery emit events.
+- Actor markers resolve presentation through reusable marker profiles.
+- The existing `gameplayloop` folder name remains unchanged.
+
 ### Validate
 ```bash
 npm run build

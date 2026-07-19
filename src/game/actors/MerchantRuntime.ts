@@ -3,6 +3,11 @@ import type { ActionExecutor } from './ActionExecutor';
 import type { ConditionEvaluator } from './ConditionEvaluator';
 import type { MerchantDefinition } from './ActorComponentTypes';
 
+export interface MerchantRuntimeSerializedState {
+  activeId: string | null;
+  buyback: BuybackEntry[];
+}
+
 export interface BuybackEntry {
   item: GeneratedItemInstance;
   price: number;
@@ -30,6 +35,17 @@ export class MerchantRuntime {
   close(): void { this.activeId = null; }
   active(): MerchantDefinition | null { return this.activeId ? this.definitions.get(this.activeId) ?? null : null; }
   buybackEntries(): readonly BuybackEntry[] { return this.buyback; }
+  serialize(): MerchantRuntimeSerializedState {
+    return { activeId: this.activeId, buyback: this.buyback.map(entry => ({ ...entry })) };
+  }
+
+  deserialize(state: MerchantRuntimeSerializedState): void {
+    this.activeId = state.activeId && this.definitions.has(state.activeId)
+      ? state.activeId
+      : null;
+    this.buyback.splice(0, this.buyback.length, ...(state.buyback ?? []).slice(0, 20));
+  }
+
 
   buyService(entryId: string): boolean {
     const entry = this.active()?.entries.find(candidate => candidate.id === entryId);

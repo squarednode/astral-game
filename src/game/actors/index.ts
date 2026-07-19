@@ -12,3 +12,8 @@ export * from './DialogueRuntime';
 export * from './ActorComponentTypes';
 export * from './QuestRuntime';
 export * from './MerchantRuntime';
+export * from './DestinationRegistry';
+export * from './WorldTriggerTypes';
+export * from './WorldTriggerRuntime';
+export * from './WorldMarkerTypes';
+export * from './WorldMarkerRegistry';

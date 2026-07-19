@@ -7,6 +7,14 @@ export interface InventoryFilterSettings {
   alwaysShowUpgrades: boolean;
 }
 
+
+export interface InventorySerializedState {
+  capacity: number;
+  copper: number;
+  materials: Record<string, number>;
+  filters: InventoryFilterSettings;
+}
+
 export interface InventorySnapshot {
   capacity: number;
   used: number;
@@ -108,6 +116,26 @@ export class InventoryRuntime {
     const maximum = this.filters.autoPickupMaximumRarity;
     return maximum !== 'none' &&
       RARITY_ORDER[item.rarity] <= RARITY_ORDER[maximum];
+  }
+
+  serialize(): InventorySerializedState {
+    return {
+      capacity: this.capacity,
+      copper: this.copper,
+      materials: Object.fromEntries(this.materials),
+      filters: { ...this.filters },
+    };
+  }
+
+  deserialize(state: InventorySerializedState): void {
+    this.capacity = Math.max(1, Math.floor(state.capacity ?? 24));
+    this.copper = Math.max(0, Math.floor(state.copper ?? 0));
+    this.materials.clear();
+    Object.entries(state.materials ?? {}).forEach(([id, value]) => {
+      const amount = Math.max(0, Math.floor(value));
+      if (amount > 0) this.materials.set(id, amount);
+    });
+    this.filters = { ...this.filters, ...(state.filters ?? {}) };
   }
 
   snapshot(items: readonly GeneratedItemInstance[]): InventorySnapshot {

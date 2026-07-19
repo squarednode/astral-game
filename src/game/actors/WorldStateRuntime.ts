@@ -1,5 +1,11 @@
 export type WorldStateValue = string | number | boolean;
 
+export interface WorldStateSerialized {
+  flags: Record<string, boolean>;
+  counters: Record<string, number>;
+  values: Record<string, WorldStateValue>;
+}
+
 export class WorldStateRuntime {
   private readonly flags = new Map<string, boolean>();
   private readonly counters = new Map<string, number>();
@@ -35,11 +41,24 @@ export class WorldStateRuntime {
     this.values.set(id, value);
   }
 
-  snapshot() {
+  serialize(): WorldStateSerialized {
     return {
       flags: Object.fromEntries(this.flags),
       counters: Object.fromEntries(this.counters),
       values: Object.fromEntries(this.values),
     };
+  }
+
+  deserialize(state: WorldStateSerialized): void {
+    this.flags.clear();
+    this.counters.clear();
+    this.values.clear();
+    Object.entries(state.flags ?? {}).forEach(([id, value]) => this.flags.set(id, Boolean(value)));
+    Object.entries(state.counters ?? {}).forEach(([id, value]) => this.counters.set(id, Number(value) || 0));
+    Object.entries(state.values ?? {}).forEach(([id, value]) => this.values.set(id, value));
+  }
+
+  snapshot(): WorldStateSerialized {
+    return this.serialize();
   }
 }

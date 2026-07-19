@@ -1,0 +1,18 @@
+.interaction-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  z-index: 80;
+  padding: 8px 12px;
+  border: 1px solid rgba(125,174,242,.38);
+  border-radius: 7px;
+  background: rgba(7,13,23,.91);
+  color: white;
+  font: 700 13px system-ui,sans-serif;
+  pointer-events: none;
+}
+.interaction-prompt b { color: #8fb9ff; }
+.interaction-prompt strong { color: #fff; }
+.interaction-prompt small { display:block; margin-top:2px; color:#91a0b8; font-weight:500; }
+.interaction-prompt.disabled { border-color: rgba(213,116,116,.38); color:#9a8790; }

@@ -12,6 +12,13 @@ interface ActorContext {
   definition: ActorDefinition;
 }
 
+export interface ActorRuntimeSerializedState {
+  state: ActorStateId;
+  goal: string;
+  available: boolean;
+  failedCondition: string | null;
+}
+
 interface ActorBlackboard {
   goal: string;
   distanceToPlayer: number;
@@ -107,6 +114,26 @@ export class ActorRuntime {
 
   setState(state: ActorStateId): void {
     this.machine.request(state, 'external-state-change');
+  }
+
+  serialize(): ActorRuntimeSerializedState {
+    return {
+      state: this.machine.getCurrentStateId() ?? ACTOR_STATES.spawned,
+      goal: this.machine.blackboard.get('goal'),
+      available: this.machine.blackboard.get('available'),
+      failedCondition: this.machine.blackboard.get('failedCondition'),
+    };
+  }
+
+  deserialize(state: ActorRuntimeSerializedState): void {
+    this.machine.blackboard.patch({
+      goal: state.goal ?? 'Waiting',
+      available: state.available ?? true,
+      failedCondition: state.failedCondition ?? null,
+    });
+    if (state.state && this.machine.hasState(state.state)) {
+      this.machine.request(state.state, 'deserialize');
+    }
   }
 
   snapshot(): ActorRuntimeSnapshot {
