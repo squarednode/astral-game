@@ -190,6 +190,7 @@ import {
   interactionProfiles,
   merchantDefinitions,
   questDefinitions,
+  destinationDefinitions,
 } from './game/definitions/actors';
 import { DialogueOverlay } from './ui/actors/DialogueOverlay';
 import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
@@ -1435,6 +1436,52 @@ const actorConditionEvaluator = new ConditionEvaluator({
     actorRuntimes.get(id)?.machine.getCurrentStateId() ?? undefined,
 });
 
+const destinationRegistry = new Map(
+  destinationDefinitions.map(destination => [destination.id, destination]),
+);
+
+function teleportPlayerToLandmark(
+  landmarkId: string,
+  notificationPrefix = 'Travel',
+): boolean {
+  const landmark = outdoorZone.landmarks.find(
+    candidate => candidate.id === landmarkId,
+  );
+  if (!landmark) {
+    feed(`Unknown destination landmark: ${landmarkId}.`, 'warning');
+    return false;
+  }
+
+  traversalSurfaces.reset();
+  worldVolumes.reset();
+  playerRoot.position.copyFrom(landmark.position);
+  movement.resetVerticalState(landmark.position.y);
+  movement.setPointerWorld(landmark.position);
+  pointerWorld.copyFrom(landmark.position);
+  feed(`${notificationPrefix}: ${landmark.label}.`, 'success');
+  return true;
+}
+
+function travelToDestination(destinationId: string): boolean {
+  const destination = destinationRegistry.get(destinationId);
+  if (!destination) {
+    feed(`Unknown destination: ${destinationId}.`, 'warning');
+    return false;
+  }
+
+  const travelled = teleportPlayerToLandmark(
+    destination.landmarkId,
+    'Travelled',
+  );
+  if (!travelled) return false;
+
+  if (typeof destination.facing === 'number') {
+    playerRoot.rotation.y = destination.facing;
+  }
+  worldStateRuntime.setValue('last-destination', destination.id);
+  return true;
+}
+
 const actorActionExecutor = new ActionExecutor({
   notify: (text, tone) =>
     feed(
@@ -1466,11 +1513,15 @@ const actorActionExecutor = new ActionExecutor({
   },
   giveMaterial: (id, amount) => {
     inventoryRuntime.addMaterial(id, amount);
+    questRuntime?.syncMaterial(id, inventoryRuntime.getMaterial(id));
     if (inventoryOpen) renderPartyManagement();
   },
   removeMaterial: (id, amount) => {
     const removed = inventoryRuntime.removeMaterial(id, amount);
-    if (removed && inventoryOpen) renderPartyManagement();
+    if (removed) {
+      questRuntime?.syncMaterial(id, inventoryRuntime.getMaterial(id));
+      if (inventoryOpen) renderPartyManagement();
+    }
     return removed;
   },
   expandInventory: amount => {
@@ -1488,8 +1539,26 @@ const actorActionExecutor = new ActionExecutor({
     }
   },
   startQuest: id => {
-    worldStateRuntime.setFlag(`${id}.active`, true);
-    questRuntime?.accept(id);
+    if (questRuntime?.accept(id)) {
+      worldStateRuntime.setFlag(`${id}.active`, true);
+      worldStateRuntime.setFlag(`${id}.completed`, false);
+    }
+  },
+  completeQuest: id => {
+    const completed = questRuntime?.complete(id) ?? false;
+    if (completed) {
+      worldStateRuntime.setFlag(`${id}.active`, false);
+      worldStateRuntime.setFlag(`${id}.completed`, true);
+    }
+    return completed;
+  },
+  abandonQuest: id => {
+    const abandoned = questRuntime?.abandon(id) ?? false;
+    if (abandoned) {
+      worldStateRuntime.setFlag(`${id}.active`, false);
+      worldStateRuntime.setFlag(`${id}.completed`, false);
+    }
+    return abandoned;
   },
   advanceQuest: (id, objectiveId, amount = 1) => {
     if (objectiveId) questRuntime?.advance(id, objectiveId, amount);
@@ -1498,10 +1567,8 @@ const actorActionExecutor = new ActionExecutor({
       amount,
     );
   },
-  travel: destinationId => {
-    worldStateRuntime.setValue('last-destination', destinationId);
-    feed(`Travel requested: ${destinationId}.`, 'success');
-  },
+  travelToDestination: destinationId =>
+    travelToDestination(destinationId),
   setActorState: (actorId, state) => {
     actorRuntimes
       .get(actorId)
@@ -1516,22 +1583,88 @@ questRuntime = new QuestRuntime(
     feed(`${title}${detail ? `: ${detail}` : ''}`, 'success');
     questTracker?.notify(title, detail);
   },
+  {
+    getMaterial: id => inventoryRuntime.getMaterial(id),
+    getWorldFlag: id => worldStateRuntime.getFlag(id),
+    getWorldCounter: id => worldStateRuntime.getCounter(id),
+  },
 );
 merchantRuntime = new MerchantRuntime(
   merchantDefinitions,
   actorConditionEvaluator,
   actorActionExecutor,
 );
+questRuntime.subscribe(() => {
+  const state = questRuntime.state('quest.wolf-problem');
+  worldStateRuntime.setFlag(
+    'quest.wolf-problem.active',
+    state === 'active' || state === 'ready-to-complete',
+  );
+  worldStateRuntime.setFlag(
+    'quest.wolf-problem.completed',
+    state === 'completed',
+  );
+});
 questTracker = new QuestTracker(
   ui.getLayer('gameplay'),
   questRuntime,
 );
+const merchantStock = new Map<
+  string,
+  Array<{ item: GeneratedItemInstance; price: number }>
+>();
+
+function buildMerchantStock(
+  merchantId: string,
+  tableId: string,
+  count: number,
+  rarity: ItemRarity = 'common',
+): void {
+  const stock: Array<{ item: GeneratedItemInstance; price: number }> = [];
+  for (let index = 0; index < count; index++) {
+    const item = lootGenerator.generateFromTable(tableId, {
+      itemLevel: Math.max(1, wave),
+      forcedRarity: rarity,
+    })[0];
+    if (item) {
+      stock.push({
+        item,
+        price: Math.max(12, Math.ceil(item.power * 4.5)),
+      });
+    }
+  }
+  merchantStock.set(merchantId, stock);
+}
+
+buildMerchantStock('merchant.camp-supplies', 'loot.standard-enemy', 3);
+buildMerchantStock('merchant.blacksmith', 'loot.standard-enemy', 5, 'magic');
+
 merchantOverlay = new MerchantOverlay(
   ui.getLayer('menus'),
   merchantRuntime,
   {
     inventory: () => bagItems(),
     wallet: () => inventoryRuntime.snapshot(bagItems()),
+    stock: merchantId => merchantStock.get(merchantId) ?? [],
+    purchaseStock: (merchantId, index) => {
+      const stock = merchantStock.get(merchantId);
+      const entry = stock?.[index];
+      if (!stock || !entry) return false;
+      if (!inventoryRuntime.canStore(bagItems())) {
+        feed('Inventory full. Free a slot before buying equipment.', 'warning');
+        return false;
+      }
+      if (!inventoryRuntime.spendCopper(entry.price)) {
+        feed('Not enough copper.', 'warning');
+        return false;
+      }
+      stock.splice(index, 1);
+      loot.unshift(entry.item);
+      refreshWalletStatus();
+      renderPartyManagement();
+      feed(`Purchased ${entry.item.name}.`, 'success');
+      return true;
+    },
     removeItem: itemId => {
       const index = loot.findIndex(item => item.id === itemId);
       if (index < 0) return null;
@@ -1543,11 +1676,12 @@ merchantOverlay = new MerchantOverlay(
     restoreItem: item => {
       if (!inventoryRuntime.canStore(bagItems())) {
         feed('Inventory full. Buyback item could not be restored.', 'warning');
-        return;
+        return false;
       }
       loot.unshift(item);
       renderPartyManagement();
       refreshWalletStatus();
+      return true;
     },
     onClose: () => input.setContext('gameplay'),
     onChanged: () => {
@@ -1679,6 +1813,32 @@ for (const definition of actorRegistry.allActors()) {
 }
 
 function dialogueIdForActor(actorId: string): string | undefined {
+  const wolfQuestState = questRuntime?.state('quest.wolf-problem');
+
+  if (actorId === 'actor.hunter-mara') {
+    switch (wolfQuestState) {
+      case 'active':
+        return 'dialogue.hunter.progress';
+      case 'ready-to-complete':
+        return 'dialogue.hunter.ready';
+      case 'completed':
+        return 'dialogue.hunter.completed';
+      case 'available':
+      default:
+        return 'dialogue.hunter.offer';
+    }
+  }
+
+  if (actorId === 'actor.village-elder') {
+    if (wolfQuestState === 'completed') {
+      return 'dialogue.elder.quest-completed';
+    }
+    if (wolfQuestState === 'active' || wolfQuestState === 'ready-to-complete') {
+      return 'dialogue.elder.quest-active';
+    }
+    return 'dialogue.elder.before-quest';
+  }
+
   return actorRegistry
     .actor(actorId)
     ?.components.find(component => component.type === 'dialogue')
@@ -1691,13 +1851,6 @@ function interactWithActor(actorId: string): void {
   if (!runtime) return;
 
   questRuntime?.recordActorInteraction(actorId);
-  if (
-    actorId === 'actor.hunter-mara' &&
-    questRuntime?.canTurnIn('quest.wolf-problem')
-  ) {
-    questRuntime.complete('quest.wolf-problem');
-    worldStateRuntime.setFlag('quest.wolf-problem.completed', true);
-  }
 
   if (dialogueId) {
     runtime.beginInteraction('talking');
@@ -1791,8 +1944,18 @@ function updateActors(dt: number): void {
       );
       if (candidate.actor.definition.id === 'actor.hunter-mara') {
         const quest = questRuntime.snapshot('quest.wolf-problem');
-        if (quest?.state === 'ready-to-complete') color = new Color3(1, 0.85, 0.15);
-        if (quest?.state === 'completed') visible = false;
+        if (quest?.state === 'available') {
+          color = new Color3(0.72, 0.42, 1);
+          visible = true;
+        } else if (quest?.state === 'active') {
+          color = new Color3(0.55, 0.65, 0.82);
+          visible = true;
+        } else if (quest?.state === 'ready-to-complete') {
+          color = new Color3(1, 0.85, 0.15);
+          visible = true;
+        } else if (quest?.state === 'completed') {
+          visible = false;
+        }
       }
       marker.visibility = visible ? 1 : 0;
       markerMaterial.diffuseColor = color;
@@ -3863,18 +4026,7 @@ const developerActions: DeveloperActions = {
   },
 
   teleportToLandmark: (landmarkId: string) => {
-    const landmark = outdoorZone.landmarks.find(
-      candidate => candidate.id === landmarkId,
-    );
-    if (!landmark) return;
-
-    traversalSurfaces.reset();
-    worldVolumes.reset();
-    playerRoot.position.copyFrom(landmark.position);
-    movement.resetVerticalState(landmark.position.y);
-    movement.setPointerWorld(landmark.position);
-    pointerWorld.copyFrom(landmark.position);
-    feed(`Developer: teleported to ${landmark.label}.`);
+    teleportPlayerToLandmark(landmarkId, 'Developer teleported');
   },
 
   setWorldCollision: (enabled: boolean) => {

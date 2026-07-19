@@ -14,6 +14,16 @@ export interface QuestObjectiveDefinition {
   targetId?: string;
   targetTags?: readonly string[];
   requiredAmount: number;
+  /** Re-evaluate existing player/world state when the quest is accepted. */
+  retroactive?: boolean;
+  /** Remove exactly requiredAmount during turn-in. */
+  consumeOnTurnIn?: boolean;
+}
+
+export interface QuestAbandonPolicy {
+  clearObjectiveProgress: boolean;
+  retainCollectedItems: boolean;
+  returnToAvailable: boolean;
 }
 
 export interface QuestDefinition {
@@ -24,6 +34,8 @@ export interface QuestDefinition {
   objectives: readonly QuestObjectiveDefinition[];
   rewards?: readonly ActionDefinition[];
   repeatable?: boolean;
+  canAbandon?: boolean;
+  abandonPolicy?: QuestAbandonPolicy;
 }
 
 export interface MerchantEntryDefinition {
@@ -51,6 +63,14 @@ export interface TransportDefinition {
   cost?: number;
   condition?: ConditionDefinition;
   travelActions: readonly ActionDefinition[];
+}
+
+export interface DestinationDefinition {
+  id: string;
+  displayName: string;
+  landmarkId: string;
+  facing?: number;
+  zoneId?: string;
 }
 
 export interface AmbientDefinition {

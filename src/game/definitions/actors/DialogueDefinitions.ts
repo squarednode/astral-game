@@ -2,7 +2,7 @@ import type { DialogueDefinition } from '../../actors';
 
 export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
   {
-    id: 'dialogue.hunter-mara',
+    id: 'dialogue.hunter.offer',
     startNodeId: 'start',
     nodes: [
       {
@@ -20,30 +20,76 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
             text: 'I will help.',
             actions: [
               { type: 'start-quest', questId: 'quest.wolf-problem' },
-              {
-                type: 'set-world-flag',
-                flagId: 'quest.wolf-problem.accepted',
-                value: true,
-              },
             ],
             nextNodeId: 'accepted',
           },
-          {
-            id: 'leave',
-            text: 'Not right now.',
-          },
+          { id: 'leave', text: 'Not right now.' },
         ],
       },
       {
         id: 'details',
         speakerId: 'actor.hunter-mara',
-        text: 'Cull the pack, recover their pelts, and find what is driving them from the forest.',
+        text: 'Cull the pack, recover four pelts, and defeat the creature driving them from the forest.',
         nextNodeId: 'start',
       },
       {
         id: 'accepted',
         speakerId: 'actor.hunter-mara',
-        text: 'Bring me four pelts. If you see their keeper, do not underestimate it.',
+        text: 'Good. Your hunt begins now. Bring me four pelts when the keeper is dealt with.',
+        end: true,
+      },
+    ],
+  },
+  {
+    id: 'dialogue.hunter.progress',
+    startNodeId: 'start',
+    nodes: [
+      {
+        id: 'start',
+        speakerId: 'actor.hunter-mara',
+        text: 'The hunt is still active. Keep pressure on the pack and watch for their keeper.',
+        choices: [
+          { id: 'leave', text: 'I will return when it is done.' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'dialogue.hunter.ready',
+    startNodeId: 'start',
+    nodes: [
+      {
+        id: 'start',
+        speakerId: 'actor.hunter-mara',
+        text: 'You made it back. Hand over the four pelts and I will mark the forest route as secure.',
+        choices: [
+          {
+            id: 'complete',
+            text: 'Complete the quest.',
+            actions: [
+              { type: 'complete-quest', questId: 'quest.wolf-problem' },
+            ],
+            nextNodeId: 'completed',
+          },
+          { id: 'leave', text: 'I need another moment.' },
+        ],
+      },
+      {
+        id: 'completed',
+        speakerId: 'actor.hunter-mara',
+        text: 'Well done. The ferry route is open, and the captain can take you onward.',
+        end: true,
+      },
+    ],
+  },
+  {
+    id: 'dialogue.hunter.completed',
+    startNodeId: 'start',
+    nodes: [
+      {
+        id: 'start',
+        speakerId: 'actor.hunter-mara',
+        text: 'The forest route remains secure. The captain is ready when you are.',
         end: true,
       },
     ],
@@ -64,21 +110,6 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
               { type: 'open-merchant', merchantId: 'merchant.camp-supplies' },
             ],
           },
-          {
-            id: 'pack',
-            text: 'Can you reinforce my pack?',
-            condition: { type: 'has-currency', currencyId: 'copper', amount: 100 },
-            disabledReason: 'Requires 100 copper',
-            actions: [
-              { type: 'remove-currency', currencyId: 'copper', amount: 100 },
-              { type: 'expand-inventory', amount: 8 },
-              {
-                type: 'show-notification',
-                text: 'Equipment bag expanded by 8 slots.',
-                tone: 'success',
-              },
-            ],
-          },
           { id: 'leave', text: 'Maybe later.' },
         ],
       },
@@ -95,7 +126,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
         choices: [
           {
             id: 'travel',
-            text: 'Take me across.',
+            text: 'Take me to the test area.',
             condition: {
               type: 'world-flag',
               flagId: 'forest-route-unlocked',
@@ -103,7 +134,10 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
             },
             disabledReason: 'Secure the forest route first',
             actions: [
-              { type: 'travel', destinationId: 'destination.forest-shore' },
+              {
+                type: 'travel-to-destination',
+                destinationId: 'destination.test-area',
+              },
             ],
           },
           { id: 'leave', text: 'I will return later.' },
@@ -112,26 +146,39 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
     ],
   },
   {
-    id: 'dialogue.village-elder',
+    id: 'dialogue.elder.before-quest',
     startNodeId: 'start',
     nodes: [
       {
         id: 'start',
         speakerId: 'actor.village-elder',
-        text: 'Astral currents are changing. The old paths are waking again.',
+        text: 'Astral currents are changing. Speak with Hunter Mara; she needs help securing the forest.',
         choices: [
-          {
-            id: 'ask',
-            text: 'What should I do?',
-            nextNodeId: 'guidance',
-          },
-          { id: 'leave', text: 'I will keep watch.' },
+          { id: 'leave', text: 'I will find her.' },
         ],
       },
+    ],
+  },
+  {
+    id: 'dialogue.elder.quest-active',
+    startNodeId: 'start',
+    nodes: [
       {
-        id: 'guidance',
+        id: 'start',
         speakerId: 'actor.village-elder',
-        text: 'Help Mara, earn the camp’s trust, and prepare for the crossing.',
+        text: 'Mara tells me the hunt has begun. Finish what you started and return safely.',
+        end: true,
+      },
+    ],
+  },
+  {
+    id: 'dialogue.elder.quest-completed',
+    startNodeId: 'start',
+    nodes: [
+      {
+        id: 'start',
+        speakerId: 'actor.village-elder',
+        text: 'The village already feels safer. The open route is proof of what you accomplished.',
         end: true,
       },
     ],
@@ -155,7 +202,11 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
           {
             id: 'pelts',
             text: 'I have wolf pelts.',
-            condition: { type: 'has-material', materialId: 'wolf-pelt', amount: 4 },
+            condition: {
+              type: 'has-material',
+              materialId: 'wolf-pelt',
+              amount: 4,
+            },
             disabledReason: 'Requires 4 Wolf Pelts',
             actions: [
               { type: 'remove-material', materialId: 'wolf-pelt', amount: 4 },

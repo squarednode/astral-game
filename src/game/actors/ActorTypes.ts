@@ -13,7 +13,7 @@ export const ACTOR_STATES = {
 } as const;
 
 export type ActorStateId =
-  (typeof ACTOR_STATES)[keyof typeof ACTOR_STATES];
+  typeof ACTOR_STATES[keyof typeof ACTOR_STATES];
 
 export type ActorComponentType =
   | 'interaction'

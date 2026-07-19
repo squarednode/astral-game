@@ -39,6 +39,10 @@ export class ActionExecutor {
       case 'start-quest':
         this.context.startQuest(action.questId);
         return true;
+      case 'complete-quest':
+        return this.context.completeQuest(action.questId);
+      case 'abandon-quest':
+        return this.context.abandonQuest(action.questId);
       case 'advance-quest':
         this.context.advanceQuest(
           action.questId,
@@ -47,8 +51,8 @@ export class ActionExecutor {
         );
         return true;
       case 'travel':
-        this.context.travel(action.destinationId);
-        return true;
+      case 'travel-to-destination':
+        return this.context.travelToDestination(action.destinationId);
       case 'set-actor-state':
         this.context.setActorState(action.actorId, action.state);
         return true;

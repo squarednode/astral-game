@@ -1,1 +1,30 @@
 .quest-tracker{position:fixed;right:18px;top:84px;z-index:70;width:290px;padding:12px;border:1px solid rgba(130,174,239,.3);border-radius:10px;background:rgba(7,13,23,.9);color:#eef5ff;cursor:pointer}.quest-tracker header span,.quest-tracker header strong{display:block}.quest-tracker header span{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#78aaff}.quest-tracker p{display:grid;grid-template-columns:18px 1fr auto;gap:6px;margin:8px 0;font-size:12px}.quest-tracker p.complete{color:#78d99b}.quest-tracker em{font-style:normal;color:#8fa4c3}.quest-tracker small{color:#8fa4c3}.quest-journal,.merchant-overlay{position:fixed;inset:0;z-index:2400;display:grid;place-items:center;background:rgba(2,5,10,.72)}.quest-journal.hidden,.merchant-overlay.hidden{display:none}.quest-journal{margin:auto;width:min(780px,calc(100vw - 40px));height:min(650px,calc(100vh - 40px));padding:16px;border:1px solid rgba(130,174,239,.35);border-radius:12px;background:#091221;color:#eef5ff;overflow:auto}.quest-journal header,.merchant-panel header{display:flex;justify-content:space-between;align-items:center}.quest-journal header span,.merchant-panel header span{display:block;color:#78aaff;font-size:10px;text-transform:uppercase}.quest-journal nav,.merchant-panel nav{display:flex;gap:7px;margin:12px 0}.quest-journal button,.merchant-panel button{padding:7px 10px;border:1px solid rgba(120,170,240,.3);border-radius:6px;background:rgba(120,170,240,.1);color:#eef5ff;cursor:pointer}.quest-journal-list{display:grid;gap:8px}.quest-journal-list article,.merchant-content article{padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.03)}.quest-journal-list article span{display:block;font-size:11px;color:#b9c9df}.gameplay-toasts{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:2600;display:grid;gap:8px}.gameplay-toasts article{min-width:260px;padding:10px 14px;border:1px solid rgba(121,205,153,.4);border-radius:8px;background:rgba(6,18,14,.94);color:#eef5ff;text-align:center;animation:toast-in .2s ease-out}.gameplay-toasts strong,.gameplay-toasts span{display:block}.gameplay-toasts span{margin-top:3px;color:#a9c5b3;font-size:11px}@keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}.merchant-panel{width:min(820px,calc(100vw - 40px));max-height:calc(100vh - 50px);overflow:auto;padding:16px;border:1px solid rgba(130,174,239,.35);border-radius:12px;background:#091221;color:#eef5ff}.merchant-panel nav button.active{background:rgba(80,130,205,.34)}.merchant-content{display:grid;gap:8px}.merchant-content article{display:flex;justify-content:space-between;align-items:center}.merchant-content article small{display:block;color:#8fa4c3;margin-top:3px}
+
+.quest-journal nav button.active,
+.merchant-panel nav button.active {
+  border-color: rgba(120, 180, 255, .72);
+  background: rgba(80, 130, 205, .34);
+}
+
+.quest-journal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quest-journal button.danger {
+  border-color: rgba(255, 112, 112, .4);
+  background: rgba(170, 50, 50, .15);
+  color: #ffb0b0;
+}
+
+.quest-journal-empty {
+  color: #8fa4c3;
+  text-align: center;
+  padding: 30px 10px;
+}
+
+.merchant-panel button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}

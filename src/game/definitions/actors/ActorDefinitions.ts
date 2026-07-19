@@ -83,7 +83,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     persistentId: 'npc.hunter-mara',
     components: [
       { type: 'interaction', definitionId: 'interaction.talk' },
-      { type: 'dialogue', definitionId: 'dialogue.hunter-mara' },
+      { type: 'dialogue', definitionId: 'dialogue.hunter.offer' },
       { type: 'quest', definitionId: 'quest.wolf-problem' },
       { type: 'ambient', definitionId: 'ambient.hunter' },
       { type: 'save', definitionId: 'save.actor-default' },
@@ -131,7 +131,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     persistentId: 'npc.village-elder',
     components: [
       { type: 'interaction', definitionId: 'interaction.talk' },
-      { type: 'dialogue', definitionId: 'dialogue.village-elder' },
+      { type: 'dialogue', definitionId: 'dialogue.elder.before-quest' },
       { type: 'quest', definitionId: 'quest.main-introduction' },
       { type: 'save', definitionId: 'save.actor-default' },
     ],

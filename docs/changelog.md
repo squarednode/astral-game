@@ -5298,6 +5298,41 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Wolf, boss, material, and actor interactions feed quest objectives.
 - Actor developer diagnostics include quest state and next expected event.
 
+# Changelog — 0.6.5b
+
+## Added
+
+- Quest-state dialogue resolution for Hunter Mara
+- Quest-state dialogue resolution for the Village Elder
+- Retroactive material objective initialization
+- Exact material consumption during quest turn-in
+- Quest abandonment and reappearance
+- Journal abandon confirmation
+- Destination registry
+- `travel-to-destination` action
+- Ferry travel to the Movement Validation Test Area
+- Generated merchant equipment stock
+- Working Blacksmith Buy inventory
+- Escape handling for journal and merchant overlays
+
+## Changed
+
+- Wolf kills count only while the quest is active
+- Quest giver no longer repeats the quest while active or completed
+- Material objectives synchronize with current inventory
+- Hunter marker reflects Available, Active, Ready, and Completed states
+- Developer teleport and gameplay travel share one teleport helper
+- Gameplay UI directory renamed from `gameplay-loop` to `gameplayloop`
+- Actor states use the canonical `ACTOR_STATES` constants
+
+## Fixed
+
+- Actor state string-widening build error
+- Dead Close buttons in gameplay-loop overlays
+- Completed Elder dialogue continuing to redirect the player
+- Quest offer remaining available after acceptance
+- Existing materials not counting when a pickup quest is accepted
+
 ### Validate
 ```bash
 npm run build

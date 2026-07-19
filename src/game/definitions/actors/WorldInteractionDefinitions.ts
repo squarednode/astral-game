@@ -1,5 +1,6 @@
 import type {
   AmbientDefinition,
+  DestinationDefinition,
   MerchantDefinition,
   QuestDefinition,
   TransportDefinition,
@@ -10,30 +11,33 @@ export const questDefinitions: readonly QuestDefinition[] = [
     id: 'quest.wolf-problem',
     displayName: 'The Wolf Problem',
     description: 'Help Hunter Mara secure the forest route.',
+    canAbandon: true,
+    abandonPolicy: {
+      clearObjectiveProgress: true,
+      retainCollectedItems: true,
+      returnToAvailable: true,
+    },
     objectives: [
       {
         id: 'wolves',
         type: 'kill-tag',
         targetTags: ['wolf'],
         requiredAmount: 6,
+        retroactive: false,
       },
       {
         id: 'pelts',
         type: 'collect-material',
         targetId: 'wolf-pelt',
         requiredAmount: 4,
+        retroactive: true,
+        consumeOnTurnIn: true,
       },
       {
         id: 'keeper',
         type: 'defeat-boss',
-        targetId: 'boss.wolf-keeper',
         requiredAmount: 1,
-      },
-      {
-        id: 'return',
-        type: 'talk-to-actor',
-        targetId: 'actor.hunter-mara',
-        requiredAmount: 1,
+        retroactive: false,
       },
     ],
     rewards: [
@@ -59,7 +63,11 @@ export const merchantDefinitions: readonly MerchantDefinition[] = [
         id: 'merchant.pack-upgrade',
         displayName: 'Reinforced Pack',
         price: 100,
-        condition: { type: 'has-currency', currencyId: 'copper', amount: 100 },
+        condition: {
+          type: 'has-currency',
+          currencyId: 'copper',
+          amount: 100,
+        },
         purchaseActions: [
           { type: 'remove-currency', currencyId: 'copper', amount: 100 },
           { type: 'expand-inventory', amount: 8 },
@@ -77,11 +85,26 @@ export const merchantDefinitions: readonly MerchantDefinition[] = [
   },
 ];
 
+export const destinationDefinitions: readonly DestinationDefinition[] = [
+  {
+    id: 'destination.test-area',
+    displayName: 'Movement Validation Test Area',
+    landmarkId: 'movement-course',
+    facing: 0,
+  },
+  {
+    id: 'destination.camp',
+    displayName: 'NPC Camp',
+    landmarkId: 'npc-camp',
+    facing: Math.PI,
+  },
+];
+
 export const transportDefinitions: readonly TransportDefinition[] = [
   {
     id: 'transport.forest-ferry',
     displayName: 'Forest Ferry',
-    destinationId: 'destination.forest-shore',
+    destinationId: 'destination.test-area',
     cost: 0,
     condition: {
       type: 'world-flag',
@@ -89,7 +112,10 @@ export const transportDefinitions: readonly TransportDefinition[] = [
       value: true,
     },
     travelActions: [
-      { type: 'travel', destinationId: 'destination.forest-shore' },
+      {
+        type: 'travel-to-destination',
+        destinationId: 'destination.test-area',
+      },
     ],
   },
 ];

@@ -10,8 +10,11 @@ export type ActionDefinition =
   | { type: 'start-dialogue'; dialogueId: string }
   | { type: 'open-merchant'; merchantId: string }
   | { type: 'start-quest'; questId: string }
+  | { type: 'complete-quest'; questId: string }
+  | { type: 'abandon-quest'; questId: string }
   | { type: 'advance-quest'; questId: string; objectiveId?: string; amount?: number }
   | { type: 'travel'; destinationId: string }
+  | { type: 'travel-to-destination'; destinationId: string }
   | { type: 'set-actor-state'; actorId: string; state: string };
 
 export interface ActionContext {
@@ -26,7 +29,9 @@ export interface ActionContext {
   startDialogue(id: string): void;
   openMerchant(id: string): void;
   startQuest(id: string): void;
+  completeQuest(id: string): boolean;
+  abandonQuest(id: string): boolean;
   advanceQuest(id: string, objectiveId?: string, amount?: number): void;
-  travel(destinationId: string): void;
+  travelToDestination(destinationId: string): boolean;
   setActorState(actorId: string, state: string): void;
 }
