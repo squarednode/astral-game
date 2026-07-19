@@ -574,3 +574,37 @@
   color: #eef5ff;
   cursor: pointer;
 }
+
+.encounter-developer-panel { display: grid; gap: 10px; }
+.encounter-developer-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.encounter-developer-panel > header strong,
+.encounter-developer-panel > header small { display: block; }
+.encounter-developer-panel > header small { color: #8195b4; margin-top: 3px; }
+.encounter-developer-panel button {
+  padding: 6px 8px;
+  border: 1px solid rgba(238,161,75,.35);
+  border-radius: 6px;
+  background: rgba(238,161,75,.1);
+  color: #eef5ff;
+  cursor: pointer;
+}
+.encounter-dev-grid { display: grid; gap: 8px; }
+.encounter-dev-card {
+  padding: 9px;
+  border: 1px solid rgba(238,161,75,.2);
+  border-radius: 8px;
+  background: rgba(255,255,255,.03);
+}
+.encounter-dev-card > strong,
+.encounter-dev-card > small { display: block; }
+.encounter-dev-card > small { color: #7e91ad; font-size: 9px; }
+.encounter-dev-card dl {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 3px 7px;
+  margin: 8px 0;
+  font: 10px/1.35 ui-monospace, monospace;
+}
+.encounter-dev-card dt { color: #8b9db7; }
+.encounter-dev-card dd { margin: 0; color: #deebff; }
+.encounter-dev-actions { display: flex; flex-wrap: wrap; gap: 5px; }

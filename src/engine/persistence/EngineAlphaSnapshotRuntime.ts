@@ -5,6 +5,7 @@ export interface EngineAlphaSnapshotSources {
   inventory: SerializableRuntime<any>;
   quests: SerializableRuntime<any>;
   merchants: SerializableRuntime<any>;
+  encounters: SerializableRuntime<any>;
   actors(): Readonly<Record<string, SerializableRuntime<any>>>;
 }
 
@@ -13,12 +14,13 @@ export class EngineAlphaSnapshotRuntime {
 
   serialize(): EngineAlphaSnapshot {
     return {
-      version: '0.6.5c',
+      version: '0.6.6',
       createdAt: Date.now(),
       world: this.sources.world.serialize(),
       inventory: this.sources.inventory.serialize(),
       quests: this.sources.quests.serialize(),
       merchants: this.sources.merchants.serialize(),
+      encounters: this.sources.encounters.serialize(),
       actors: Object.fromEntries(
         Object.entries(this.sources.actors()).map(([id, runtime]) => [
           id,
@@ -33,6 +35,7 @@ export class EngineAlphaSnapshotRuntime {
     this.sources.inventory.deserialize(snapshot.inventory);
     this.sources.quests.deserialize(snapshot.quests);
     this.sources.merchants.deserialize(snapshot.merchants);
+    this.sources.encounters.deserialize(snapshot.encounters);
     const actors = this.sources.actors();
     for (const [id, state] of Object.entries(snapshot.actors)) {
       actors[id]?.deserialize(state);

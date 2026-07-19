@@ -5354,6 +5354,33 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Actor markers resolve presentation through reusable marker profiles.
 - The existing `gameplayloop` folder name remains unchanged.
 
+# Changelog — 0.6.6
+
+## Added
+
+- Encounter Registry
+- Encounter Manager / Director
+- Encounter arenas and spawn points
+- Multi-phase encounters
+- Delayed spawn groups
+- One-shot and repeatable reinforcement rules
+- Encounter enemy ownership
+- Completion, failure, reset, and developer force controls
+- Encounter completion rewards
+- Encounter quest-objective integration
+- Encounter gameplay tracker
+- Encounter developer HUD page
+- Arena and spawn-point visualization
+- Encounter serialization in Engine Alpha snapshots
+- Five Movement Playground validation encounters
+
+## Changed
+
+- Enemy spawning can return the created runtime enemy and attach encounter ownership.
+- Legacy survival-wave progression only advances when Survival Waves are enabled.
+- Quest Runtime can record completed encounter objectives.
+- Engine Alpha snapshot version is now 0.6.6.
+
 ### Validate
 ```bash
 npm run build

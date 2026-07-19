@@ -61,6 +61,15 @@ export interface EngineEventMap {
   'world.triggerActivated': {
     triggerId: string;
   };
+  'encounter.started': { encounterId: string };
+  'encounter.phaseStarted': { encounterId: string; phaseId: string; phaseIndex: number };
+  'encounter.enemySpawned': { encounterId: string; phaseId: string; groupId: string; entityId: string };
+  'encounter.enemyDefeated': { encounterId: string; entityId: string; aliveEnemies: number };
+  'encounter.reinforcementSpawned': { encounterId: string; phaseId: string; reinforcementId: string };
+  'encounter.phaseCompleted': { encounterId: string; phaseId: string; phaseIndex: number };
+  'encounter.completed': { encounterId: string; completionCount: number };
+  'encounter.failed': { encounterId: string; reason: string };
+  'encounter.reset': { encounterId: string };
   'interaction.started': { actorId?: string; interactionType: string };
   'interaction.completed': { actorId?: string; interactionType: string };
   'dialogue.started': { dialogueId: string; actorId?: string };

@@ -11,7 +11,8 @@ export type DeveloperHudPageId =
   | 'ai'
   | 'status'
   | 'loot'
-  | 'actors';
+  | 'actors'
+  | 'encounters';
 
 export interface DeveloperOverviewMetrics {
   fps: number;
@@ -40,6 +41,7 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   status: 'Status Effects',
   loot: 'Loot & Equipment',
   actors: 'Actors & World',
+  encounters: 'Encounters',
 };
 
 export class DeveloperHud {
@@ -53,7 +55,7 @@ export class DeveloperHud {
   >();
   private readonly pages = new Map<DeveloperHudPageId, HTMLElement>();
   private readonly textPages = new Map<
-    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors'>,
+    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors' | 'encounters'>,
     HTMLPreElement
   >();
   private open = false;
@@ -177,6 +179,13 @@ export class DeveloperHud {
     body.appendChild(actors);
     this.pages.set('actors', actors);
 
+    const encounters = document.createElement('article');
+    encounters.className = 'developer-hud-page developer-encounters-page';
+    encounters.dataset.page = 'encounters';
+    encounters.hidden = true;
+    body.appendChild(encounters);
+    this.pages.set('encounters', encounters);
+
     const movement = document.createElement('article');
     movement.className = 'developer-hud-page developer-movement-page';
     movement.dataset.page = 'movement';
@@ -231,12 +240,12 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot' | 'actors'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot' | 'actors' | 'encounters'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 
   setPageText(
-    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors'>,
+    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors' | 'encounters'>,
     text: string,
   ): void {
     this.textPages.get(pageId)!.textContent = text;

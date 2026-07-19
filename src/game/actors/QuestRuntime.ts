@@ -186,6 +186,20 @@ export class QuestRuntime {
     }
   }
 
+  recordEncounterCompleted(encounterId: string): void {
+    for (const record of this.quests.values()) {
+      if (record.state !== 'active') continue;
+      for (const objective of record.definition.objectives) {
+        if (
+          objective.type === 'complete-encounter' &&
+          objective.targetId === encounterId
+        ) {
+          this.advance(record.definition.id, objective.id);
+        }
+      }
+    }
+  }
+
   syncMaterial(materialId: string, amount: number): void {
     for (const record of this.quests.values()) {
       if (record.state !== 'active') continue;

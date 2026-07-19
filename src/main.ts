@@ -8,6 +8,7 @@ import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
 import './ui/menus/SettingsMenu.css';
 import './ui/shared/InteractionPrompt.css';
+import './ui/encounters/EncounterTracker.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -116,6 +117,21 @@ import { NavigationDeveloperPanel } from './ui/developer/NavigationDeveloperPane
 import { CombatSandboxPanel } from './ui/developer/CombatSandboxPanel';
 import { StatusDeveloperPanel } from './ui/developer/StatusDeveloperPanel';
 import { LootDeveloperPanel } from './ui/developer/LootDeveloperPanel';
+import {
+  EncounterManager,
+  EncounterRegistry,
+} from './game/encounters';
+import type {
+  EncounterEnemyOwnership,
+  EncounterRewardDefinition,
+  EncounterSpawnRequest,
+} from './game/encounters';
+import {
+  encounterArenaDefinitions,
+  encounterDefinitions,
+} from './game/definitions/encounters';
+import { EncounterTracker } from './ui/encounters/EncounterTracker';
+import { EncounterDeveloperPanel } from './ui/developer/EncounterDeveloperPanel';
 import {
   aggregateEquipmentStats,
   GroundLootRuntime,
@@ -294,6 +310,7 @@ interface Enemy {
   movementRuntime: SharedGroundMovementRuntime;
   lastMovementResult: SharedMovementResult | null;
   stateMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>;
+  encounterOwnership?: EncounterEnemyOwnership;
 }
 
 type LootItem = GeneratedItemInstance;
@@ -1657,11 +1674,135 @@ const worldTriggerRuntime = new WorldTriggerRuntime(
   triggerId => events.emit('world.triggerActivated', { triggerId }),
 );
 
+const encounterRegistry = new EncounterRegistry();
+encounterArenaDefinitions.forEach(definition => encounterRegistry.registerArena(definition));
+encounterDefinitions.forEach(definition => encounterRegistry.registerEncounter(definition));
+
+let encounterArenaVisualsVisible = false;
+const encounterArenaVisuals: Mesh[] = [];
+for (const arena of encounterRegistry.allArenas()) {
+  const ring = MeshBuilder.CreateTorus(
+    `encounter-arena-${arena.id}`,
+    { diameter: arena.radius * 2, thickness: 0.08, tessellation: 64 },
+    scene,
+  );
+  ring.position.set(arena.center.x, 0.08, arena.center.z);
+  ring.rotation.x = Math.PI / 2;
+  ring.material = mat(`encounter-arena-mat-${arena.id}`, new Color3(0.95, 0.42, 0.12), 0.5);
+  ring.visibility = 0;
+  ring.isPickable = false;
+  encounterArenaVisuals.push(ring);
+
+  for (const point of arena.spawnPoints) {
+    const marker = MeshBuilder.CreateCylinder(
+      `encounter-spawn-${point.id}`,
+      { diameter: 0.7, height: 0.06, tessellation: 18 },
+      scene,
+    );
+    marker.position.set(point.position.x, point.position.y + 0.05, point.position.z);
+    const color = point.tags.includes('elite')
+      ? new Color3(0.72, 0.28, 0.95)
+      : point.tags.includes('ranged')
+        ? new Color3(0.2, 0.65, 1)
+        : new Color3(0.25, 0.9, 0.42);
+    marker.material = mat(`encounter-spawn-mat-${point.id}`, color, 0.55);
+    marker.visibility = 0;
+    marker.isPickable = false;
+    marker.metadata = { encounterSpawnPointId: point.id, tags: point.tags };
+    encounterArenaVisuals.push(marker);
+  }
+}
+
+function setEncounterArenaVisualsVisible(visible: boolean): void {
+  encounterArenaVisualsVisible = visible;
+  for (const mesh of encounterArenaVisuals) mesh.visibility = visible ? 1 : 0;
+}
+
+function removeEncounterEnemy(entityId: string): void {
+  const enemy = enemies.find(candidate => candidate.entityId === entityId);
+  if (!enemy) return;
+  if (hoveredEnemy === enemy) hoveredEnemy = null;
+  enemyTelegraphs.cancel(enemy.mesh);
+  enemy.targetMesh.dispose();
+  enemy.mesh.dispose();
+  enemyRuntimeWatchdog.remove(enemy.entityId);
+  enemies = enemies.filter(candidate => candidate !== enemy);
+  entities.destroy(enemy.entityId);
+}
+
+function grantEncounterReward(
+  encounterId: string,
+  reward: EncounterRewardDefinition,
+): void {
+  if (reward.copper) inventoryRuntime.addCopper(reward.copper);
+  for (const [flagId, value] of Object.entries(reward.worldFlags ?? {})) {
+    worldStateRuntime.setFlag(flagId, value);
+  }
+  if (reward.guaranteedRarity) {
+    const generated = lootGenerator.generateFromTable('loot.elite', {
+      itemLevel: Math.max(1, wave),
+      forcedRarity: reward.guaranteedRarity,
+    });
+    generated.slice(0, 1).forEach(item =>
+      spawnEquipmentDrop(item, playerRoot.position.add(new Vector3(0, 0, 1.2))),
+    );
+  }
+  refreshWalletStatus();
+  events.emit('reward.granted', { sourceId: encounterId, rewardType: 'encounter' });
+}
+
+const encounterManager = new EncounterManager(encounterRegistry, {
+  spawnEnemy: request => spawnEncounterEnemy(request),
+  removeEnemy: entityId => removeEncounterEnemy(entityId),
+  grantReward: (encounterId, reward) => grantEncounterReward(encounterId, reward),
+  emit: (type, payload) => {
+    events.emit(type as any, payload as any);
+    if (type === 'encounter.completed' && typeof payload.encounterId === 'string') {
+      questRuntime.recordEncounterCompleted(payload.encounterId);
+    }
+  },
+  notify: (title, detail) => {
+    feed(`${title}${detail ? `: ${detail}` : ''}`, 'success');
+    questTracker?.notify(title, detail);
+  },
+});
+
+const encounterTracker = new EncounterTracker(
+  ui.getLayer('gameplay'),
+  encounterManager,
+);
+
+const encounterDeveloperPanel = new EncounterDeveloperPanel(
+  developerHud.getPageContent('encounters'),
+  {
+    manager: encounterManager,
+    registry: encounterRegistry,
+    teleportToArena: encounterId => {
+      const definition = encounterRegistry.encounter(encounterId);
+      const arena = definition ? encounterRegistry.arena(definition.arenaId) : undefined;
+      if (!arena) return;
+      const destination = new Vector3(
+        arena.center.x,
+        arena.center.y,
+        arena.center.z - Math.max(4, arena.triggerRadius - 1),
+      );
+      traversalSurfaces.reset();
+      worldVolumes.reset();
+      playerRoot.position.copyFrom(destination);
+      movement.resetVerticalState(destination.y);
+      movement.setPointerWorld(destination);
+      pointerWorld.copyFrom(destination);
+    },
+    toggleVisuals: () => setEncounterArenaVisualsVisible(!encounterArenaVisualsVisible),
+  },
+);
+
 const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
   world: worldStateRuntime,
   inventory: inventoryRuntime,
   quests: questRuntime,
   merchants: merchantRuntime,
+  encounters: encounterManager,
   actors: () => Object.fromEntries(actorRuntimes),
 });
 
@@ -1672,6 +1813,7 @@ Object.assign(globalThis, {
       engineAlphaSnapshots.deserialize(snapshot),
     destinations: () => destinationRegistry.all(),
     triggers: () => worldTriggerRuntime.snapshot(),
+    encounters: () => encounterManager.snapshots(),
   },
 });
 questRuntime.subscribe(() => {
@@ -1689,6 +1831,7 @@ questTracker = new QuestTracker(
   ui.getLayer('gameplay'),
   questRuntime,
 );
+
 const merchantStock = new Map<
   string,
   Array<{ item: GeneratedItemInstance; price: number }>
@@ -3220,7 +3363,8 @@ function spawnEnemy(
   definitionId?: string,
   variantId?: EnemyVariantId,
   modifierId?: EliteModifierId,
-): void {
+  encounterOwnership?: EncounterEnemyOwnership,
+): Enemy | null {
   const archetypes = definitions.all<EnemyDefinition>('enemy');
   const commonArchetypes = archetypes.filter(candidate => candidate.spawnClass === 'common');
   const definition = definitionId
@@ -3255,7 +3399,7 @@ function spawnEnemy(
       `${displayName} spawn rejected: ${spawnResolution.failureReason}.`,
       'warning',
     );
-    return;
+    return null;
   }
   const mesh = definition.role === 'brute' || definition.role === 'boss'
     ? MeshBuilder.CreateIcoSphere(`enemy-${definition.role}`, { radius: definition.role === 'boss' ? 1.45 : elite ? 1.1 : 0.9, subdivisions: 2 }, scene)
@@ -3391,6 +3535,7 @@ function spawnEnemy(
     },
     movementRuntime: null as unknown as SharedGroundMovementRuntime,
     lastMovementResult: null,
+    encounterOwnership,
   });
   enemy.movementRuntime = new SharedGroundMovementRuntime(
     mesh,
@@ -3403,6 +3548,19 @@ function spawnEnemy(
   enemy.stateMachine = createEnemyStateMachine(enemy);
   enemy.stateMachine.start('evaluate', 'enemy-spawned');
   enemies.push(enemy);
+  return enemy;
+}
+
+function spawnEncounterEnemy(request: EncounterSpawnRequest): string | null {
+  const enemy = spawnEnemy(
+    request.elite,
+    new Vector3(request.position.x, request.position.y, request.position.z),
+    request.enemyDefinitionId,
+    request.variantId as EnemyVariantId | undefined,
+    request.modifierId as EliteModifierId | undefined,
+    request.ownership,
+  );
+  return enemy?.entityId ?? null;
 }
 
 function startWave(): void {
@@ -4000,6 +4158,7 @@ function killEnemy(enemy: Enemy): void {
   enemyTelegraphs.cancel(enemy.mesh);
   enemy.targetMesh.dispose();
   kills++;
+  encounterManager?.recordEnemyDefeated(enemy.entityId);
   events.emit('combat.enemyKilled', {
     entityId: enemy.entityId,
     elite: enemy.elite,
@@ -4023,7 +4182,7 @@ function killEnemy(enemy: Enemy): void {
   enemies = enemies.filter(e => e !== enemy);
   enemyRuntimeWatchdog.remove(enemy.entityId);
   entities.destroy(enemy.entityId);
-  if (enemies.length === 0) {
+  if (enemies.length === 0 && developerState.wavesEnabled) {
     wave++;
     party.forEach(c => c.hp = Math.min(hpMax(c), c.hp + hpMax(c) * .22));
     setTimeout(startWave, 1500);
@@ -4352,6 +4511,12 @@ scene.onBeforeRenderObservable.add(() => {
   input.update();
   const dt = combat.update(realDt);
   updateActors(dt);
+  encounterManager.update(
+    dt,
+    { x: playerRoot.position.x, y: playerRoot.position.y, z: playerRoot.position.z },
+    gameOver,
+  );
+  encounterTracker.render();
   worldTriggerRuntime.update(playerRoot.position, dt);
   renderInteractionPrompt();
   enemyTelegraphs.update(realDt);
