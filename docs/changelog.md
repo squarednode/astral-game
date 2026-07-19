@@ -5225,7 +5225,29 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Added live resource refresh while Party Management is open.
 - Linked the screen directly to `InventoryRuntime.snapshot()`.
 
+# Changelog — 0.6.4e
 
+## Added
+
+- Generic equipment-effect definitions and resolver
+- Elemental damage modifiers
+- Status-duration modifiers
+- Cooldown-recovery modifiers
+- Projectile-count and projectile-speed modifiers
+- Shield-duration modifiers
+- New effect-bearing affixes
+- Advanced equipment comparison rows
+- Weighted percentage comparison
+- Data-driven ground-loot visual profiles
+- Slot silhouettes and rarity beams
+- Persistent item type, family, and name sorting
+
+## Changed
+
+- Ability Runtime accepts cooldown and cast-rate scaling.
+- Ground loot now spins and bobs using its visual profile.
+- Party Management scores effects and additional defensive/support stats.
+- Generated items expose effect descriptions for UI and debugging.
 
 ### Validate
 ```bash

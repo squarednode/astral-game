@@ -6,3 +6,5 @@ export * from './InventoryRuntime';
 export * from './GroundLootTypes';
 export * from './GroundLootRuntime';
 export * from './LootInteractionRuntime';
+export * from './EquipmentEffectResolver';
+export * from './GroundLootVisualProfiles';

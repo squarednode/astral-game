@@ -132,9 +132,21 @@ export class AbilityComponent {
     for (const runtime of this.slots.values()) runtime.finishCooldown();
   }
 
-  update(dt: number, noCooldowns = false, freezeCasting = false): void {
+  update(
+    dt: number,
+    noCooldowns = false,
+    freezeCasting = false,
+    cooldownRate = 1,
+    castRate = 1,
+  ): void {
     for (const runtime of this.slots.values()) {
-      runtime.update(dt, noCooldowns, freezeCasting);
+      runtime.update(
+        dt,
+        noCooldowns,
+        freezeCasting,
+        cooldownRate,
+        castRate,
+      );
     }
 
     if (!this.queued || this.all().some(runtime => runtime.isBusy())) return;

@@ -118,6 +118,9 @@ import {
   InventoryRuntime,
   LootInteractionRuntime,
   LootGenerator,
+  describeEquipmentEffect,
+  groundLootVisualProfile,
+  resolveEquipmentEffects,
   LootRegistry,
 } from './game/loot';
 import type {
@@ -789,6 +792,11 @@ let hoveredEnemy: Enemy | null = null;
 let hoveredGroundLoot: GroundLootRecord | null = null;
 let loot: LootItem[] = [];
 const groundLootMeshes = new Map<number, Mesh>();
+const groundLootBeams = new Map<number, Mesh>();
+const groundLootVisualState = new Map<
+  number,
+  { baseY: number; spinSpeed: number; bobHeight: number; bobSpeed: number }
+>();
 let lootInteractionRuntime: LootInteractionRuntime;
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
 let scheduledWave: number | null = null;
@@ -896,7 +904,10 @@ const unsubscribeSettings = settings.subscribe(current => {
 
 movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
-  getMoveSpeed: () => active.speed * worldMovementMultiplier,
+  getMoveSpeed: () =>
+    active.speed *
+    (1 + equipmentStatsFor(active).movementSpeedPercent) *
+    worldMovementMultiplier,
   canDodge: () =>
     active.cooldowns.dodge <= 0 &&
     !inventoryOpen &&
@@ -982,17 +993,92 @@ function rarityColor(rarity: Rarity): Color3 {
 
 function createGroundLootMesh(record: GroundLootRecord): void {
   let mesh: Mesh;
+
   if (record.payload.kind === 'equipment') {
-    mesh = MeshBuilder.CreateBox(
-      `ground-loot-${record.id}`,
-      { size: record.rarity === 'legendary' ? 0.42 : 0.3 },
-      scene,
+    const item = record.payload.item;
+    const profile = groundLootVisualProfile(
+      item.slot,
+      item.rarity,
+      item.visualProfileId,
     );
+
+    switch (profile.primitive) {
+      case 'blade':
+        mesh = MeshBuilder.CreateBox(
+          `ground-loot-${record.id}`,
+          { width: 0.12, height: 0.5, depth: 0.07 },
+          scene,
+        );
+        mesh.rotation.z = Math.PI / 4;
+        break;
+      case 'bow':
+        mesh = MeshBuilder.CreateTorus(
+          `ground-loot-${record.id}`,
+          { diameter: 0.42, thickness: 0.055, tessellation: 20 },
+          scene,
+        );
+        mesh.rotation.x = Math.PI / 2;
+        break;
+      case 'armor-bundle':
+        mesh = MeshBuilder.CreateCylinder(
+          `ground-loot-${record.id}`,
+          { diameterTop: 0.28, diameterBottom: 0.38, height: 0.34, tessellation: 8 },
+          scene,
+        );
+        break;
+      case 'crystal':
+        mesh = MeshBuilder.CreatePolyhedron(
+          `ground-loot-${record.id}`,
+          { type: 1, size: 0.28 },
+          scene,
+        );
+        break;
+      default:
+        mesh = MeshBuilder.CreateBox(
+          `ground-loot-${record.id}`,
+          { size: item.rarity === 'legendary' ? 0.42 : 0.3 },
+          scene,
+        );
+        break;
+    }
+
+    mesh.scaling.setAll(profile.scale);
     mesh.material = mat(
       `ground-loot-${record.rarity ?? 'common'}`,
       rarityColor(record.rarity ?? 'common'),
       record.rarity === 'legendary' ? 0.65 : 0.35,
     );
+
+    groundLootVisualState.set(record.id, {
+      baseY: record.position.y + 0.26,
+      spinSpeed: profile.spinSpeed,
+      bobHeight: profile.bobHeight,
+      bobSpeed: profile.bobSpeed,
+    });
+
+    if (profile.beamHeight > 0) {
+      const beam = MeshBuilder.CreateCylinder(
+        `ground-loot-beam-${record.id}`,
+        {
+          diameter: profile.beamWidth,
+          height: profile.beamHeight,
+          tessellation: 12,
+        },
+        scene,
+      );
+      beam.position.set(
+        record.position.x,
+        record.position.y + profile.beamHeight / 2,
+        record.position.z,
+      );
+      beam.material = mat(
+        `ground-loot-beam-${record.rarity ?? 'common'}`,
+        rarityColor(record.rarity ?? 'common'),
+        record.rarity === 'legendary' ? 0.78 : 0.48,
+      );
+      beam.isPickable = false;
+      groundLootBeams.set(record.id, beam);
+    }
   } else {
     mesh = MeshBuilder.CreateCylinder(
       `ground-loot-${record.id}`,
@@ -1021,9 +1107,24 @@ function createGroundLootMesh(record: GroundLootRecord): void {
   groundLootMeshes.set(record.id, mesh);
 }
 
+function updateGroundLootVisuals(nowSeconds: number): void {
+  for (const [id, state] of groundLootVisualState) {
+    const mesh = groundLootMeshes.get(id);
+    if (!mesh || mesh.isDisposed()) continue;
+    mesh.rotation.y += state.spinSpeed / 60;
+    mesh.position.y =
+      state.baseY +
+      Math.sin(nowSeconds * state.bobSpeed + id * 0.37) *
+        state.bobHeight;
+  }
+}
+
 function removeGroundLootVisual(id: number): void {
   groundLootMeshes.get(id)?.dispose();
   groundLootMeshes.delete(id);
+  groundLootBeams.get(id)?.dispose();
+  groundLootBeams.delete(id);
+  groundLootVisualState.delete(id);
   if (hoveredGroundLoot?.id === id) {
     hoveredGroundLoot = null;
     groundLootHoverLabel.hidden = true;
@@ -1109,6 +1210,7 @@ function nearestEquipmentDrop(maximumDistance = 1.45): GroundLootRecord | null {
 }
 
 function updateGroundLoot(dt: number): void {
+  updateGroundLootVisuals(performance.now() / 1000);
   for (const expiredId of groundLootRuntime.update()) {
     removeGroundLootVisual(expiredId);
   }
@@ -1312,6 +1414,22 @@ function bagItems(): LootItem[] {
 
 function equipmentStatsFor(c: CharacterState) {
   return aggregateEquipmentStats(equippedItems(c));
+}
+
+function equipmentEffectsFor(c: CharacterState) {
+  return resolveEquipmentEffects(equippedItems(c));
+}
+
+function elementalDamageMultiplierFor(
+  c: CharacterState,
+  element: Element,
+): number {
+  const effects = equipmentEffectsFor(c);
+  const elemental =
+    element === 'fire' || element === 'frost' || element === 'lightning'
+      ? effects.elementalDamageMultipliers[element]
+      : 1;
+  return effects.allDamageMultiplier * elemental;
 }
 
 function powerFor(c = active): number {
@@ -2568,7 +2686,8 @@ function damageEnemy(
   weight: HitWeight = 'light',
 ): void {
   const powerScale = powerFor() / 100;
-  let final = amount * powerScale;
+  let final =
+    amount * powerScale * elementalDamageMultiplierFor(active, element);
   let resolvedWeight = weight;
 
   const hasFrostStatus =
@@ -2620,11 +2739,18 @@ function damageEnemy(
           ? 'status.shock'
           : undefined;
     const definition = statusId ? statusDefinitionMap.get(statusId) : undefined;
-    if (definition) statusRuntime.apply(enemy.statusComponent, {
-      definition,
-      ownerEntityId: enemy.entityId,
-      sourceEntityId: active.id,
-    });
+    if (definition) {
+      const equipmentEffects = equipmentEffectsFor(active);
+      const durationMultiplier =
+        equipmentEffects.statusDurationMultiplier *
+        (equipmentEffects.statusDurationById[definition.id] ?? 1);
+      statusRuntime.apply(enemy.statusComponent, {
+        definition,
+        ownerEntityId: enemy.entityId,
+        sourceEntityId: active.id,
+        durationSeconds: definition.duration * durationMultiplier,
+      });
+    }
   }
   combat.applyEnemyHit({ target: enemy, damage: final, element, worldPosition: hitPos, sourcePosition, weight: resolvedWeight });
 }
@@ -2691,6 +2817,32 @@ function performBlink(
   return blink.position;
 }
 
+function equipmentProjectileDirections(
+  direction: Vector3,
+  character: CharacterState,
+): Vector3[] {
+  const count = Math.max(
+    1,
+    1 + equipmentEffectsFor(character).projectileCountBonus,
+  );
+  if (count === 1) return [direction.clone()];
+
+  const spreadRadians = Math.min(0.42, 0.11 * (count - 1));
+  return Array.from({ length: count }, (_, index) => {
+    const offset =
+      count === 1
+        ? 0
+        : -spreadRadians / 2 + (spreadRadians * index) / (count - 1);
+    const cosine = Math.cos(offset);
+    const sine = Math.sin(offset);
+    return new Vector3(
+      direction.x * cosine - direction.z * sine,
+      0,
+      direction.x * sine + direction.z * cosine,
+    ).normalize();
+  });
+}
+
 function executeAbility(context: AbilityExecutionContext): void {
   const { definition, request } = context;
   const direction = request.aimDirection.clone();
@@ -2705,20 +2857,43 @@ function executeAbility(context: AbilityExecutionContext): void {
       },
       scene,
     );
-    orb.position = request.casterPosition.add(new Vector3(0, 0.85, 0)).add(direction.scale(0.9));
-    orb.material = mat('ability-fireball', new Color3(1, 0.32, 0.08), 0.85);
-    projectiles.push({
-      mesh: orb,
-      vel: direction.scale(14),
-      ttl: definition.range / 14,
-      damage: definition.damage ?? 0,
-      element: 'fire',
-      pierce: 0,
-      owner: 'player',
-      collisionRadius:
-        0.26 *
-        combatSandboxTuning.get().projectileCollisionScale,
-    });
+    orb.dispose();
+    const projectileSpeed =
+      14 * equipmentEffectsFor(active).projectileSpeedMultiplier;
+    for (const [index, projectileDirection] of equipmentProjectileDirections(
+      direction,
+      active,
+    ).entries()) {
+      const projectile = MeshBuilder.CreateSphere(
+        `ability-fireball-${index}`,
+        {
+          diameter:
+            0.52 *
+            combatSandboxTuning.get().projectileVisualScale,
+        },
+        scene,
+      );
+      projectile.position = request.casterPosition
+        .add(new Vector3(0, 0.85, 0))
+        .add(projectileDirection.scale(0.9));
+      projectile.material = mat(
+        'ability-fireball',
+        new Color3(1, 0.32, 0.08),
+        0.85,
+      );
+      projectiles.push({
+        mesh: projectile,
+        vel: projectileDirection.scale(projectileSpeed),
+        ttl: definition.range / projectileSpeed,
+        damage: definition.damage ?? 0,
+        element: 'fire',
+        pierce: 0,
+        owner: 'player',
+        collisionRadius:
+          0.26 *
+          combatSandboxTuning.get().projectileCollisionScale,
+      });
+    }
     vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
     return;
   }
@@ -2737,22 +2912,52 @@ function executeAbility(context: AbilityExecutionContext): void {
       },
       scene,
     );
-    spear.rotation.x = Math.PI / 2;
-    spear.rotation.y = Math.atan2(direction.x, direction.z);
-    spear.position = request.casterPosition.add(new Vector3(0, 0.8, 0)).add(direction.scale(0.9));
-    spear.material = mat('ability-ice-spear', new Color3(0.35, 0.82, 1), 0.75);
-    projectiles.push({
-      mesh: spear,
-      vel: direction.scale(17),
-      ttl: definition.range / 17,
-      damage: definition.damage ?? 0,
-      element: 'frost',
-      pierce: 1,
-      owner: 'player',
-      collisionRadius:
-        0.18 *
-        combatSandboxTuning.get().projectileCollisionScale,
-    });
+    spear.dispose();
+    const projectileSpeed =
+      17 * equipmentEffectsFor(active).projectileSpeedMultiplier;
+    for (const [index, projectileDirection] of equipmentProjectileDirections(
+      direction,
+      active,
+    ).entries()) {
+      const projectile = MeshBuilder.CreateCylinder(
+        `ability-ice-spear-${index}`,
+        {
+          diameter:
+            0.28 *
+            combatSandboxTuning.get().projectileVisualScale,
+          height:
+            1.4 *
+            combatSandboxTuning.get().projectileVisualScale,
+          tessellation: 8,
+        },
+        scene,
+      );
+      projectile.rotation.x = Math.PI / 2;
+      projectile.rotation.y = Math.atan2(
+        projectileDirection.x,
+        projectileDirection.z,
+      );
+      projectile.position = request.casterPosition
+        .add(new Vector3(0, 0.8, 0))
+        .add(projectileDirection.scale(0.9));
+      projectile.material = mat(
+        'ability-ice-spear',
+        new Color3(0.35, 0.82, 1),
+        0.75,
+      );
+      projectiles.push({
+        mesh: projectile,
+        vel: projectileDirection.scale(projectileSpeed),
+        ttl: definition.range / projectileSpeed,
+        damage: definition.damage ?? 0,
+        element: 'frost',
+        pierce: 1,
+        owner: 'player',
+        collisionRadius:
+          0.18 *
+          combatSandboxTuning.get().projectileCollisionScale,
+      });
+    }
     return;
   }
 
@@ -2762,7 +2967,10 @@ function executeAbility(context: AbilityExecutionContext): void {
   }
 
   if (definition.executorId === 'shield') {
-    active.shieldRemaining = Math.max(active.shieldRemaining, definition.duration ?? 4);
+    active.shieldRemaining = Math.max(
+      active.shieldRemaining,
+      (definition.duration ?? 4) * equipmentEffectsFor(active).shieldDurationMultiplier,
+    );
     active.hp = Math.min(hpMax(active), active.hp + 24);
     vfxRing(playerRoot.position, new Color3(0.55, 0.75, 1), 4.2, 0.5);
     feed('Astral Shield active.');
@@ -2924,7 +3132,8 @@ function swapTo(index: number): void {
   if (party[index].hp <= 0 || active.cooldowns.swap > 0) return;
   const prior = active;
   activeIndex = index; active = party[index];
-  active.cooldowns.swap = 0.42;
+  active.cooldowns.swap =
+    0.42 / equipmentEffectsFor(active).swapCooldownRate;
   playerBody.material = mat('player', active.color, 0.08);
   vfxRing(playerRoot.position, active.color, 3.5, 0.35);
   const swapMult = 1 + swapBonusFor(active) / 100;
@@ -3701,6 +3910,7 @@ scene.onBeforeRenderObservable.add(() => {
       dt,
       developerState.noCooldowns,
       freezeAbilityCastTimers,
+      equipmentEffectsFor(character).abilityCooldownRate,
     );
     character.shieldRemaining = Math.max(0, character.shieldRemaining - dt);
   });

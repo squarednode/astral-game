@@ -159,9 +159,22 @@ export class AbilityRuntime {
     return this.isCasting() && !this.isCommitted();
   }
 
-  update(dt: number, noCooldowns = false, freezeCasting = false): void {
-    if (!(freezeCasting && this.machine.getCurrentStateId() === 'casting')) {
-      this.machine.update(dt);
+  update(
+    dt: number,
+    noCooldowns = false,
+    freezeCasting = false,
+    cooldownRate = 1,
+    castRate = 1,
+  ): void {
+    const state = this.machine.getCurrentStateId();
+    const scaledDt =
+      state === 'cooldown'
+        ? dt * Math.max(0.1, cooldownRate)
+        : state === 'casting'
+          ? dt * Math.max(0.1, castRate)
+          : dt;
+    if (!(freezeCasting && state === 'casting')) {
+      this.machine.update(scaledDt);
     }
 
     if (this.isCasting() && this.isCommitted()) {

@@ -45,6 +45,9 @@ export const itemAffixDefinitions: readonly ItemAffixDefinition[] = [
       { statId: 'focus', mode: 'flat', value: 2 },
       { statId: 'status-potency', mode: 'percent', value: 0.04 },
     ],
+    effects: [
+      { effectId: 'status-duration', mode: 'percent', value: 0.1 },
+    ],
   },
   {
     id: 'affix.suffix.of-vigor',
@@ -66,6 +69,9 @@ export const itemAffixDefinitions: readonly ItemAffixDefinition[] = [
       { statId: 'technique', mode: 'flat', value: 2 },
       { statId: 'movement-speed', mode: 'percent', value: 0.03 },
     ],
+    effects: [
+      { effectId: 'ability-cooldown-rate', mode: 'percent', value: 0.08 },
+    ],
   },
   {
     id: 'affix.suffix.of-warding',
@@ -76,4 +82,44 @@ export const itemAffixDefinitions: readonly ItemAffixDefinition[] = [
     weight: 8,
     modifiers: [{ statId: 'status-resistance', mode: 'percent', value: 0.05 }],
   },
+  {
+    id: 'affix.suffix.of-embers',
+    name: 'of Embers',
+    position: 'suffix',
+    tags: ['weapon', 'relic'],
+    minimumLevel: 2,
+    weight: 7,
+    modifiers: [],
+    effects: [
+      { effectId: 'fire-damage', mode: 'percent', value: 0.12 },
+      { effectId: 'burn-duration', mode: 'percent', value: 0.15 },
+    ],
+  },
+  {
+    id: 'affix.suffix.of-rime',
+    name: 'of Rime',
+    position: 'suffix',
+    tags: ['weapon', 'relic'],
+    minimumLevel: 2,
+    weight: 7,
+    modifiers: [],
+    effects: [
+      { effectId: 'frost-damage', mode: 'percent', value: 0.12 },
+      { effectId: 'chill-duration', mode: 'percent', value: 0.15 },
+    ],
+  },
+  {
+    id: 'affix.prefix.echoing',
+    name: 'Echoing',
+    position: 'prefix',
+    tags: ['weapon', 'ranged'],
+    minimumLevel: 3,
+    weight: 4,
+    modifiers: [],
+    effects: [
+      { effectId: 'projectile-count', mode: 'flat', value: 1 },
+      { effectId: 'projectile-speed', mode: 'percent', value: 0.08 },
+    ],
+  },
+
 ];

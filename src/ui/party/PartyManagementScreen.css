@@ -617,3 +617,32 @@
     grid-column: 1 / -1;
   }
 }
+
+
+.pm-equipment-effects {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding: 9px;
+  border-left: 3px solid #6f9fe8;
+  border-radius: 0 7px 7px 0;
+  background: rgba(72,116,184,.11);
+}
+
+.pm-equipment-effects > span {
+  color: #83afea;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pm-equipment-effects > strong {
+  color: #c7dcff;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.pm-sort {
+  min-width: 132px;
+}

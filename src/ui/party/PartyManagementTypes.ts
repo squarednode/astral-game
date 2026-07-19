@@ -17,6 +17,11 @@ export interface PartyEquipmentItem {
   focus: number;
   precision: number;
   technique: number;
+  armor: number;
+  movementSpeedPercent: number;
+  statusPotencyPercent: number;
+  statusResistancePercent: number;
+  effectDescriptions: readonly string[];
   favorite: boolean;
   legendaryPower?: string;
 }

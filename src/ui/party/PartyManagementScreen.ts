@@ -10,7 +10,14 @@ import type {
 } from './PartyManagementTypes';
 
 type Filter = 'all' | GearSlot | GearFamily | 'legendary' | 'recent';
-type SortMode = 'recommended' | 'power' | 'rarity' | 'recent';
+type SortMode =
+  | 'recommended'
+  | 'power'
+  | 'rarity'
+  | 'recent'
+  | 'type'
+  | 'family'
+  | 'name';
 type CharacterTab = 'equipment' | 'skills' | 'stats';
 
 const RARITY_ORDER = {
@@ -48,7 +55,9 @@ export class PartyManagementScreen {
   private selectedCharacterId: string | null = null;
   private hoveredItemId: number | null = null;
   private filter: Filter = 'all';
-  private sortMode: SortMode = 'recommended';
+  private sortMode: SortMode =
+    (localStorage.getItem('astral.partyInventorySort') as SortMode | null) ??
+    'recommended';
   private activeTab: CharacterTab = 'equipment';
   private search = '';
 
@@ -322,7 +331,38 @@ export class PartyManagementScreen {
                 selectedItem.technique,
                 character.equipment[selectedItem.slot]?.technique ?? 0,
               )}
+              ${this.deltaRow(
+                'Armor',
+                selectedItem.armor,
+                character.equipment[selectedItem.slot]?.armor ?? 0,
+              )}
+              ${this.percentDeltaRow(
+                'Move Speed',
+                selectedItem.movementSpeedPercent,
+                character.equipment[selectedItem.slot]?.movementSpeedPercent ?? 0,
+              )}
+              ${this.percentDeltaRow(
+                'Status Potency',
+                selectedItem.statusPotencyPercent,
+                character.equipment[selectedItem.slot]?.statusPotencyPercent ?? 0,
+              )}
+              ${this.percentDeltaRow(
+                'Status Resist',
+                selectedItem.statusResistancePercent,
+                character.equipment[selectedItem.slot]?.statusResistancePercent ?? 0,
+              )}
             </div>
+
+            ${selectedItem.effectDescriptions.length
+              ? `
+                <div class="pm-equipment-effects">
+                  <span>Equipment Effects</span>
+                  ${selectedItem.effectDescriptions
+                    .map(effect => `<strong>${this.escape(effect)}</strong>`)
+                    .join('')}
+                </div>
+              `
+              : ''}
 
             ${selectedItem.legendaryPower
               ? `<div class="pm-legendary-power">${selectedItem.legendaryPower}</div>`
@@ -331,7 +371,10 @@ export class PartyManagementScreen {
             <div class="pm-equip-footer ${comparison!.tone}">
               <div>
                 <strong>${comparison!.label}</strong>
-                <span>${comparison!.delta >= 0 ? '+' : ''}${comparison!.delta} overall</span>
+                <span>
+                  ${comparison!.delta >= 0 ? '+' : ''}${comparison!.delta} score
+                  · ${comparison!.percent >= 0 ? '+' : ''}${comparison!.percent}% overall
+                </span>
               </div>
               <button
                 data-action="equip"
@@ -427,6 +470,9 @@ export class PartyManagementScreen {
             ${this.sortOption('power', 'Power')}
             ${this.sortOption('rarity', 'Rarity')}
             ${this.sortOption('recent', 'Recent')}
+            ${this.sortOption('type', 'Item Type')}
+            ${this.sortOption('family', 'Family')}
+            ${this.sortOption('name', 'Name')}
           </select>
         </div>
       </div>
@@ -578,6 +624,16 @@ export class PartyManagementScreen {
             b.power - a.power;
         case 'recent':
           return b.id - a.id;
+        case 'type':
+          return a.slot.localeCompare(b.slot) ||
+            RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity] ||
+            b.power - a.power;
+        case 'family':
+          return a.family.localeCompare(b.family) ||
+            RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity] ||
+            b.power - a.power;
+        case 'name':
+          return a.name.localeCompare(b.name);
         case 'recommended':
         default:
           if (!selectedCharacter) return b.power - a.power;
@@ -594,6 +650,7 @@ export class PartyManagementScreen {
     character: PartyCharacterView,
   ): {
     delta: number;
+    percent: number;
     label: string;
     tone: 'upgrade' | 'sidegrade' | 'downgrade';
   } {
@@ -601,11 +658,24 @@ export class PartyManagementScreen {
     const candidate = this.itemScore(item, character);
     const currentScore = current ? this.itemScore(current, character) : 0;
     const delta = Math.round(candidate - currentScore);
+    const percent = Math.round(
+      currentScore <= 0
+        ? candidate > 0
+          ? 100
+          : 0
+        : ((candidate - currentScore) / currentScore) * 100,
+    );
 
-    if (delta >= 8) return { delta, label: 'Strong upgrade', tone: 'upgrade' };
-    if (delta >= 1) return { delta, label: 'Upgrade', tone: 'upgrade' };
-    if (delta >= -2) return { delta, label: 'Sidegrade', tone: 'sidegrade' };
-    return { delta, label: 'Downgrade', tone: 'downgrade' };
+    if (delta >= 8) {
+      return { delta, percent, label: 'Strong upgrade', tone: 'upgrade' };
+    }
+    if (delta >= 1) {
+      return { delta, percent, label: 'Upgrade', tone: 'upgrade' };
+    }
+    if (delta >= -2) {
+      return { delta, percent, label: 'Sidegrade', tone: 'sidegrade' };
+    }
+    return { delta, percent, label: 'Downgrade', tone: 'downgrade' };
   }
 
   private itemScore(
@@ -623,7 +693,12 @@ export class PartyManagementScreen {
       item.focus * weights.focus +
       item.precision * weights.precision +
       item.technique * weights.technique +
-      item.swapBonus * 0.35
+      item.swapBonus * 0.35 +
+      item.armor * weights.armor +
+      item.movementSpeedPercent * 100 * weights.mobility +
+      item.statusPotencyPercent * 100 * weights.status +
+      item.statusResistancePercent * 100 * weights.resistance +
+      item.effectDescriptions.length * weights.effects
     ) * familyMultiplier;
   }
 
@@ -635,6 +710,11 @@ export class PartyManagementScreen {
         focus: 0.35,
         precision: 0.45,
         technique: 0.6,
+        armor: 1.1,
+        mobility: 0.45,
+        status: 0.45,
+        resistance: 0.8,
+        effects: 3,
       };
     }
 
@@ -645,6 +725,11 @@ export class PartyManagementScreen {
         focus: 1,
         precision: 0.4,
         technique: 0.75,
+        armor: 0.75,
+        mobility: 0.5,
+        status: 1.1,
+        resistance: 0.9,
+        effects: 3.5,
       };
     }
 
@@ -654,6 +739,11 @@ export class PartyManagementScreen {
       focus: 0.5,
       precision: 1,
       technique: 0.95,
+      armor: 0.35,
+      mobility: 1,
+      status: 0.8,
+      resistance: 0.45,
+      effects: 4,
     };
   }
 
@@ -732,6 +822,25 @@ export class PartyManagementScreen {
         <span>${label}</span>
         <strong>${this.formatSigned(candidate)}</strong>
         <small>${delta === 0 ? 'No change' : `${this.formatSigned(delta)} vs equipped`}</small>
+      </div>
+    `;
+  }
+
+  private percentDeltaRow(
+    label: string,
+    candidate: number,
+    current: number,
+  ): string {
+    const delta = candidate - current;
+    const tone = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral';
+    const format = (value: number) =>
+      `${value > 0 ? '+' : ''}${Math.round(value * 100)}%`;
+
+    return `
+      <div class="${tone}">
+        <span>${label}</span>
+        <strong>${format(candidate)}</strong>
+        <small>${delta === 0 ? 'No change' : `${format(delta)} vs equipped`}</small>
       </div>
     `;
   }
@@ -868,6 +977,7 @@ export class PartyManagementScreen {
 
     if (target.dataset.input === 'sort') {
       this.sortMode = target.value as SortMode;
+      localStorage.setItem('astral.partyInventorySort', this.sortMode);
       this.draw();
       return;
     }

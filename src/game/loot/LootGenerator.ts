@@ -1,4 +1,5 @@
 import type {
+  EquipmentEffectModifier,
   EquipmentStatModifier,
   GeneratedItemInstance,
   ItemAffixDefinition,
@@ -7,6 +8,7 @@ import type {
   LootTableDefinition,
 } from './LootTypes';
 import { LootRegistry } from './LootRegistry';
+import { describeEquipmentEffect } from './EquipmentEffectResolver';
 
 const RARITY_AFFIX_COUNTS: Readonly<Record<ItemRarity, number>> = {
   common: 0,
@@ -91,6 +93,18 @@ export class LootGenerator {
       ),
       { statId: 'power', mode: 'flat', value: power, sourceId: definition.id },
     ];
+    const effects: EquipmentEffectModifier[] = [
+      ...(definition.baseEffects ?? []).map(effect => ({
+        ...effect,
+        sourceId: effect.sourceId ?? definition.id,
+      })),
+      ...affixes.flatMap(affix =>
+        (affix.effects ?? []).map(effect => ({
+          ...effect,
+          sourceId: effect.sourceId ?? affix.id,
+        })),
+      ),
+    ];
 
     const legendaryPower =
       rarity === 'legendary' && definition.uniquePowerId
@@ -120,9 +134,12 @@ export class LootGenerator {
       tags: [...definition.tags],
       affixIds: affixes.map(affix => affix.id),
       modifiers,
+      effects,
       favorite: false,
+      visualProfileId: definition.visualProfileId,
       legendaryPowerId: legendaryPower?.id,
       legendaryPower: legendaryPower?.description,
+      effectDescriptions: effects.map(describeEquipmentEffect),
       ...compatibility,
     };
   }
@@ -239,6 +256,16 @@ export class LootGenerator {
       focus: Math.round(flat('focus')),
       precision: Math.round(flat('precision')),
       technique: Math.round(flat('technique')),
+      armor: Math.round(flat('armor')),
+      movementSpeedPercent: modifiers
+        .filter(modifier => modifier.statId === 'movement-speed')
+        .reduce((sum, modifier) => sum + modifier.value, 0),
+      statusPotencyPercent: modifiers
+        .filter(modifier => modifier.statId === 'status-potency')
+        .reduce((sum, modifier) => sum + modifier.value, 0),
+      statusResistancePercent: modifiers
+        .filter(modifier => modifier.statId === 'status-resistance')
+        .reduce((sum, modifier) => sum + modifier.value, 0),
     };
   }
 }

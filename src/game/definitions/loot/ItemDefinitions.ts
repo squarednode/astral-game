@@ -13,6 +13,7 @@ export const itemDefinitions: readonly ItemBaseDefinition[] = [
     tags: ['weapon', 'melee', 'bone'],
     allowedAffixTags: ['weapon', 'melee'],
     basePower: 6,
+    visualProfileId: 'loot.weapon.bone-blade',
     baseModifiers: [
       { statId: 'attack', mode: 'flat', value: 2 },
       { statId: 'precision', mode: 'flat', value: 1 },
@@ -27,6 +28,7 @@ export const itemDefinitions: readonly ItemBaseDefinition[] = [
     tags: ['weapon', 'melee', 'carapace'],
     allowedAffixTags: ['weapon', 'melee'],
     basePower: 5,
+    visualProfileId: 'loot.weapon.crab-claw',
     baseModifiers: [
       { statId: 'attack', mode: 'flat', value: 1.5 },
       { statId: 'armor', mode: 'flat', value: 1 },
@@ -41,9 +43,13 @@ export const itemDefinitions: readonly ItemBaseDefinition[] = [
     tags: ['weapon', 'ranged', 'bow'],
     allowedAffixTags: ['weapon', 'ranged'],
     basePower: 8,
+    visualProfileId: 'loot.weapon.crude-bow',
     baseModifiers: [
       { statId: 'attack', mode: 'flat', value: 2 },
       { statId: 'focus', mode: 'flat', value: 2 },
+    ],
+    baseEffects: [
+      { effectId: 'projectile-speed', mode: 'percent', value: 0.08 },
     ],
     uniquePowerId: 'legendary.wolfkeeper-bow',
   },
@@ -98,9 +104,14 @@ export const itemDefinitions: readonly ItemBaseDefinition[] = [
     tags: ['relic', 'astral'],
     allowedAffixTags: ['relic'],
     basePower: 10,
+    visualProfileId: 'loot.relic.astral-loop',
     baseModifiers: [
       { statId: 'focus', mode: 'flat', value: 2 },
       { statId: 'status-potency', mode: 'percent', value: 0.05 },
+    ],
+    baseEffects: [
+      { effectId: 'swap-cooldown-rate', mode: 'percent', value: 0.12 },
+      { effectId: 'status-duration', mode: 'percent', value: 0.1 },
     ],
     uniquePowerId: 'legendary.frost-trail',
   },

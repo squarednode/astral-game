@@ -23,6 +23,41 @@ export interface EquipmentStatModifier {
   sourceId?: string;
 }
 
+export type EquipmentEffectId =
+  | 'all-damage'
+  | 'fire-damage'
+  | 'frost-damage'
+  | 'lightning-damage'
+  | 'status-duration'
+  | 'burn-duration'
+  | 'chill-duration'
+  | 'ability-cooldown-rate'
+  | 'swap-cooldown-rate'
+  | 'projectile-count'
+  | 'projectile-speed'
+  | 'shield-duration';
+
+export interface EquipmentEffectModifier {
+  effectId: EquipmentEffectId;
+  mode: 'flat' | 'percent';
+  value: number;
+  abilityId?: string;
+  statusId?: string;
+  sourceId?: string;
+}
+
+export interface EquipmentEffectSnapshot {
+  allDamageMultiplier: number;
+  elementalDamageMultipliers: Readonly<Record<'fire' | 'frost' | 'lightning', number>>;
+  statusDurationMultiplier: number;
+  statusDurationById: Readonly<Record<string, number>>;
+  abilityCooldownRate: number;
+  swapCooldownRate: number;
+  projectileCountBonus: number;
+  projectileSpeedMultiplier: number;
+  shieldDurationMultiplier: number;
+}
+
 export interface ItemBaseDefinition {
   id: string;
   name: string;
@@ -32,8 +67,10 @@ export interface ItemBaseDefinition {
   tags: readonly ItemTag[];
   basePower: number;
   baseModifiers: readonly EquipmentStatModifier[];
+  baseEffects?: readonly EquipmentEffectModifier[];
   allowedAffixTags?: readonly string[];
   uniquePowerId?: string;
+  visualProfileId?: string;
 }
 
 export interface ItemAffixDefinition {
@@ -44,6 +81,7 @@ export interface ItemAffixDefinition {
   minimumLevel: number;
   weight: number;
   modifiers: readonly EquipmentStatModifier[];
+  effects?: readonly EquipmentEffectModifier[];
 }
 
 export interface LegendaryPowerDefinition {
@@ -82,7 +120,9 @@ export interface GeneratedItemInstance {
   tags: ItemTag[];
   affixIds: string[];
   modifiers: EquipmentStatModifier[];
+  effects: EquipmentEffectModifier[];
   favorite: boolean;
+  visualProfileId?: string;
   legendaryPowerId?: string;
   legendaryPower?: string;
 
@@ -93,6 +133,11 @@ export interface GeneratedItemInstance {
   focus: number;
   precision: number;
   technique: number;
+  armor: number;
+  movementSpeedPercent: number;
+  statusPotencyPercent: number;
+  statusResistancePercent: number;
+  effectDescriptions: string[];
 }
 
 export interface EquipmentStatSnapshot {
