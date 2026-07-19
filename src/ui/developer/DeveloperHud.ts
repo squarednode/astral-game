@@ -10,7 +10,8 @@ export type DeveloperHudPageId =
   | 'sandbox'
   | 'ai'
   | 'status'
-  | 'loot';
+  | 'loot'
+  | 'actors';
 
 export interface DeveloperOverviewMetrics {
   fps: number;
@@ -38,6 +39,7 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   ai: 'AI',
   status: 'Status Effects',
   loot: 'Loot & Equipment',
+  actors: 'Actors & World',
 };
 
 export class DeveloperHud {
@@ -51,7 +53,7 @@ export class DeveloperHud {
   >();
   private readonly pages = new Map<DeveloperHudPageId, HTMLElement>();
   private readonly textPages = new Map<
-    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot'>,
+    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors'>,
     HTMLPreElement
   >();
   private open = false;
@@ -168,6 +170,13 @@ export class DeveloperHud {
     body.appendChild(loot);
     this.pages.set('loot', loot);
 
+    const actors = document.createElement('article');
+    actors.className = 'developer-hud-page developer-actors-page';
+    actors.dataset.page = 'actors';
+    actors.hidden = true;
+    body.appendChild(actors);
+    this.pages.set('actors', actors);
+
     const movement = document.createElement('article');
     movement.className = 'developer-hud-page developer-movement-page';
     movement.dataset.page = 'movement';
@@ -222,12 +231,12 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot' | 'actors'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 
   setPageText(
-    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot'>,
+    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors'>,
     text: string,
   ): void {
     this.textPages.get(pageId)!.textContent = text;

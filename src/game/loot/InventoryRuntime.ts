@@ -64,9 +64,21 @@ export class InventoryRuntime {
   }
 
   addMaterial(materialId: string, amount: number): number {
-    const next = (this.materials.get(materialId) ?? 0) + Math.max(0, Math.floor(amount));
+    const next =
+      (this.materials.get(materialId) ?? 0) +
+      Math.max(0, Math.floor(amount));
     this.materials.set(materialId, next);
     return next;
+  }
+
+  removeMaterial(materialId: string, amount: number): boolean {
+    const requested = Math.max(0, Math.floor(amount));
+    const current = this.materials.get(materialId) ?? 0;
+    if (current < requested) return false;
+    const next = current - requested;
+    if (next > 0) this.materials.set(materialId, next);
+    else this.materials.delete(materialId);
+    return true;
   }
 
   getCopper(): number {

@@ -5249,6 +5249,32 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Party Management scores effects and additional defensive/support stats.
 - Generated items expose effect descriptions for UI and debugging.
 
+# Changelog — 0.6.5
+
+## Added
+
+- Generic Actor Runtime and state machine
+- Actor Registry
+- World Interaction targeting runtime
+- World State flags, counters, and values
+- Shared Condition Evaluator
+- Shared Action Executor
+- Node-based Dialogue Runtime
+- Dialogue overlay UI
+- Actor visual profiles
+- Interaction profiles
+- Quest, merchant, transport, ambient, and schedule contracts
+- Actor developer inspector
+- Five starter NPC definitions
+- Starter dialogue and world-interaction validation content
+
+## Changed
+
+- The Interact input now resolves ground loot first, then nearby actors.
+- Inventory Runtime supports material removal.
+- Developer HUD includes an Actors & World page.
+
+
 ### Validate
 ```bash
 npm run build

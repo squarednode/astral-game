@@ -1,0 +1,122 @@
+import type {
+  AmbientDefinition,
+  MerchantDefinition,
+  QuestDefinition,
+  TransportDefinition,
+} from '../../actors';
+
+export const questDefinitions: readonly QuestDefinition[] = [
+  {
+    id: 'quest.wolf-problem',
+    displayName: 'The Wolf Problem',
+    description: 'Help Hunter Mara secure the forest route.',
+    objectives: [
+      {
+        id: 'wolves',
+        type: 'kill-tag',
+        targetTags: ['wolf'],
+        requiredAmount: 6,
+      },
+      {
+        id: 'pelts',
+        type: 'collect-material',
+        targetId: 'wolf-pelt',
+        requiredAmount: 4,
+      },
+      {
+        id: 'keeper',
+        type: 'defeat-boss',
+        targetId: 'boss.wolf-keeper',
+        requiredAmount: 1,
+      },
+      {
+        id: 'return',
+        type: 'talk-to-actor',
+        targetId: 'actor.hunter-mara',
+        requiredAmount: 1,
+      },
+    ],
+    rewards: [
+      { type: 'give-currency', currencyId: 'copper', amount: 75 },
+      {
+        type: 'set-world-flag',
+        flagId: 'forest-route-unlocked',
+        value: true,
+      },
+    ],
+  },
+];
+
+export const merchantDefinitions: readonly MerchantDefinition[] = [
+  {
+    id: 'merchant.camp-supplies',
+    displayName: 'Camp Supplies',
+    currencyId: 'copper',
+    buybackRate: 0.35,
+    sellRate: 1,
+    entries: [
+      {
+        id: 'merchant.pack-upgrade',
+        displayName: 'Reinforced Pack',
+        price: 100,
+        condition: { type: 'has-currency', currencyId: 'copper', amount: 100 },
+        purchaseActions: [
+          { type: 'remove-currency', currencyId: 'copper', amount: 100 },
+          { type: 'expand-inventory', amount: 8 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'merchant.blacksmith',
+    displayName: 'Orin’s Forge',
+    currencyId: 'copper',
+    buybackRate: 0.45,
+    sellRate: 1.1,
+    entries: [],
+  },
+];
+
+export const transportDefinitions: readonly TransportDefinition[] = [
+  {
+    id: 'transport.forest-ferry',
+    displayName: 'Forest Ferry',
+    destinationId: 'destination.forest-shore',
+    cost: 0,
+    condition: {
+      type: 'world-flag',
+      flagId: 'forest-route-unlocked',
+      value: true,
+    },
+    travelActions: [
+      { type: 'travel', destinationId: 'destination.forest-shore' },
+    ],
+  },
+];
+
+export const ambientDefinitions: readonly AmbientDefinition[] = [
+  {
+    id: 'ambient.hunter',
+    behaviorIds: ['look-around', 'inspect-bow', 'watch-forest'],
+    minimumDelay: 4,
+    maximumDelay: 10,
+  },
+  {
+    id: 'ambient.merchant',
+    behaviorIds: ['check-stock', 'wave', 'lean'],
+    minimumDelay: 5,
+    maximumDelay: 12,
+  },
+  {
+    id: 'ambient.captain',
+    behaviorIds: ['watch-water', 'check-rope'],
+    minimumDelay: 6,
+    maximumDelay: 14,
+  },
+  {
+    id: 'ambient.blacksmith',
+    behaviorIds: ['hammer', 'inspect-metal', 'wipe-brow'],
+    minimumDelay: 3,
+    maximumDelay: 8,
+  },
+];

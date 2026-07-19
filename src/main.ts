@@ -1,6 +1,7 @@
 import './style.css';
 import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
+import './ui/actors/DialogueOverlay.css';
 import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
@@ -166,6 +167,27 @@ import type {
   MetadataComponent,
   TransformComponent,
 } from './engine/entity';
+import {
+  ActionExecutor,
+  ActorRegistry,
+  ActorRuntime,
+  ConditionEvaluator,
+  DialogueRuntime,
+  WorldInteractionRuntime,
+  WorldStateRuntime,
+} from './game/actors';
+import type {
+  ActorStateId,
+  ActorVisualProfile,
+} from './game/actors';
+import {
+  actorDefinitions,
+  actorDialogueDefinitions,
+  actorVisualProfiles,
+  interactionProfiles,
+} from './game/definitions/actors';
+import { DialogueOverlay } from './ui/actors/DialogueOverlay';
+import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
 import type {
   GearFamily,
   GearSlot,
@@ -1241,7 +1263,7 @@ function updateGroundLoot(dt: number): void {
     lootInteractionRuntime.clear();
   }
 
-  if (input.consumePressed('interact')) {
+  if (target && input.consumePressed('interact')) {
     lootInteractionRuntime.collect();
   }
 
@@ -1350,6 +1372,332 @@ const lootDeveloperPanel = new LootDeveloperPanel(
   },
 );
 refreshWalletStatus();
+
+const actorRegistry = new ActorRegistry();
+actorVisualProfiles.forEach(profile => actorRegistry.registerVisual(profile));
+interactionProfiles.forEach(profile => actorRegistry.registerInteraction(profile));
+actorDefinitions.forEach(definition => actorRegistry.registerActor(definition));
+actorDialogueDefinitions.forEach(definition =>
+  actorRegistry.registerDialogue(definition),
+);
+
+const worldStateRuntime = new WorldStateRuntime();
+const actorRuntimes = new Map<string, ActorRuntime>();
+const actorMeshes = new Map<string, Mesh>();
+const actorInteractionRuntime = new WorldInteractionRuntime();
+let hoveredActorId: string | null = null;
+let dialogueActorId: string | null = null;
+
+const actorPrompt = document.createElement('div');
+actorPrompt.id = 'actor-interaction-prompt';
+actorPrompt.hidden = true;
+actorPrompt.style.cssText = [
+  'position:fixed',
+  'left:50%',
+  'bottom:112px',
+  'transform:translateX(-50%)',
+  'z-index:80',
+  'padding:8px 12px',
+  'border:1px solid rgba(125,174,242,.38)',
+  'border-radius:7px',
+  'background:rgba(7,13,23,.91)',
+  'color:white',
+  'font:700 13px system-ui,sans-serif',
+  'pointer-events:none',
+].join(';');
+document.body.appendChild(actorPrompt);
+
+let dialogueRuntime: DialogueRuntime;
+const actorConditionEvaluator = new ConditionEvaluator({
+  getWorldFlag: id => worldStateRuntime.getFlag(id),
+  getWorldCounter: id => worldStateRuntime.getCounter(id),
+  getCurrency: () => inventoryRuntime.getCopper(),
+  getMaterial: id => inventoryRuntime.getMaterial(id),
+  hasInventorySpace: amount =>
+    inventoryRuntime.canStore(bagItems(), amount),
+  getActorState: id =>
+    actorRuntimes.get(id)?.machine.getCurrentStateId() ?? undefined,
+});
+
+const actorActionExecutor = new ActionExecutor({
+  notify: (text, tone) =>
+    feed(
+      text,
+      tone === 'success'
+        ? 'success'
+        : tone === 'warning'
+          ? 'warning'
+          : 'neutral',
+    ),
+  setWorldFlag: (id, value) => {
+    worldStateRuntime.setFlag(id, value);
+  },
+  incrementWorldCounter: (id, amount) => {
+    worldStateRuntime.incrementCounter(id, amount);
+  },
+  giveCurrency: (_id, amount) => {
+    inventoryRuntime.addCopper(amount);
+    refreshWalletStatus();
+    if (inventoryOpen) renderPartyManagement();
+  },
+  removeCurrency: (_id, amount) => {
+    const removed = inventoryRuntime.spendCopper(amount);
+    if (removed) {
+      refreshWalletStatus();
+      if (inventoryOpen) renderPartyManagement();
+    }
+    return removed;
+  },
+  giveMaterial: (id, amount) => {
+    inventoryRuntime.addMaterial(id, amount);
+    if (inventoryOpen) renderPartyManagement();
+  },
+  removeMaterial: (id, amount) => {
+    const removed = inventoryRuntime.removeMaterial(id, amount);
+    if (removed && inventoryOpen) renderPartyManagement();
+    return removed;
+  },
+  expandInventory: amount => {
+    inventoryRuntime.upgradeCapacity(amount);
+    refreshWalletStatus();
+    if (inventoryOpen) renderPartyManagement();
+  },
+  startDialogue: id => {
+    dialogueRuntime.start(id);
+  },
+  openMerchant: id => {
+    feed(`Merchant framework opened: ${id}.`, 'success');
+  },
+  startQuest: id => {
+    worldStateRuntime.setFlag(`${id}.active`, true);
+    feed(`Quest accepted: ${id}.`, 'success');
+  },
+  advanceQuest: (id, objectiveId, amount = 1) => {
+    worldStateRuntime.incrementCounter(
+      `${id}.${objectiveId ?? 'progress'}`,
+      amount,
+    );
+  },
+  travel: destinationId => {
+    worldStateRuntime.setValue('last-destination', destinationId);
+    feed(`Travel requested: ${destinationId}.`, 'success');
+  },
+  setActorState: (actorId, state) => {
+    actorRuntimes
+      .get(actorId)
+      ?.setState(state as ActorStateId);
+  },
+});
+
+dialogueRuntime = new DialogueRuntime(
+  actorConditionEvaluator,
+  actorActionExecutor,
+);
+dialogueRuntime.registerMany(actorDialogueDefinitions);
+
+const dialogueOverlay = new DialogueOverlay(
+  ui.getLayer('menus'),
+  dialogueRuntime,
+  speakerId =>
+    actorRegistry.actor(speakerId)?.displayName ?? speakerId,
+  () => {
+    if (dialogueActorId) {
+      actorRuntimes.get(dialogueActorId)?.finishInteraction();
+    }
+    dialogueActorId = null;
+    input.setContext('gameplay');
+  },
+);
+
+function actorColor(roleTags: readonly string[]): Color3 {
+  if (roleTags.includes('merchant')) return new Color3(0.85, 0.56, 0.2);
+  if (roleTags.includes('transport')) return new Color3(0.2, 0.68, 0.9);
+  if (roleTags.includes('quest-giver')) return new Color3(0.72, 0.4, 0.95);
+  if (roleTags.includes('blacksmith')) return new Color3(0.75, 0.28, 0.18);
+  return new Color3(0.38, 0.72, 0.48);
+}
+
+function createActorMesh(
+  actorId: string,
+  profile: ActorVisualProfile,
+): Mesh {
+  let mesh: Mesh;
+  switch (profile.primitive) {
+    case 'box':
+      mesh = MeshBuilder.CreateBox(
+        actorId,
+        { width: 0.7, height: profile.height, depth: 0.55 },
+        scene,
+      );
+      break;
+    case 'cylinder':
+      mesh = MeshBuilder.CreateCylinder(
+        actorId,
+        { diameter: 0.65, height: profile.height, tessellation: 12 },
+        scene,
+      );
+      break;
+    case 'sphere':
+      mesh = MeshBuilder.CreateSphere(
+        actorId,
+        { diameter: profile.height },
+        scene,
+      );
+      break;
+    case 'capsule':
+    default:
+      mesh = MeshBuilder.CreateCapsule(
+        actorId,
+        { height: profile.height, radius: 0.34 },
+        scene,
+      );
+      break;
+  }
+  return mesh;
+}
+
+for (const definition of actorRegistry.allActors()) {
+  const profile = actorRegistry.visual(definition.visualProfileId);
+  const interaction = definition.interactionProfileId
+    ? actorRegistry.interaction(definition.interactionProfileId)
+    : undefined;
+  if (!profile) continue;
+
+  const runtime = new ActorRuntime(
+    definition,
+    interaction,
+    actorConditionEvaluator,
+  );
+  const mesh = createActorMesh(definition.id, profile);
+  mesh.position.set(
+    definition.position.x,
+    definition.position.y + profile.height / 2,
+    definition.position.z,
+  );
+  mesh.scaling.setAll(profile.scale);
+  mesh.material = mat(
+    `actor-${definition.id}`,
+    actorColor(definition.roleTags),
+    0.16,
+  );
+  mesh.metadata = {
+    ...(mesh.metadata ?? {}),
+    actorId: definition.id,
+  };
+  mesh.isPickable = true;
+
+  actorRuntimes.set(definition.id, runtime);
+  actorMeshes.set(definition.id, mesh);
+}
+
+function dialogueIdForActor(actorId: string): string | undefined {
+  return actorRegistry
+    .actor(actorId)
+    ?.components.find(component => component.type === 'dialogue')
+    ?.definitionId;
+}
+
+function interactWithActor(actorId: string): void {
+  const runtime = actorRuntimes.get(actorId);
+  const dialogueId = dialogueIdForActor(actorId);
+  if (!runtime) return;
+
+  if (dialogueId) {
+    runtime.beginInteraction('talking');
+    dialogueActorId = actorId;
+    if (dialogueRuntime.start(dialogueId)) {
+      dialogueOverlay.render();
+      input.setContext('inventory');
+      actorDeveloperPanel.render();
+      return;
+    }
+  }
+
+  runtime.beginInteraction('performing');
+  feed(`Interacted with ${runtime.definition.displayName}.`);
+  runtime.finishInteraction();
+}
+
+const actorDeveloperPanel = new ActorDeveloperPanel(
+  developerHud.getPageContent('actors'),
+  {
+    actors: () => [...actorRuntimes.values()],
+    dialogue: () => dialogueRuntime,
+    worldState: () => worldStateRuntime,
+    interact: interactWithActor,
+    setState: (actorId, state) =>
+      actorRuntimes
+        .get(actorId)
+        ?.setState(state as ActorStateId),
+  },
+);
+
+function updateActorHoverFromCursor(): void {
+  const pick = scene.pick(
+    scene.pointerX,
+    scene.pointerY,
+    mesh => typeof mesh.metadata?.actorId === 'string',
+  );
+  hoveredActorId =
+    pick?.hit && typeof pick.pickedMesh?.metadata?.actorId === 'string'
+      ? pick.pickedMesh.metadata.actorId
+      : null;
+}
+
+function updateActors(dt: number): void {
+  const candidates = [...actorRuntimes.values()].map(runtime => {
+    const mesh = actorMeshes.get(runtime.definition.id)!;
+    const delta = mesh.position.subtract(playerRoot.position);
+    const flat = new Vector3(delta.x, 0, delta.z);
+    const forward = new Vector3(
+      Math.sin(playerRoot.rotation.y),
+      0,
+      Math.cos(playerRoot.rotation.y),
+    );
+    return {
+      actor: runtime,
+      distance: flat.length(),
+      directlyHovered: hoveredActorId === runtime.definition.id,
+      inFront:
+        flat.lengthSquared() <= 0.0001 ||
+        Vector3.Dot(forward, flat.normalize()) > 0.2,
+    };
+  });
+
+  const targeted = actorInteractionRuntime.select(candidates);
+  for (const candidate of candidates) {
+    candidate.actor.update(
+      dt,
+      candidate.distance,
+      targeted === candidate.actor,
+    );
+    const mesh = actorMeshes.get(candidate.actor.definition.id);
+    if (mesh) {
+      mesh.visibility =
+        candidate.actor.machine.getCurrentStateId() === 'hidden' ? 0 : 1;
+      const targetedScale = targeted === candidate.actor ? 1.08 : 1;
+      mesh.scaling.setAll(targetedScale);
+    }
+  }
+
+  if (targeted && !dialogueRuntime.snapshot().active) {
+    const profile = targeted.interaction;
+    actorPrompt.textContent =
+      `[E] ${profile?.promptVerb ?? 'Interact with'} ${targeted.definition.displayName}`;
+    actorPrompt.hidden = false;
+  } else {
+    actorPrompt.hidden = true;
+  }
+
+  if (
+    targeted &&
+    !dialogueRuntime.snapshot().active &&
+    input.consumePressed('interact')
+  ) {
+    interactWithActor(targeted.definition.id);
+  }
+}
+
 combatSandboxTuning.subscribe(values => {
   for (const enemy of enemies) {
     const healthRatio = enemy.maxHp > 0 ? Math.max(0, enemy.hp / enemy.maxHp) : 1;
@@ -3505,6 +3853,21 @@ scene.onPointerObservable.add((pi: any) => {
         return;
       }
 
+      updateActorHoverFromCursor();
+      if (hoveredActorId) {
+        const runtime = actorRuntimes.get(hoveredActorId);
+        const mesh = actorMeshes.get(hoveredActorId);
+        if (
+          runtime &&
+          mesh &&
+          Vector3.Distance(mesh.position, playerRoot.position) <=
+            (runtime.interaction?.range ?? 0)
+        ) {
+          interactWithActor(hoveredActorId);
+          return;
+        }
+      }
+
       canvas.setPointerCapture?.(pi.event.pointerId);
       if (
         !input.isClickToAttackEnabled() &&
@@ -3531,6 +3894,7 @@ scene.onPointerObservable.add((pi: any) => {
     updatePointerWorldFromCursor();
     updateHoveredEnemyFromCursor();
     updateHoveredGroundLootFromCursor(pi.event);
+    updateActorHoverFromCursor();
   }
 
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
@@ -3594,10 +3958,13 @@ scene.onBeforeRenderObservable.add(() => {
   updateGroundLoot(realDt);
   input.update();
   const dt = combat.update(realDt);
+  updateActors(dt);
   enemyTelegraphs.update(realDt);
   validationStateMachine.update(realDt);
 
-  if (
+  if (dialogueRuntime.snapshot().active && input.consumeEscapePressed()) {
+    dialogueOverlay.close();
+  } else if (
     input.consumeEscapePressed() ||
     input.consumePressed('toggleSettings')
   ) {

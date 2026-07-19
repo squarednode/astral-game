@@ -1,0 +1,72 @@
+.dialogue-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: grid;
+  place-items: end center;
+  padding: 24px;
+  background: linear-gradient(transparent 35%, rgba(2,6,12,.72));
+  pointer-events: none;
+}
+
+.dialogue-overlay.hidden { display: none; }
+
+.dialogue-panel {
+  width: min(760px, calc(100vw - 48px));
+  padding: 16px;
+  border: 1px solid rgba(130,174,239,.38);
+  border-radius: 12px;
+  background: rgba(8,14,25,.97);
+  color: #eef5ff;
+  box-shadow: 0 18px 52px rgba(0,0,0,.48);
+  pointer-events: auto;
+}
+
+.dialogue-panel header span,
+.dialogue-panel header strong { display: block; }
+
+.dialogue-panel header span {
+  color: #76a7ef;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.dialogue-panel header strong { margin-top: 3px; font-size: 20px; }
+.dialogue-panel p { color: #d6e1f0; line-height: 1.5; }
+
+.dialogue-choices { display: grid; gap: 7px; }
+
+.dialogue-choices button,
+.dialogue-close {
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 7px;
+  background: rgba(255,255,255,.055);
+  color: #eef5ff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dialogue-choices button:hover:not(:disabled) {
+  border-color: #78aaff;
+  background: rgba(74,119,188,.24);
+}
+
+.dialogue-choices button:disabled {
+  color: #73829a;
+  cursor: not-allowed;
+}
+
+.dialogue-choices small {
+  display: block;
+  margin-top: 3px;
+  color: #a57272;
+}
+
+.dialogue-close {
+  float: right;
+  margin-top: 10px;
+  padding: 7px 12px;
+}

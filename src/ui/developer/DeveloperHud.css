@@ -511,3 +511,66 @@
   color: inherit;
   padding: 7px 9px;
 }
+
+
+.actor-developer-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.actor-developer-panel > header strong,
+.actor-developer-panel > header small {
+  display: block;
+}
+
+.actor-developer-panel > header small {
+  margin-top: 3px;
+  color: #8195b4;
+}
+
+.actor-dev-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.actor-dev-card {
+  padding: 9px;
+  border: 1px solid rgba(132,174,235,.18);
+  border-radius: 8px;
+  background: rgba(255,255,255,.03);
+}
+
+.actor-dev-card > div > strong,
+.actor-dev-card > div > small {
+  display: block;
+}
+
+.actor-dev-card > div > small {
+  color: #7890b1;
+  font-size: 9px;
+}
+
+.actor-dev-card dl {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 3px 7px;
+  margin: 8px 0;
+  font: 10px/1.35 ui-monospace, monospace;
+}
+
+.actor-dev-card dt { color: #8297b6; }
+.actor-dev-card dd { margin: 0; color: #dae8ff; }
+
+.actor-dev-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.actor-dev-actions button {
+  padding: 6px 8px;
+  border: 1px solid rgba(117,186,255,.35);
+  border-radius: 6px;
+  background: rgba(117,186,255,.1);
+  color: #eef5ff;
+  cursor: pointer;
+}
