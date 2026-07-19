@@ -1,13 +1,19 @@
 import type {
   GeneratedItemInstance,
+  InventorySnapshot,
   ItemRarity,
 } from '../../game/loot';
-import { LootGenerator, LootRegistry } from '../../game/loot';
+import { LootRegistry } from '../../game/loot';
 
 export interface LootDeveloperPanelOptions {
   inventory(): readonly GeneratedItemInstance[];
+  snapshot(): InventorySnapshot;
+  groundLootCount(): number;
   generate(tableId: string, rarity?: ItemRarity): void;
   clearUnequipped(): void;
+  setMinimumVisibleRarity(rarity: ItemRarity): void;
+  setAutoPickupMaximum(rarity: ItemRarity | 'none'): void;
+  upgradeCapacity(): void;
 }
 
 export class LootDeveloperPanel {
@@ -25,6 +31,7 @@ export class LootDeveloperPanel {
 
   render(): void {
     const inventory = this.options.inventory();
+    const snapshot = this.options.snapshot();
     const rarityCounts: Record<ItemRarity, number> = {
       common: 0,
       magic: 0,
@@ -38,7 +45,7 @@ export class LootDeveloperPanel {
         <header>
           <div>
             <strong>LOOT & EQUIPMENT</strong>
-            <small>Definitions, generation, and inventory telemetry</small>
+            <small>Ground drops, wallet, filters, and inventory telemetry</small>
           </div>
         </header>
 
@@ -46,7 +53,9 @@ export class LootDeveloperPanel {
           <span>Items <b>${this.registry.allItems().length}</b></span>
           <span>Affixes <b>${this.registry.allAffixes().length}</b></span>
           <span>Tables <b>${this.registry.allTables().length}</b></span>
-          <span>Inventory <b>${inventory.length}</b></span>
+          <span>Inventory <b>${snapshot.used}/${snapshot.capacity}</b></span>
+          <span>Ground <b>${this.options.groundLootCount()}</b></span>
+          <span>Copper <b>${snapshot.copper}</b></span>
         </div>
 
         <label>
@@ -62,11 +71,31 @@ export class LootDeveloperPanel {
           </select>
         </label>
 
+        <label>
+          Minimum visible rarity
+          <select data-action="minimum-visible">
+            ${this.rarityOptions(snapshot.filters.minimumVisibleRarity)}
+          </select>
+        </label>
+
+        <label>
+          Auto-pickup equipment through
+          <select data-action="auto-pickup">
+            <option value="none" ${snapshot.filters.autoPickupMaximumRarity === 'none' ? 'selected' : ''}>None</option>
+            ${this.rarityOptions(
+              snapshot.filters.autoPickupMaximumRarity === 'none'
+                ? 'common'
+                : snapshot.filters.autoPickupMaximumRarity,
+            )}
+          </select>
+        </label>
+
         <div class="loot-dev-actions">
-          <button data-action="generate">Generate Roll</button>
-          <button data-action="generate-magic">Magic</button>
-          <button data-action="generate-rare">Rare</button>
-          <button data-action="generate-legendary">Legendary</button>
+          <button data-action="generate">Drop Roll</button>
+          <button data-action="generate-magic">Drop Magic</button>
+          <button data-action="generate-rare">Drop Rare</button>
+          <button data-action="generate-legendary">Drop Legendary</button>
+          <button data-action="capacity">Upgrade Capacity +8</button>
           <button data-action="clear">Clear Unequipped</button>
         </div>
 
@@ -76,14 +105,19 @@ Magic       ${rarityCounts.magic}
 Rare        ${rarityCounts.rare}
 Legendary   ${rarityCounts.legendary}
 
-RECENT
+MATERIALS
+${Object.entries(snapshot.materials)
+  .map(([id, amount]) => `${id.padEnd(16)} ${amount}`)
+  .join('\n') || 'None'}
+
+RECENT INVENTORY
 ${inventory
   .slice(0, 10)
   .map(
     item =>
       `${item.rarity.padEnd(10)} L${String(item.itemLevel).padEnd(3)} ${item.name} [${item.slot}]`,
   )
-  .join('\n') || 'No generated items.'}</pre>
+  .join('\n') || 'No collected items.'}</pre>
       </section>
     `;
   }
@@ -93,11 +127,31 @@ ${inventory
     this.host.removeEventListener('change', this.onChange);
   }
 
+  private rarityOptions(selected: ItemRarity): string {
+    return (['common', 'magic', 'rare', 'legendary'] as const)
+      .map(
+        rarity =>
+          `<option value="${rarity}" ${rarity === selected ? 'selected' : ''}>${rarity}</option>`,
+      )
+      .join('');
+  }
+
   private readonly onChange = (event: Event): void => {
     const target = event.target as HTMLSelectElement;
-    if (target.dataset.action === 'table') {
-      this.selectedTableId = target.value;
+    switch (target.dataset.action) {
+      case 'table':
+        this.selectedTableId = target.value;
+        break;
+      case 'minimum-visible':
+        this.options.setMinimumVisibleRarity(target.value as ItemRarity);
+        break;
+      case 'auto-pickup':
+        this.options.setAutoPickupMaximum(
+          target.value as ItemRarity | 'none',
+        );
+        break;
     }
+    this.render();
   };
 
   private readonly onClick = (event: MouseEvent): void => {
@@ -118,6 +172,9 @@ ${inventory
         break;
       case 'generate-legendary':
         this.options.generate(this.selectedTableId, 'legendary');
+        break;
+      case 'capacity':
+        this.options.upgradeCapacity();
         break;
       case 'clear':
         this.options.clearUnequipped();

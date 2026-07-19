@@ -5180,6 +5180,30 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Legendary power display
 - Character equipment slots
 
+# Changelog — 0.6.4b
+
+## Added
+
+- Physical ground equipment drops
+- Currency wallet
+- Separate material and quest-item storage
+- Copper drops
+- Wolf Pelt and Crab Shell material drops
+- Inventory capacity and upgrades
+- Loot visibility filters
+- Equipment auto-pickup rarity controls
+- Full-inventory ground protection
+- Legendary extended drop protection
+- Best-character and upgrade recommendations
+- Ground-loot and wallet developer telemetry
+
+## Changed
+
+- Enemy equipment drops no longer enter inventory immediately.
+- Currency and materials no longer consume equipment slots.
+- Equipped items no longer consume bag capacity.
+- Developer-generated equipment now appears on the ground.
+- Loot notifications distinguish drops from pickups.
 
 ### Validate
 ```bash

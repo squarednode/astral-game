@@ -112,8 +112,18 @@ import { NavigationDeveloperPanel } from './ui/developer/NavigationDeveloperPane
 import { CombatSandboxPanel } from './ui/developer/CombatSandboxPanel';
 import { StatusDeveloperPanel } from './ui/developer/StatusDeveloperPanel';
 import { LootDeveloperPanel } from './ui/developer/LootDeveloperPanel';
-import { aggregateEquipmentStats, LootGenerator, LootRegistry } from './game/loot';
-import type { GeneratedItemInstance, ItemRarity } from './game/loot';
+import {
+  aggregateEquipmentStats,
+  GroundLootRuntime,
+  InventoryRuntime,
+  LootGenerator,
+  LootRegistry,
+} from './game/loot';
+import type {
+  GeneratedItemInstance,
+  GroundLootRecord,
+  ItemRarity,
+} from './game/loot';
 import {
   itemDefinitions,
   itemAffixDefinitions,
@@ -279,6 +289,8 @@ for (const definition of lootTableDefinitions) {
   lootRegistry.registerLootTable(definition);
 }
 const lootGenerator = new LootGenerator(lootRegistry);
+const inventoryRuntime = new InventoryRuntime();
+const groundLootRuntime = new GroundLootRuntime();
 
 definitions.registerKind<CharacterDefinition>(
   'character',
@@ -774,6 +786,7 @@ let kills = 0;
 let enemies: Enemy[] = [];
 let hoveredEnemy: Enemy | null = null;
 let loot: LootItem[] = [];
+const groundLootMeshes = new Map<number, Mesh>();
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
 let scheduledWave: number | null = null;
 let projectiles: {
@@ -813,6 +826,23 @@ waterStatus.style.cssText = [
   'pointer-events:none',
 ].join(';');
 document.body.appendChild(waterStatus);
+
+const walletStatus = document.createElement('div');
+walletStatus.id = 'wallet-status';
+walletStatus.style.cssText = [
+  'position:fixed',
+  'top:18px',
+  'right:18px',
+  'z-index:35',
+  'padding:8px 12px',
+  'border:1px solid rgba(255,255,255,.22)',
+  'border-radius:8px',
+  'background:rgba(7,14,24,.82)',
+  'color:white',
+  'font:700 13px system-ui,sans-serif',
+  'pointer-events:none',
+].join(';');
+document.body.appendChild(walletStatus);
 
 const ui = new UIManager();
 const developerHud = new DeveloperHud(
@@ -894,21 +924,237 @@ const statusDeveloperPanel = new StatusDeveloperPanel(
     ...enemies.map(enemy => ({ entityId: enemy.entityId, displayName: enemy.displayName, component: enemy.statusComponent })),
   ],
 );
+function refreshWalletStatus(): void {
+  const snapshot = inventoryRuntime.snapshot(bagItems());
+  walletStatus.textContent = `Copper ${snapshot.copper}  |  Inventory ${snapshot.used}/${snapshot.capacity}`;
+}
+
+function bestCharacterForItem(item: LootItem): { name: string; upgrade: boolean } {
+  let bestName = party[0]?.name ?? 'Party';
+  let bestGain = Number.NEGATIVE_INFINITY;
+
+  for (const character of party) {
+    const current = character.equipment[item.slot];
+    const currentPower = current?.power ?? 0;
+    const gain = item.power - currentPower;
+    if (gain > bestGain) {
+      bestGain = gain;
+      bestName = character.name;
+    }
+  }
+
+  return { name: bestName, upgrade: bestGain > 0 };
+}
+
+function rarityColor(rarity: Rarity): Color3 {
+  switch (rarity) {
+    case 'magic':
+      return new Color3(0.25, 0.55, 1);
+    case 'rare':
+      return new Color3(1, 0.82, 0.2);
+    case 'legendary':
+      return new Color3(1, 0.35, 0.06);
+    default:
+      return new Color3(0.82, 0.82, 0.82);
+  }
+}
+
+function createGroundLootMesh(record: GroundLootRecord): void {
+  let mesh: Mesh;
+  if (record.payload.kind === 'equipment') {
+    mesh = MeshBuilder.CreateBox(
+      `ground-loot-${record.id}`,
+      { size: record.rarity === 'legendary' ? 0.42 : 0.3 },
+      scene,
+    );
+    mesh.material = mat(
+      `ground-loot-${record.rarity ?? 'common'}`,
+      rarityColor(record.rarity ?? 'common'),
+      record.rarity === 'legendary' ? 0.65 : 0.35,
+    );
+  } else {
+    mesh = MeshBuilder.CreateCylinder(
+      `ground-loot-${record.id}`,
+      { diameter: 0.24, height: 0.08, tessellation: 16 },
+      scene,
+    );
+    mesh.material = mat(
+      `ground-loot-${record.payload.kind}`,
+      record.payload.kind === 'currency'
+        ? new Color3(0.92, 0.58, 0.12)
+        : new Color3(0.35, 0.9, 0.55),
+      0.45,
+    );
+  }
+
+  mesh.position.set(
+    record.position.x,
+    record.position.y + 0.2,
+    record.position.z,
+  );
+  mesh.isPickable = false;
+  groundLootMeshes.set(record.id, mesh);
+}
+
+function removeGroundLootVisual(id: number): void {
+  groundLootMeshes.get(id)?.dispose();
+  groundLootMeshes.delete(id);
+}
+
+function collectGroundLoot(record: GroundLootRecord): boolean {
+  switch (record.payload.kind) {
+    case 'currency':
+      inventoryRuntime.addCopper(record.payload.amount);
+      feed(`Collected ${record.payload.amount} copper.`, 'loot');
+      break;
+    case 'material':
+      inventoryRuntime.addMaterial(
+        record.payload.materialId,
+        record.payload.amount,
+      );
+      feed(
+        `Collected ${record.payload.amount} ${record.payload.materialId}.`,
+        'loot',
+      );
+      break;
+    case 'quest':
+      inventoryRuntime.addMaterial(
+        `quest:${record.payload.questItemId}`,
+        record.payload.amount,
+      );
+      feed(`Collected quest item: ${record.label}.`, 'loot');
+      break;
+    case 'equipment': {
+      if (!inventoryRuntime.canStore(bagItems())) {
+        record.expiresAt = Math.max(
+          record.expiresAt,
+          performance.now() +
+            (record.payload.item.rarity === 'legendary' ? 300_000 : 60_000),
+        );
+        feed('Inventory full. Equipment remains on the ground.', 'warning');
+        return false;
+      }
+
+      loot.unshift(record.payload.item);
+      const recommendation = bestCharacterForItem(record.payload.item);
+      feed(
+        `${record.payload.item.rarity.toUpperCase()} PICKUP: ${record.payload.item.name} — best for ${recommendation.name}${recommendation.upgrade ? ' (upgrade)' : ''}`,
+        'loot',
+      );
+      renderPartyManagement();
+      break;
+    }
+  }
+
+  groundLootRuntime.remove(record.id);
+  removeGroundLootVisual(record.id);
+  refreshWalletStatus();
+  lootDeveloperPanel.render();
+  return true;
+}
+
+function updateGroundLoot(): void {
+  for (const expiredId of groundLootRuntime.update()) {
+    removeGroundLootVisual(expiredId);
+  }
+
+  for (const record of groundLootRuntime.all()) {
+    const distance = Vector3.Distance(
+      playerRoot.position,
+      new Vector3(record.position.x, record.position.y, record.position.z),
+    );
+    const automaticEquipment =
+      record.payload.kind === 'equipment' &&
+      inventoryRuntime.shouldAutoPickup(record.payload.item);
+    const effectivePickupRadius =
+      record.payload.kind === 'equipment'
+        ? automaticEquipment
+          ? 1.8
+          : 0.72
+        : record.pickupRadius;
+
+    if (distance > effectivePickupRadius) continue;
+    collectGroundLoot(record);
+  }
+}
+
+function spawnEquipmentDrop(item: LootItem, position: Vector3): void {
+  const recommendation = bestCharacterForItem(item);
+  const visible = inventoryRuntime.shouldShow(item, recommendation.upgrade);
+  if (!visible) return;
+
+  const record = groundLootRuntime.spawnEquipment(
+    item,
+    { x: position.x, y: position.y, z: position.z },
+    visible,
+  );
+  createGroundLootMesh(record);
+  feed(
+    `${item.rarity.toUpperCase()} DROP: ${item.name}${recommendation.upgrade ? ` — upgrade for ${recommendation.name}` : ''}`,
+    'loot',
+  );
+}
+
+function spawnEnemyCurrency(enemy: Enemy): void {
+  const base =
+    enemy.definition.role === 'boss'
+      ? 12
+      : enemy.elite
+        ? 5
+        : 1 + Math.floor(Math.random() * 3);
+  const record = groundLootRuntime.spawnCurrency(base, {
+    x: enemy.mesh.position.x + 0.25,
+    y: enemy.mesh.position.y,
+    z: enemy.mesh.position.z,
+  });
+  createGroundLootMesh(record);
+
+  const role = enemy.definition.role.toLowerCase();
+  const family = enemy.family.familyId.toLowerCase();
+  if (role.includes('wolf') || family.includes('wolf')) {
+    const material = groundLootRuntime.spawnMaterial(
+      'wolf-pelt',
+      1,
+      {
+        x: enemy.mesh.position.x - 0.25,
+        y: enemy.mesh.position.y,
+        z: enemy.mesh.position.z,
+      },
+    );
+    createGroundLootMesh(material);
+  } else if (role.includes('crab') || family.includes('crab')) {
+    const material = groundLootRuntime.spawnMaterial(
+      'crab-shell',
+      1,
+      {
+        x: enemy.mesh.position.x - 0.25,
+        y: enemy.mesh.position.y,
+        z: enemy.mesh.position.z,
+      },
+    );
+    createGroundLootMesh(material);
+  }
+}
+
 const lootDeveloperPanel = new LootDeveloperPanel(
   developerHud.getPageContent('loot'),
   lootRegistry,
   {
     inventory: () => loot,
+    snapshot: () => inventoryRuntime.snapshot(bagItems()),
+    groundLootCount: () => groundLootRuntime.all().length,
     generate: (tableId, rarity) => {
       const generated = lootGenerator.generateFromTable(tableId, {
         itemLevel: Math.max(1, wave),
         forcedRarity: rarity,
       });
-      loot.unshift(...generated);
-      for (const item of generated) {
-        feed(`${item.rarity.toUpperCase()} DROP: ${item.name}`, 'loot');
-      }
-      renderPartyManagement();
+      generated.forEach((item, index) =>
+        spawnEquipmentDrop(
+          item,
+          playerRoot.position.add(new Vector3(index * 0.5 - 0.25, 0, 1.2)),
+        ),
+      );
+      refreshWalletStatus();
     },
     clearUnequipped: () => {
       const equippedIds = new Set(
@@ -918,9 +1164,22 @@ const lootDeveloperPanel = new LootDeveloperPanel(
       );
       loot = loot.filter(item => equippedIds.has(item.id) || item.favorite);
       renderPartyManagement();
+      refreshWalletStatus();
+    },
+    setMinimumVisibleRarity: rarity => {
+      inventoryRuntime.updateFilters({ minimumVisibleRarity: rarity });
+    },
+    setAutoPickupMaximum: rarity => {
+      inventoryRuntime.updateFilters({ autoPickupMaximumRarity: rarity });
+    },
+    upgradeCapacity: () => {
+      const capacity = inventoryRuntime.upgradeCapacity();
+      feed(`Inventory capacity increased to ${capacity}.`, 'success');
+      refreshWalletStatus();
     },
   },
 );
+refreshWalletStatus();
 combatSandboxTuning.subscribe(values => {
   for (const enemy of enemies) {
     const healthRatio = enemy.maxHp > 0 ? Math.max(0, enemy.hp / enemy.maxHp) : 1;
@@ -972,6 +1231,15 @@ function equippedItems(c: CharacterState): LootItem[] {
   return Object.values(c.equipment).filter(
     (item): item is LootItem => Boolean(item),
   );
+}
+
+function bagItems(): LootItem[] {
+  const equippedIds = new Set(
+    party.flatMap(character =>
+      equippedItems(character).map(item => item.id),
+    ),
+  );
+  return loot.filter(item => !equippedIds.has(item.id));
 }
 
 function equipmentStatsFor(c: CharacterState) {
@@ -1202,6 +1470,7 @@ function destroyLootItems(itemIds: number[]): void {
   feed(`Destroyed ${destroyable.size} item${destroyable.size === 1 ? '' : 's'}.`);
   renderPartyManagement();
   lootDeveloperPanel.render();
+  refreshWalletStatus();
 }
 
 function toggleFavoriteLoot(itemId: number): void {
@@ -2686,15 +2955,18 @@ function generateLoot(enemy: Enemy, forcedRarity?: Rarity): void {
     forcedRarity,
   });
 
-  if (generated.length === 0) return;
-
-  loot.unshift(...generated);
-  for (const item of generated) {
-    feed(`${item.rarity.toUpperCase()} DROP: ${item.name}`, 'loot');
+  for (const [index, item] of generated.entries()) {
+    spawnEquipmentDrop(
+      item,
+      enemy.mesh.position.add(
+        new Vector3((index - (generated.length - 1) / 2) * 0.45, 0, 0.35),
+      ),
+    );
   }
 
+  spawnEnemyCurrency(enemy);
   lootDeveloperPanel.render();
-  renderPartyManagement();
+  refreshWalletStatus();
 }
 
 function killEnemy(enemy: Enemy): void {
@@ -2811,18 +3083,23 @@ const developerActions: DeveloperActions = {
       },
     );
 
-    loot.unshift(...generated);
-    for (const item of generated) {
-      feed(`${item.rarity.toUpperCase()} DROP: ${item.name}`, 'loot');
-    }
-
+    generated.forEach((item, index) =>
+      spawnEquipmentDrop(
+        item,
+        playerRoot.position.add(
+          new Vector3((index - (generated.length - 1) / 2) * 0.5, 0, 1.2),
+        ),
+      ),
+    );
     lootDeveloperPanel.render();
-    renderPartyManagement();
+    refreshWalletStatus();
   },
 
   clearInventory: () => {
     loot = [];
     renderPartyManagement();
+    lootDeveloperPanel.render();
+    refreshWalletStatus();
     feed('Developer: inventory cleared.');
   },
 
@@ -2993,6 +3270,7 @@ scene.onBeforeRenderObservable.add(() => {
   const now = performance.now();
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  updateGroundLoot();
   input.update();
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);
