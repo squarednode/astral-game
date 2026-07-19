@@ -4957,6 +4957,34 @@ It continues to show:
 - Paths remaining valid for excessive periods
 - Replans not resetting after goal or support-surface changes
 
+# Changelog — 0.6.1g3
+
+## Added
+
+- Shared grounded movement runtime for player-style enemy world resolution
+- Per-enemy collision and traversal-support ownership
+- Goal-progress watchdog metrics
+- Return-home validated-position failsafe
+- Movement result diagnostics
+
+## Changed
+
+- Enemy navigation results are now movement requests, not direct mesh positions
+- Enemy lateral recovery uses collision-resolved movement
+- Grounded, support-height and vertical-velocity state now come from the shared movement runtime
+- Watchdog recovery uses distance-to-goal improvement
+- `return-home` is monitored for meaningful progress
+
+## Preserved
+
+- Tactical ability selection
+- Preferred combat ranges
+- Territory and leash logic
+- Spawn validation
+- Traversal-link planning
+- Navigation debug routes
+
+
 ### Validate
 ```bash
 npm run build

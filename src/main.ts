@@ -96,6 +96,8 @@ import type {
 } from './game/enemies/navigation';
 import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
+import { SharedGroundMovementRuntime } from './game/movement/SharedGroundMovementRuntime';
+import type { SharedMovementResult } from './game/movement/SharedGroundMovementRuntime';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
 import { MovementDebugOverlay } from './ui/debug/MovementDebugOverlay';
 import { UIManager } from './ui/core/UIManager';
@@ -221,6 +223,8 @@ interface Enemy {
   knockbackVelocity: Vector3;
   navigationCapabilities: EnemyNavigationCapabilities;
   navigationState: EnemyNavigationAgentState;
+  movementRuntime: SharedGroundMovementRuntime;
+  lastMovementResult: SharedMovementResult | null;
   stateMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>;
 }
 
@@ -1368,22 +1372,47 @@ function applyWorldAwareEnemyMovement(
     nearbyObstaclePositions,
   });
 
-  enemy.mesh.position.copyFrom(resolution.position);
+  const movementResult = enemy.movementRuntime.resolveToward(
+    resolution.position,
+    desiredPosition,
+    dt,
+    resolution.mode === 'jump',
+  );
+  enemy.lastMovementResult = movementResult;
+  enemy.navigationState.grounded = movementResult.grounded;
+  enemy.navigationState.verticalVelocity = enemy.movementRuntime.getVerticalVelocity();
+  enemy.navigationState.supportHeight = movementResult.supportHeight;
+  if (movementResult.supportSurfaceId !== null) {
+    enemy.navigationState.supportSurfaceId = movementResult.supportSurfaceId;
+  }
+  enemy.navigationState.sweepResult = movementResult.blocked
+    ? 'blocked'
+    : movementResult.slid
+      ? 'slide'
+      : 'clear';
+  if (movementResult.failure !== 'none') {
+    enemy.navigationState.lastBlockedReason = movementResult.failure === 'no-progress'
+      ? 'stale-path'
+      : movementResult.failure === 'ground-lost'
+        ? 'no-ground-ahead'
+        : 'body-overlap';
+  }
+
   enemyNavigationDebug.showRoute(
     enemy.entityId,
     startPosition,
     desiredPosition,
-    resolution.mode === 'blocked',
+    resolution.mode === 'blocked' || movementResult.blocked,
   );
 
-  if (resolution.failureReason !== 'none') {
+  if (resolution.failureReason !== 'none' || movementResult.failure !== 'none') {
     enemy.stateMachine.blackboard.set(
       'movementReason',
-      `navigation: ${resolution.failureReason}`,
+      `movement: ${movementResult.failure !== 'none' ? movementResult.failure : resolution.failureReason}`,
     );
     enemy.stateMachine.blackboard.set(
       'watchdogStatus',
-      resolution.failureReason,
+      movementResult.failure !== 'none' ? movementResult.failure : resolution.failureReason,
     );
   }
 }
@@ -1702,16 +1731,21 @@ function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
       state: machine.getCurrentStateId(),
       timeInState: machine.getTimeInState(),
       position: enemy.mesh.position,
+      goalPosition:
+        machine.getCurrentStateId() === 'return-home'
+          ? machine.blackboard.get('homePosition')
+          : machine.blackboard.get('lastSeenPosition'),
       movementIntent: machine.blackboard.get('positioningIntent'),
       recoverDuration: enemy.definition.recoverDuration,
       hasSelectedAbility: Boolean(machine.blackboard.get('currentUsageId')),
       telegraphBusy: enemyTelegraphs.isBusy(enemy.mesh),
+      movementFailure: enemy.lastMovementResult?.failure ?? 'none',
     },
     dt,
   );
 
   machine.blackboard.set('watchdogStatus', result.reason);
-  machine.blackboard.set('stationaryTime', result.stationaryTime);
+  machine.blackboard.set('stationaryTime', Math.max(result.stationaryTime, result.noProgressTime));
   if (result.action === 'none') return;
 
   machine.blackboard.set(
@@ -1719,6 +1753,32 @@ function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
     machine.blackboard.get('recoveryCount') + 1,
   );
   machine.blackboard.set('lastRecoveryReason', result.reason);
+
+  if (result.action === 'return-home-failsafe') {
+    const home = machine.blackboard.get('homePosition');
+    const occupied = enemies
+      .filter(candidate => candidate !== enemy && candidate.hp > 0)
+      .map(candidate => candidate.mesh.position);
+    const spawnResolution = enemySpawnResolver.resolve(
+      home,
+      enemy.navigationCapabilities,
+      occupied,
+      Math.min(6, enemy.definition.leashRange),
+      16,
+    );
+    if (!spawnResolution.position) {
+      machine.request('evaluate', 'return-home-failsafe-no-valid-position');
+      return;
+    }
+    enemy.mesh.position.copyFrom(spawnResolution.position);
+    enemy.movementRuntime.reset(spawnResolution.supportHeight);
+    enemy.navigationState.lastValidPosition.copyFrom(enemy.mesh.position);
+    enemy.navigationState.pathAge = 0;
+    enemy.navigationState.blockedTime = 0;
+    machine.blackboard.set('territoryStatus', 'home');
+    machine.request('evaluate', 'return-home-failsafe-reset');
+    return;
+  }
 
   if (result.action === 'force-execute') {
     const usageId = machine.blackboard.get('currentUsageId');
@@ -1738,7 +1798,12 @@ function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
       toPlayer.normalize();
       const tangent = new Vector3(-toPlayer.z, 0, toPlayer.x);
       const direction = machine.blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
-      enemy.mesh.position.addInPlace(tangent.scale(0.35 * direction));
+      const nudgeGoal = enemy.mesh.position.add(tangent.scale(0.35 * direction));
+      enemy.lastMovementResult = enemy.movementRuntime.resolveToward(
+        nudgeGoal,
+        nudgeGoal,
+        dt,
+      );
     }
     machine.request('evaluate', 'watchdog-replan-nudge');
     return;
@@ -1911,7 +1976,16 @@ function spawnEnemy(
       blockedTime: 0,
       platformWaitTime: 0,
     },
+    movementRuntime: null as unknown as SharedGroundMovementRuntime,
+    lastMovementResult: null,
   });
+  enemy.movementRuntime = new SharedGroundMovementRuntime(
+    mesh,
+    outdoorZone.colliders,
+    outdoorZone.traversalSurfaces,
+    navigationCapabilities.radius + navigationCapabilities.navigationSkin,
+  );
+  enemy.movementRuntime.reset(spawnResolution.supportHeight);
   enemy.stateMachine = createEnemyStateMachine(enemy);
   enemy.stateMachine.start('evaluate', 'enemy-spawned');
   enemies.push(enemy);
