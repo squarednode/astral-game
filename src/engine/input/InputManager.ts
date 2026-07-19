@@ -28,6 +28,7 @@ const GAMEPLAY_ACTIONS = new Set<InputAction>([
   'moveLeft',
   'moveRight',
   'primaryAttack',
+  'interact',
   'dodge',
   'jump',
   'ability1',

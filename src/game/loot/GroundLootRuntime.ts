@@ -31,7 +31,7 @@ export class GroundLootRuntime {
       item.rarity,
       visible,
       item.rarity === 'legendary' ? 30_000 : 5_000,
-      EQUIPMENT_LIFETIME_MS[item.rarity],
+      Number.POSITIVE_INFINITY,
       1.15,
       now,
     );

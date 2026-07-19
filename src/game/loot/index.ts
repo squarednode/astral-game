@@ -5,3 +5,4 @@ export * from './EquipmentStatAggregator';
 export * from './InventoryRuntime';
 export * from './GroundLootTypes';
 export * from './GroundLootRuntime';
+export * from './LootInteractionRuntime';

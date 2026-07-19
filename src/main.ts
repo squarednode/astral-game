@@ -116,6 +116,7 @@ import {
   aggregateEquipmentStats,
   GroundLootRuntime,
   InventoryRuntime,
+  LootInteractionRuntime,
   LootGenerator,
   LootRegistry,
 } from './game/loot';
@@ -785,8 +786,10 @@ let wave = 1;
 let kills = 0;
 let enemies: Enemy[] = [];
 let hoveredEnemy: Enemy | null = null;
+let hoveredGroundLoot: GroundLootRecord | null = null;
 let loot: LootItem[] = [];
 const groundLootMeshes = new Map<number, Mesh>();
+let lootInteractionRuntime: LootInteractionRuntime;
 let effects: { mesh: Mesh; ttl: number; tick: number; type: Element; radius: number; damage: number }[] = [];
 let scheduledWave: number | null = null;
 let projectiles: {
@@ -843,6 +846,24 @@ walletStatus.style.cssText = [
   'pointer-events:none',
 ].join(';');
 document.body.appendChild(walletStatus);
+
+const groundLootHoverLabel = document.createElement('div');
+groundLootHoverLabel.id = 'ground-loot-hover-label';
+groundLootHoverLabel.hidden = true;
+groundLootHoverLabel.style.cssText = [
+  'position:fixed',
+  'z-index:55',
+  'padding:6px 9px',
+  'border:1px solid rgba(255,255,255,.3)',
+  'border-radius:6px',
+  'background:rgba(5,10,18,.94)',
+  'color:white',
+  'font:700 13px system-ui,sans-serif',
+  'pointer-events:none',
+  'transform:translate(12px,12px)',
+  'white-space:nowrap',
+].join(';');
+document.body.appendChild(groundLootHoverLabel);
 
 const ui = new UIManager();
 const developerHud = new DeveloperHud(
@@ -992,13 +1013,22 @@ function createGroundLootMesh(record: GroundLootRecord): void {
     record.position.y + 0.2,
     record.position.z,
   );
-  mesh.isPickable = false;
+  mesh.isPickable = record.payload.kind === 'equipment';
+  mesh.metadata = {
+    ...(mesh.metadata ?? {}),
+    groundLootId: record.id,
+  };
   groundLootMeshes.set(record.id, mesh);
 }
 
 function removeGroundLootVisual(id: number): void {
   groundLootMeshes.get(id)?.dispose();
   groundLootMeshes.delete(id);
+  if (hoveredGroundLoot?.id === id) {
+    hoveredGroundLoot = null;
+    groundLootHoverLabel.hidden = true;
+    lootInteractionRuntime?.clear();
+  }
 }
 
 function collectGroundLoot(record: GroundLootRecord): boolean {
@@ -1053,7 +1083,31 @@ function collectGroundLoot(record: GroundLootRecord): boolean {
   return true;
 }
 
-function updateGroundLoot(): void {
+lootInteractionRuntime = new LootInteractionRuntime(
+  id => groundLootRuntime.get(id),
+  record => collectGroundLoot(record),
+);
+
+function nearestEquipmentDrop(maximumDistance = 1.45): GroundLootRecord | null {
+  let nearest: GroundLootRecord | null = null;
+  let nearestDistance = maximumDistance;
+
+  for (const record of groundLootRuntime.all()) {
+    if (record.payload.kind !== 'equipment') continue;
+    const distance = Vector3.Distance(
+      playerRoot.position,
+      new Vector3(record.position.x, record.position.y, record.position.z),
+    );
+    if (distance <= nearestDistance) {
+      nearest = record;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest;
+}
+
+function updateGroundLoot(dt: number): void {
   for (const expiredId of groundLootRuntime.update()) {
     removeGroundLootVisual(expiredId);
   }
@@ -1063,19 +1117,32 @@ function updateGroundLoot(): void {
       playerRoot.position,
       new Vector3(record.position.x, record.position.y, record.position.z),
     );
-    const automaticEquipment =
-      record.payload.kind === 'equipment' &&
-      inventoryRuntime.shouldAutoPickup(record.payload.item);
-    const effectivePickupRadius =
-      record.payload.kind === 'equipment'
-        ? automaticEquipment
-          ? 1.8
-          : 0.72
-        : record.pickupRadius;
 
-    if (distance > effectivePickupRadius) continue;
-    collectGroundLoot(record);
+    if (record.payload.kind !== 'equipment') {
+      if (distance <= record.pickupRadius) collectGroundLoot(record);
+      continue;
+    }
+
+    if (
+      inventoryRuntime.shouldAutoPickup(record.payload.item) &&
+      distance <= 1.8
+    ) {
+      collectGroundLoot(record);
+    }
   }
+
+  const target = hoveredGroundLoot ?? nearestEquipmentDrop();
+  if (target) {
+    lootInteractionRuntime.target(target.id);
+  } else {
+    lootInteractionRuntime.clear();
+  }
+
+  if (input.consumePressed('interact')) {
+    lootInteractionRuntime.collect();
+  }
+
+  lootInteractionRuntime.update(dt);
 }
 
 function spawnEquipmentDrop(item: LootItem, position: Vector3): void {
@@ -3165,6 +3232,41 @@ function updateHoveredEnemyFromCursor(): void {
   refreshHud();
 }
 
+function updateHoveredGroundLootFromCursor(event?: PointerEvent): void {
+  const pick = scene.pick(
+    scene.pointerX,
+    scene.pointerY,
+    mesh => typeof mesh.metadata?.groundLootId === 'number',
+  );
+  const groundLootId = pick?.pickedMesh?.metadata?.groundLootId as
+    | number
+    | undefined;
+  hoveredGroundLoot =
+    pick?.hit && groundLootId !== undefined
+      ? groundLootRuntime.get(groundLootId) ?? null
+      : null;
+
+  if (!hoveredGroundLoot) {
+    groundLootHoverLabel.hidden = true;
+    return;
+  }
+
+  const recommendation =
+    hoveredGroundLoot.payload.kind === 'equipment'
+      ? bestCharacterForItem(hoveredGroundLoot.payload.item)
+      : null;
+  const suffix = recommendation
+    ? ` — ${recommendation.upgrade ? 'Upgrade for' : 'Best for'} ${recommendation.name}`
+    : '';
+  groundLootHoverLabel.textContent =
+    `${hoveredGroundLoot.label}${suffix}  [${input.getBindingLabel('interact')}]`;
+  groundLootHoverLabel.style.left =
+    `${event?.clientX ?? scene.pointerX}px`;
+  groundLootHoverLabel.style.top =
+    `${event?.clientY ?? scene.pointerY}px`;
+  groundLootHoverLabel.hidden = false;
+}
+
 function updatePointerWorldFromCursor(): boolean {
   const pick = scene.pick(
     scene.pointerX,
@@ -3185,6 +3287,13 @@ scene.onPointerObservable.add((pi: any) => {
     input.notifyPointerDown(pi.event.button);
 
     if (pi.event.button === 0) {
+      updateHoveredGroundLootFromCursor(pi.event);
+      if (hoveredGroundLoot) {
+        lootInteractionRuntime.target(hoveredGroundLoot.id);
+        lootInteractionRuntime.collect();
+        return;
+      }
+
       canvas.setPointerCapture?.(pi.event.pointerId);
       if (
         !input.isClickToAttackEnabled() &&
@@ -3210,6 +3319,7 @@ scene.onPointerObservable.add((pi: any) => {
   if (pi.type === PointerEventTypes.POINTERMOVE) {
     updatePointerWorldFromCursor();
     updateHoveredEnemyFromCursor();
+    updateHoveredGroundLootFromCursor(pi.event);
   }
 
   if (pi.type === PointerEventTypes.POINTERWHEEL) input.notifyWheel(pi.event.deltaY);
@@ -3270,7 +3380,7 @@ scene.onBeforeRenderObservable.add(() => {
   const now = performance.now();
   const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
-  updateGroundLoot();
+  updateGroundLoot(realDt);
   input.update();
   const dt = combat.update(realDt);
   enemyTelegraphs.update(realDt);

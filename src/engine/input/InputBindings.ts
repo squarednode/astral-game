@@ -19,6 +19,7 @@ export const KEY_BINDINGS: Readonly<Partial<Record<string, InputAction>>> = {
   KeyA: 'moveLeft',
   KeyD: 'moveRight',
   KeyR: 'dodge',
+  KeyE: 'interact',
   Space: 'jump',
   Digit1: 'ability1',
   Digit2: 'ability2',
@@ -40,6 +41,7 @@ export const GAMEPAD_BUTTON_BINDINGS: Readonly<
   3: 'ability2',       // Y / Triangle
   4: 'partyPrevious',  // LB / L1
   5: 'partyNext',      // RB / R1
+  6: 'interact',       // LT / L2 digital fallback
   7: 'primaryAttack',  // RT / R2 digital fallback
   8: 'toggleInventory',
   9: 'toggleSettings',
@@ -58,6 +60,7 @@ export const ACTION_LABELS: Readonly<Record<InputAction, string>> = {
   moveLeft: 'Move Left',
   moveRight: 'Move Right',
   primaryAttack: 'Primary Attack',
+  interact: 'Interact / Pick Up',
   dodge: 'Dodge',
   jump: 'Jump',
   ability1: 'Ability 1',

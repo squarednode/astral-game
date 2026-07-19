@@ -4,6 +4,7 @@ export type InputAction =
   | 'moveLeft'
   | 'moveRight'
   | 'primaryAttack'
+  | 'interact'
   | 'dodge'
   | 'jump'
   | 'ability1'

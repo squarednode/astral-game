@@ -5205,6 +5205,18 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Developer-generated equipment now appears on the ground.
 - Loot notifications distinguish drops from pickups.
 
+# Changelog — 0.6.4c
+
+- Equipment ground drops persist for the full zone session.
+- Added the Interact input action on E and LT/L2.
+- Added a loot interaction state machine.
+- Equipment pickup now supports explicit keyboard/gamepad interaction.
+- Equipment pickup now supports direct mouse click.
+- Added mouse-hover loot names and upgrade recommendations.
+- Currency and materials retain proximity auto-pickup.
+- Inventory-full interaction remains targeted for later retry.
+
+
 ### Validate
 ```bash
 npm run build
