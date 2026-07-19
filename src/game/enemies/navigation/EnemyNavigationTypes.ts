@@ -26,7 +26,10 @@ export type EnemyNavigationFailureReason =
   | 'traversal-link-unavailable'
   | 'outside-navigation-zone'
   | 'spawn-position-invalid'
-  | 'platform-timeout';
+  | 'platform-timeout'
+  | 'body-overlap'
+  | 'insufficient-support'
+  | 'stale-path';
 
 export interface EnemyNavigationCapabilities {
   radius: number;
@@ -40,6 +43,9 @@ export interface EnemyNavigationCapabilities {
   canUsePlatforms: boolean;
   canClimb: boolean;
   flying: boolean;
+  navigationSkin: number;
+  minimumSupportRatio: number;
+  maximumPathAge: number;
 }
 
 export interface EnemyTraversalLink {
@@ -71,6 +77,10 @@ export interface EnemyNavigationAgentState {
   pathValid: boolean;
   pathAge: number;
   lastBlockedReason: EnemyNavigationFailureReason;
+  supportRatio: number;
+  sweepResult: 'clear' | 'slide' | 'blocked';
+  pathGeneration: number;
+  lastGoalPosition: Vector3 | null;
 }
 
 export interface EnemyNavigationRequest {

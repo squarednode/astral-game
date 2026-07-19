@@ -4939,6 +4939,24 @@ It continues to show:
 - Combat values
 - Targeting and projectile tuning
 
+# Changelog — 0.6.1g2
+
+## Added
+- Full-body swept collision
+- Obstacle sliding
+- Multi-point footprint support
+- Ledge rejection and recovery
+- Stale-path invalidation
+- Lateral escape candidates
+- Navigation path generations
+- Expanded navigation inspector values
+
+## Fixed
+- Enemies partially entering rocks and props
+- Enemies hanging on unsupported platform edges
+- Paths remaining valid for excessive periods
+- Replans not resetting after goal or support-surface changes
+
 ### Validate
 ```bash
 npm run build

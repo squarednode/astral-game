@@ -22,6 +22,22 @@ export interface NavigationSupportSample {
   restrictedBy: string | null;
 }
 
+
+export interface NavigationFootprintSample {
+  ratio: number;
+  supported: number;
+  total: number;
+  center: NavigationSupportSample;
+}
+
+export interface NavigationSweepResult {
+  clear: boolean;
+  reason: 'none' | 'body-overlap' | 'insufficient-support' | 'blocked-by-dynamic-obstacle';
+  position: Vector3;
+  support: NavigationSupportSample;
+  supportRatio: number;
+}
+
 export class NavigationSurfaceManager {
   constructor(
     private readonly colliders: ReadonlyArray<WorldCollider>,
@@ -78,6 +94,89 @@ export class NavigationSurfaceManager {
       best.restrictedBy = restriction;
     }
     return best;
+  }
+
+  sampleFootprint(position: Vector3, radius: number): NavigationFootprintSample {
+    const center = this.sampleSupport(position.x, position.z);
+    const offsets = [
+      [0, 0],
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [0.707, 0.707], [-0.707, 0.707], [0.707, -0.707], [-0.707, -0.707],
+    ] as const;
+    let supported = 0;
+    for (const [ox, oz] of offsets) {
+      const sample = this.sampleSupport(
+        position.x + ox * radius,
+        position.z + oz * radius,
+      );
+      if (
+        sample.walkable &&
+        Math.abs(sample.height - center.height) <= 0.48
+      ) supported += 1;
+    }
+    return {
+      ratio: supported / offsets.length,
+      supported,
+      total: offsets.length,
+      center,
+    };
+  }
+
+  sweepBody(
+    start: Vector3,
+    end: Vector3,
+    radius: number,
+    actorOffset: number,
+    minimumSupportRatio: number,
+  ): NavigationSweepResult {
+    const distance = Vector3.Distance(start, end);
+    const stepSize = Math.max(0.08, Math.min(0.22, radius * 0.45));
+    const steps = Math.max(1, Math.ceil(distance / stepSize));
+    let last = start.clone();
+    let lastSupport = this.sampleSupport(start.x, start.z);
+    let lastRatio = 1;
+    for (let index = 1; index <= steps; index += 1) {
+      const point = Vector3.Lerp(start, end, index / steps);
+      const footprint = this.sampleFootprint(point, radius);
+      point.y = footprint.center.height + actorOffset;
+      if (!footprint.center.walkable || footprint.ratio < minimumSupportRatio) {
+        return {
+          clear: false,
+          reason: 'insufficient-support',
+          position: last,
+          support: lastSupport,
+          supportRatio: footprint.ratio,
+        };
+      }
+      if (this.isBlocked(point, radius, footprint.center)) {
+        return {
+          clear: false,
+          reason: 'body-overlap',
+          position: last,
+          support: lastSupport,
+          supportRatio: footprint.ratio,
+        };
+      }
+      if (this.isDynamicBlocked(point, radius, footprint.center)) {
+        return {
+          clear: false,
+          reason: 'blocked-by-dynamic-obstacle',
+          position: last,
+          support: lastSupport,
+          supportRatio: footprint.ratio,
+        };
+      }
+      last = point;
+      lastSupport = footprint.center;
+      lastRatio = footprint.ratio;
+    }
+    return {
+      clear: true,
+      reason: 'none',
+      position: end.clone(),
+      support: lastSupport,
+      supportRatio: lastRatio,
+    };
   }
 
   projectToSupport(position: Vector3, actorOffset: number): NavigationSupportSample {

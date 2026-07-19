@@ -25,5 +25,8 @@ export function capabilitiesForEnemy(
     canUsePlatforms: !low,
     canClimb: false,
     flying: false,
+    navigationSkin: large ? 0.09 : 0.06,
+    minimumSupportRatio: large ? 0.72 : 0.6,
+    maximumPathAge: 1.5,
   };
 }
