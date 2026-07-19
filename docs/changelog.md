@@ -5126,6 +5126,31 @@ It continues to show:
 
 Legacy enemy elemental timers are retained temporarily for existing Shatter and Lightning-chain behavior while those reactions are migrated to gameplay tags and status events.
 
+# Changelog — 0.6.3a
+
+## Removed
+
+- Legacy per-enemy elemental status timers
+- Duplicate status buttons from the Ability developer panel
+- Placeholder Loot, Bosses, and Quests HUD pages
+- Rejected transitions from compact HUD error totals
+
+## Changed
+
+- Shatter and elemental reactions now use `StatusRuntime`
+- Player status effects now tick through the shared runtime
+- Status page displays source, duration, stacks, actor count, and active-instance count
+- Developer HUD width and status-control layout improved
+- Overview includes active statuses, active abilities, and AI decision totals
+
+## Preserved
+
+- Combat Sandbox settings
+- Enemy navigation and traversal behavior
+- Ability queueing and commitment behavior
+- Combat Library definitions
+- Existing status definition IDs
+
 ### Validate
 ```bash
 npm run build

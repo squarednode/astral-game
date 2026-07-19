@@ -24,14 +24,24 @@ export class StatusDeveloperPanel {
 
   refresh(): void { this.render(); }
 
+  getActiveInstanceCount(): number {
+    return this.targets().reduce((total, target) =>
+      total + [...target.component.active.values()].reduce((sum, instances) => sum + instances.length, 0), 0);
+  }
+
   private render(): void {
     const targets = this.targets();
     if (!targets.some(target => target.entityId === this.selectedTargetId)) this.selectedTargetId = targets[0]?.entityId ?? '';
     const target = targets.find(candidate => candidate.entityId === this.selectedTargetId);
     this.root.replaceChildren();
+    const header = document.createElement('div');
+    header.className = 'status-debug-header';
     const title = document.createElement('h3');
-    title.textContent = 'STATUS RUNTIME';
-    this.root.appendChild(title);
+    title.textContent = 'STATUS EFFECTS';
+    const summary = document.createElement('small');
+    summary.textContent = `${targets.length} actors · ${this.getActiveInstanceCount()} active instances`;
+    header.append(title, summary);
+    this.root.appendChild(header);
 
     const select = document.createElement('select');
     for (const candidate of targets) {
@@ -46,7 +56,11 @@ export class StatusDeveloperPanel {
 
     if (!target) return;
     const active = document.createElement('pre');
-    active.textContent = [...target.component.active.entries()].flatMap(([id, instances]) => instances.map(instance => `${id}  ${instance.remainingSeconds.toFixed(1)}s  x${instance.stacks}`)).join('\n') || 'No active statuses';
+    active.className = 'developer-hud-data status-active-list';
+    active.textContent = [...target.component.active.entries()].flatMap(([id, instances]) => instances.map(instance => {
+      const definition = this.definitions.find(candidate => candidate.id === id);
+      return `${(definition?.name ?? id).padEnd(16)} ${instance.remainingSeconds.toFixed(1)}s  x${instance.stacks}  src:${instance.sourceEntityId ?? 'unknown'}`;
+    })).join('\n') || 'No active statuses';
     this.root.appendChild(active);
 
     const controls = document.createElement('div');

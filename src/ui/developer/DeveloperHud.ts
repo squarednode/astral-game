@@ -9,10 +9,7 @@ export type DeveloperHudPageId =
   | 'combat'
   | 'sandbox'
   | 'ai'
-  | 'status'
-  | 'loot'
-  | 'bosses'
-  | 'quests';
+  | 'status';
 
 export interface DeveloperOverviewMetrics {
   fps: number;
@@ -22,6 +19,9 @@ export interface DeveloperOverviewMetrics {
   assetFailures: number;
   definitionErrors: number;
   rejectedTransitions: number;
+  activeStatuses: number;
+  activeAbilities: number;
+  aiDecisions: number;
 }
 
 const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
@@ -35,10 +35,7 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   combat: 'Combat Library',
   sandbox: 'Combat Sandbox',
   ai: 'AI',
-  status: 'Status',
-  loot: 'Loot',
-  bosses: 'Bosses',
-  quests: 'Quests',
+  status: 'Status Effects',
 };
 
 export class DeveloperHud {
@@ -127,9 +124,6 @@ export class DeveloperHud {
       'states',
       'ai',
       'status',
-      'loot',
-      'bosses',
-      'quests',
     ] as const) {
       const page = document.createElement('article');
       page.className = 'developer-hud-page';
@@ -172,11 +166,7 @@ export class DeveloperHud {
     body.appendChild(movement);
     this.pages.set('movement', movement);
 
-    this.textPages.get('ai')!.textContent = 'AI INSPECTOR\nReserved for 0.6.1 enemy archetypes.';
-    this.textPages.get('status')!.textContent = 'STATUS INSPECTOR\nQuick status controls are available on the Abilities page.\nFull runtime inspection arrives with the status framework.';
-    this.textPages.get('loot')!.textContent = 'LOOT INSPECTOR\nReserved for equipment and loot expansion.';
-    this.textPages.get('bosses')!.textContent = 'BOSS INSPECTOR\nReserved for the boss framework.';
-    this.textPages.get('quests')!.textContent = 'QUEST INSPECTOR\nReserved for the quest framework.';
+    this.textPages.get('ai')!.textContent = 'AI INSPECTOR\nNo active enemy.';
 
     this.panel.appendChild(body);
     this.root.appendChild(this.panel);
@@ -191,6 +181,9 @@ export class DeveloperHud {
       assetFailures: 0,
       definitionErrors: 0,
       rejectedTransitions: 0,
+      activeStatuses: 0,
+      activeAbilities: 0,
+      aiDecisions: 0,
     });
   }
 
@@ -235,8 +228,7 @@ export class DeveloperHud {
     const totalProblems =
       metrics.eventErrors +
       metrics.assetFailures +
-      metrics.definitionErrors +
-      metrics.rejectedTransitions;
+      metrics.definitionErrors;
 
     this.compact.classList.toggle('warning', totalProblems > 0);
     this.compact.innerHTML = [
@@ -252,7 +244,10 @@ export class DeveloperHud {
       ['Event errors', String(metrics.eventErrors), metrics.eventErrors > 0],
       ['Asset failures', String(metrics.assetFailures), metrics.assetFailures > 0],
       ['Definition errors', String(metrics.definitionErrors), metrics.definitionErrors > 0],
-      ['Rejected transitions', String(metrics.rejectedTransitions), metrics.rejectedTransitions > 0],
+      ['Rejected transitions', String(metrics.rejectedTransitions), false],
+      ['Active statuses', String(metrics.activeStatuses), false],
+      ['Active abilities', String(metrics.activeAbilities), false],
+      ['AI decisions', String(metrics.aiDecisions), false],
     ];
 
     this.overviewGrid.replaceChildren(

@@ -16,7 +16,6 @@ export interface AbilityDeveloperActions {
   resetAbilities(): void;
   toggleNoCooldowns(): void;
   toggleCastTimerFreeze(): void;
-  applyStatus(status: 'burn' | 'frost' | 'shock' | 'clear'): void;
 }
 
 export class AbilityDeveloperPanel {
@@ -37,10 +36,6 @@ export class AbilityDeveloperPanel {
       ['Reset Ability States', actions.resetAbilities],
       ['Toggle No Cooldowns', actions.toggleNoCooldowns],
       ['Freeze Cast Timer', actions.toggleCastTimerFreeze],
-      ['Apply Burn', () => actions.applyStatus('burn')],
-      ['Apply Frost', () => actions.applyStatus('frost')],
-      ['Apply Shock', () => actions.applyStatus('shock')],
-      ['Clear Statuses', () => actions.applyStatus('clear')],
     ];
     for (const [label, action] of definitions) {
       const button = document.createElement('button');

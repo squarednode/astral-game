@@ -94,7 +94,11 @@ import type {
   EnemyNavigationAgentState,
   EnemyNavigationCapabilities,
 } from './game/enemies/navigation';
-import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
+import type {
+  AbilityExecutionContext,
+  AbilityRuntimeSnapshot,
+  AbilityStateId,
+} from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { SharedGroundMovementRuntime } from './game/movement/SharedGroundMovementRuntime';
 import type { SharedMovementResult } from './game/movement/SharedGroundMovementRuntime';
@@ -153,6 +157,10 @@ type SkillKey = 'Q' | 'E';
 type AbilitySlot = 1 | 2 | 3 | 4;
 
 type CharacterDef = CharacterDefinition;
+
+function isAbilityActive(state: AbilityStateId): boolean {
+  return state === 'casting' || state === 'executing';
+}
 
 interface CharacterState extends CharacterDef {
   hp: number;
@@ -223,7 +231,6 @@ interface Enemy {
   elite: boolean;
   attackCd: number;
   abilityCooldowns: Map<string, number>;
-  statuses: Partial<Record<Element, number>>;
   statusComponent: StatusComponent;
   knockbackVelocity: Vector3;
   navigationCapabilities: EnemyNavigationCapabilities;
@@ -1772,7 +1779,7 @@ function createEnemyStateMachine(
           enemy.mesh.position.z = home.z;
           enemy.attackCd = 0;
           enemy.abilityCooldowns.clear();
-          enemy.statuses = {};
+          statusRuntime.cleanse(enemy.statusComponent, () => true);
           activeMachine.blackboard.set('packAlerted', false);
           activeMachine.blackboard.set('territoryStatus', 'home');
           activeMachine.request('evaluate', 'returned-home');
@@ -2096,7 +2103,6 @@ function spawnEnemy(
     elite,
     attackCd: Math.random(),
     abilityCooldowns: new Map<string, number>(),
-    statuses: {},
     statusComponent: statusRuntime.createComponent(),
     knockbackVelocity: Vector3.Zero(),
     navigationCapabilities,
@@ -2177,16 +2183,23 @@ function damageEnemy(
   let final = amount * powerScale;
   let resolvedWeight = weight;
 
-  if (element === 'physical' && (enemy.statuses.frost ?? 0) > 0) {
+  const hasFrostStatus =
+    statusRuntime.has(enemy.statusComponent, 'status.frost') ||
+    statusRuntime.has(enemy.statusComponent, 'status.chill') ||
+    statusRuntime.has(enemy.statusComponent, 'status.freeze');
+
+  if (element === 'physical' && hasFrostStatus) {
     final *= 1.65;
-    enemy.statuses.frost = 0;
+    statusRuntime.remove(enemy.statusComponent, 'status.frost', 'dispelled');
+    statusRuntime.remove(enemy.statusComponent, 'status.chill', 'dispelled');
+    statusRuntime.remove(enemy.statusComponent, 'status.freeze', 'dispelled');
     resolvedWeight = 'reaction';
     vfxRing(hitPos, new Color3(0.65, 0.9, 1), 2.4);
     combat.showReaction(hitPos, 'SHATTER', 'frost');
     feed('SHATTER!');
   }
 
-  if (element === 'lightning' && (enemy.statuses.frost ?? 0) > 0) {
+  if (element === 'lightning' && hasFrostStatus) {
     final *= 1.35;
     resolvedWeight = 'reaction';
     const nearby = enemies.filter(e => e !== enemy && Vector3.Distance(e.mesh.position, enemy.mesh.position) < 5).slice(0, 2);
@@ -2211,7 +2224,6 @@ function damageEnemy(
   enemy.hp -= final;
   enemy.healthComponent.current = enemy.hp;
   if (element !== 'physical') {
-    enemy.statuses[element] = 3.5;
     const statusId = element === 'fire'
       ? 'status.burn'
       : element === 'frost'
@@ -2507,23 +2519,6 @@ const abilityDeveloperPanel = new AbilityDeveloperPanel(
       developerState.noCooldowns = !developerState.noCooldowns;
       logAbilityEvent(`Developer: no cooldowns ${developerState.noCooldowns ? 'enabled' : 'disabled'}`);
       feed(`Developer: no cooldowns ${developerState.noCooldowns ? 'enabled' : 'disabled'}.`);
-    },
-    applyStatus: status => {
-      const target = enemies
-        .filter(enemy => enemy.hp > 0)
-        .sort((a, b) => Vector3.Distance(a.mesh.position, playerRoot.position) - Vector3.Distance(b.mesh.position, playerRoot.position))[0];
-      if (!target) {
-        feed('Developer: no enemy available for status testing.');
-        return;
-      }
-      if (status === 'clear') {
-        target.statuses = {};
-      } else {
-        const element: Element = status === 'burn' ? 'fire' : status === 'shock' ? 'lightning' : 'frost';
-        target.statuses[element] = 5;
-      }
-      logAbilityEvent(`Developer: ${status} status applied to nearest enemy`);
-      feed(`Developer: ${status} status ${status === 'clear' ? 'cleared' : 'applied'}.`);
     },
   },
 );
@@ -3357,14 +3352,17 @@ scene.onBeforeRenderObservable.add(() => {
     showInvalidLandingPoints: developerState.enemyInvalidLandingsVisible,
   });
 
+  statusRuntime.update(playerStatusComponent, statusDefinitionMap, dt, {
+    damage: (_ownerEntityId, amount) => {
+      active.hp = Math.max(0, active.hp - amount);
+    },
+    heal: (_ownerEntityId, amount) => {
+      active.hp = Math.min(hpMax(active), active.hp + amount);
+    },
+  });
+
   enemies.forEach(e => {
     combat.updateKnockback(e, dt);
-    Object.keys(e.statuses).forEach(k => {
-      e.statuses[k as Element] = Math.max(
-        0,
-        (e.statuses[k as Element] ?? 0) - dt,
-      );
-    });
     statusRuntime.update(e.statusComponent, statusDefinitionMap, dt, {
       damage: (_ownerEntityId, amount, definition) => {
         e.hp -= amount;
@@ -3450,6 +3448,19 @@ scene.onBeforeRenderObservable.add(() => {
       assetFailures: assetStats.failed,
       definitionErrors: definitionErrors.length,
       rejectedTransitions,
+      activeStatuses: statusDeveloperPanel.getActiveInstanceCount(),
+      activeAbilities: [...abilityComponents.values()].reduce(
+        (count, component) =>
+          count +
+          component
+            .all()
+            .filter((runtime) => isAbilityActive(runtime.snapshot().state)).length,
+        0,
+      ),
+      aiDecisions: enemies.reduce(
+        (count, enemy) => count + (enemy.stateMachine.blackboard.get('decisionCount') ?? 0),
+        0,
+      ),
     });
 
     developerHud.setPageText(
