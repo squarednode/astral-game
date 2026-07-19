@@ -1377,7 +1377,9 @@ function applyWorldAwareEnemyMovement(
     resolution.position,
     desiredPosition,
     dt,
-    enemy.navigationState.traversalPhase === 'takeoff',
+    enemy.navigationState.traversalPhase === 'takeoff'
+      ? enemy.navigationState.traversalMovementMode ?? 'jump'
+      : 'none',
   );
   enemy.lastMovementResult = movementResult;
   if (enemy.navigationState.traversalPhase === 'takeoff' && !movementResult.grounded) {
@@ -2053,6 +2055,7 @@ function spawnEnemy(
       traversalLastAttemptAt: 0,
       traversalCooldownUntil: 0,
       traversalOwner: null,
+      traversalMovementMode: null,
       reservedLandingSurfaceId: null,
     },
     movementRuntime: null as unknown as SharedGroundMovementRuntime,

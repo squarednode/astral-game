@@ -5038,6 +5038,21 @@ It continues to show:
 - Watchdog and navigation independently requesting jumps
 - Multiple enemies choosing the same small landing position
 
+# Changelog — 0.6.1g7
+
+## Fixed
+
+- Bidirectional links now reverse correctly when approached from their exit endpoint.
+- Elevated enemies can descend from free traversal surfaces.
+- Drop movement now preserves forward horizontal velocity.
+- Direction-specific jump/drop capability checks now occur after link orientation.
+- Ground is no longer treated as a single reservable landing surface.
+
+## Added
+
+- Explicit `traversalMovementMode` state for atomic jump and drop execution.
+- Shared movement runtime support for `none`, `jump`, and `drop` traversal requests.
+
 ### Validate
 ```bash
 npm run build

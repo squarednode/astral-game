@@ -21,7 +21,9 @@ export class EnemyNavigationSystem {
 
     if (state.traversalPhase === 'takeoff' || state.traversalPhase === 'airborne' || state.traversalPhase === 'landing') {
       const landing = state.traversalLandingPosition ?? request.currentPosition;
-      state.mode = state.traversalPhase === 'landing' ? 'idle' : 'jump';
+      state.mode = state.traversalPhase === 'landing'
+        ? 'idle'
+        : state.traversalMovementMode ?? 'jump';
       return this.success(landing.clone(), state.mode, state.activeTraversalLinkId, false);
     }
     if (state.traversalPhase === 'settle') {
@@ -40,6 +42,7 @@ export class EnemyNavigationSystem {
       state.reservedLandingSurfaceId = null;
       state.activeTraversalLinkId = null;
       state.traversalOwner = null;
+      state.traversalMovementMode = null;
       state.traversalPhase = 'idle';
       state.traversalAttemptCount = 0;
       state.traversalCooldownUntil = 0;
@@ -202,7 +205,9 @@ export class EnemyNavigationSystem {
       return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
     }
     const surfaceId = landingValidation.support.surfaceId;
-    if (surfaceId) {
+    const reservableSurface =
+      landingValidation.support.type !== 'ground';
+    if (surfaceId && reservableSurface) {
       const owner = this.landingReservations.get(surfaceId);
       if (owner && owner !== request.agentId) {
         return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
@@ -210,8 +215,9 @@ export class EnemyNavigationSystem {
       this.landingReservations.set(surfaceId, request.agentId);
       state.reservedLandingSurfaceId = surfaceId;
     }
-    state.traversalPhase = mode === 'jump' ? 'takeoff' : 'airborne';
+    state.traversalPhase = 'takeoff';
     state.traversalOwner = 'planner';
+    state.traversalMovementMode = mode;
     state.traversalLandingPosition = landingValidation.position.clone();
     state.traversalExitPosition = postLanding?.clone() ?? null;
     state.traversalSettleRemaining = 0.2;
@@ -236,19 +242,34 @@ export class EnemyNavigationSystem {
     if (link.maximumEnemyRadius && capabilities.radius > link.maximumEnemyRadius) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
     if (link.allowedRoles && !link.allowedRoles.includes(request.role)) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
     if (link.type === 'platform' && !capabilities.canUsePlatforms) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
-    if (link.type === 'jump' && !capabilities.canJump) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
-    if (link.type === 'drop' && !capabilities.canDrop) return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
 
     state.activeTraversalLinkId = link.id;
+    const current = request.currentPosition;
+    const useReverse = link.bidirectional &&
+      Vector3.Distance(current, link.exitPosition) < Vector3.Distance(current, link.entryPosition);
+    const entry = useReverse ? link.exitPosition : link.entryPosition;
+    const exit = useReverse ? link.entryPosition : link.exitPosition;
+    const heightDelta = exit.y - entry.y;
+    const traversalMode: 'jump' | 'drop' = heightDelta < -0.08 ? 'drop' : 'jump';
+
     if (link.type === 'platform' || link.type === 'lift') {
       state.traversalPhase = 'approach';
       state.traversalOwner = 'planner';
+      state.traversalMovementMode = null;
       state.mode = 'platform';
-      return this.success(link.entryPosition.clone(), 'platform', link.id, true);
+      return this.success(entry.clone(), 'platform', link.id, true);
+    }
+    if (traversalMode === 'jump' && !capabilities.canJump) {
+      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
+    }
+    if (traversalMode === 'drop' && !capabilities.canDrop) {
+      return this.fail(request.currentPosition, state, 'traversal-link-unavailable');
     }
     return this.beginBallisticMove(
-      request, link.exitPosition.clone(), link.exitPosition.y + actorOffset,
-      link.type === 'drop' ? 'drop' : 'jump',
+      request,
+      exit.clone(),
+      exit.y + actorOffset,
+      traversalMode,
     );
   }
 
@@ -261,9 +282,18 @@ export class EnemyNavigationSystem {
     let bestScore = Number.POSITIVE_INFINITY;
     if (performance.now() < request.state.traversalCooldownUntil || request.state.traversalAttemptCount >= 2) return null;
     for (const link of this.links) {
-      const entryDistance = Vector3.Distance(current, link.entryPosition);
-      if (entryDistance > link.activationRadius + request.capabilities.maximumJumpDistance) continue;
-      const score = entryDistance + Vector3.Distance(link.exitPosition, desired);
+      const forwardDistance = Vector3.Distance(current, link.entryPosition);
+      const reverseDistance = link.bidirectional
+        ? Vector3.Distance(current, link.exitPosition)
+        : Number.POSITIVE_INFINITY;
+      const useReverse = reverseDistance < forwardDistance;
+      const approachDistance = Math.min(forwardDistance, reverseDistance);
+      if (approachDistance > link.activationRadius + request.capabilities.maximumJumpDistance) continue;
+      const directedExit = useReverse ? link.entryPosition : link.exitPosition;
+      const heightDelta = directedExit.y - current.y;
+      if (heightDelta > 0.08 && !request.capabilities.canJump) continue;
+      if (heightDelta < -0.08 && !request.capabilities.canDrop) continue;
+      const score = approachDistance + Vector3.Distance(directedExit, desired);
       if (score < bestScore) {
         best = link;
         bestScore = score;

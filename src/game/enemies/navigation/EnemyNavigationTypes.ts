@@ -98,6 +98,7 @@ export interface EnemyNavigationAgentState {
   traversalLastAttemptAt: number;
   traversalCooldownUntil: number;
   traversalOwner: 'planner' | null;
+  traversalMovementMode: 'jump' | 'drop' | null;
   reservedLandingSurfaceId: string | null;
 }
 

@@ -91,25 +91,30 @@ export class SharedGroundMovementRuntime {
     requestedPosition: Vector3,
     goalPosition: Vector3,
     dt: number,
-    jumpRequested = false,
+    traversalRequest: 'none' | 'jump' | 'drop' = 'none',
   ): SharedMovementResult {
     const previous = this.actor.position.clone();
     const previousFoot = previous.subtract(new Vector3(0, this.actorGroundOffset, 0));
     const desired = requestedPosition.clone();
     let desiredFoot = desired.subtract(new Vector3(0, this.actorGroundOffset, 0));
 
-    if (jumpRequested && this.grounded && this.airborneHorizontalVelocity.lengthSquared() <= 0.000001) {
+    if (traversalRequest !== 'none' && this.grounded && this.airborneHorizontalVelocity.lengthSquared() <= 0.000001) {
       const landing = this.supports.queryLandingSurface(desiredFoot);
       const landingHeight = landing?.supportHeight ?? desiredFoot.y;
       const heightDelta = landingHeight - this.supportHeight;
+      const launchVelocity = traversalRequest === 'jump' ? this.config.jumpVelocity : 0;
       const discriminant =
-        this.config.jumpVelocity * this.config.jumpVelocity -
+        launchVelocity * launchVelocity -
         2 * this.config.gravity * heightDelta;
 
-      if (discriminant >= 0 && heightDelta <= this.config.maximumJumpOntoHeight) {
+      const heightAllowed = traversalRequest === 'drop'
+        ? heightDelta <= 0
+        : heightDelta <= this.config.maximumJumpOntoHeight;
+
+      if (discriminant >= 0 && heightAllowed) {
         const flightTime = Math.max(
           0.18,
-          (this.config.jumpVelocity + Math.sqrt(discriminant)) /
+          (launchVelocity + Math.sqrt(discriminant)) /
             this.config.gravity,
         );
         const horizontalDelta = new Vector3(
@@ -125,7 +130,7 @@ export class SharedGroundMovementRuntime {
         this.jumpLandingSurfaceId = landing?.surfaceId ?? null;
         this.jumpLandingColliderLabel = landing?.colliderLabel ?? null;
         this.grounded = false;
-        this.verticalVelocity = this.config.jumpVelocity;
+        this.verticalVelocity = traversalRequest === 'jump' ? this.config.jumpVelocity : -0.15;
       }
     }
 
