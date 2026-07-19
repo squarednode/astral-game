@@ -5216,6 +5216,16 @@ Legacy enemy elemental timers are retained temporarily for existing Shatter and 
 - Currency and materials retain proximity auto-pickup.
 - Inventory-full interaction remains targeted for later retry.
 
+# Changelog — 0.6.4d
+
+- Added copper balance to Party Management.
+- Added equipment bag usage, capacity, and available slots.
+- Added a horizontally scrollable materials list.
+- Added readable material and quest-item labels.
+- Added live resource refresh while Party Management is open.
+- Linked the screen directly to `InventoryRuntime.snapshot()`.
+
+
 
 ### Validate
 ```bash

@@ -1080,6 +1080,7 @@ function collectGroundLoot(record: GroundLootRecord): boolean {
   removeGroundLootVisual(record.id);
   refreshWalletStatus();
   lootDeveloperPanel.render();
+  if (inventoryOpen) renderPartyManagement();
   return true;
 }
 
@@ -1489,6 +1490,7 @@ function partyManagementModel(): PartyManagementModel {
       })(),
     })),
     items: loot,
+    resources: inventoryRuntime.snapshot(bagItems()),
   };
 }
 

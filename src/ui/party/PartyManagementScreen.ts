@@ -33,7 +33,17 @@ const FAMILY_LABELS: Record<GearFamily, string> = {
 };
 
 export class PartyManagementScreen {
-  private model: PartyManagementModel = { characters: [], items: [] };
+  private model: PartyManagementModel = {
+    characters: [],
+    items: [],
+    resources: {
+      copper: 0,
+      capacity: 24,
+      used: 0,
+      available: 24,
+      materials: {},
+    },
+  };
   private selectedItemId: number | null = null;
   private selectedCharacterId: string | null = null;
   private hoveredItemId: number | null = null;
@@ -119,6 +129,8 @@ export class PartyManagementScreen {
           </div>
         </header>
 
+        ${this.resourceStrip()}
+
         <section class="pm-character-strip">
           ${this.model.characters
             .map(character => this.characterSelector(character))
@@ -138,6 +150,63 @@ export class PartyManagementScreen {
         </main>
       </div>
     `;
+  }
+
+  private resourceStrip(): string {
+    const resources = this.model.resources;
+    const materials = Object.entries(resources.materials)
+      .filter(([, amount]) => amount > 0)
+      .sort(([a], [b]) => a.localeCompare(b));
+
+    return `
+      <section class="pm-resource-strip">
+        <div class="pm-resource-card currency">
+          <span>Wallet</span>
+          <strong>${resources.copper}</strong>
+          <small>Copper</small>
+        </div>
+
+        <div class="pm-resource-card capacity">
+          <span>Equipment Bag</span>
+          <strong>${resources.used} / ${resources.capacity}</strong>
+          <small>${resources.available} slots available</small>
+        </div>
+
+        <div class="pm-resource-materials">
+          <div class="pm-resource-heading">
+            <span>Materials</span>
+            <small>Stored separately from equipment</small>
+          </div>
+          <div class="pm-material-list">
+            ${materials.length
+              ? materials
+                  .map(
+                    ([id, amount]) => `
+                      <div class="pm-material-chip">
+                        <span>${this.materialLabel(id)}</span>
+                        <strong>${amount}</strong>
+                      </div>
+                    `,
+                  )
+                  .join('')
+              : '<div class="pm-material-empty">No materials collected</div>'}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  private materialLabel(id: string): string {
+    if (id.startsWith('quest:')) {
+      return `Quest · ${this.titleCase(id.slice(6))}`;
+    }
+    return this.titleCase(id);
+  }
+
+  private titleCase(value: string): string {
+    return value
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, character => character.toUpperCase());
   }
 
   private characterSelector(character: PartyCharacterView): string {

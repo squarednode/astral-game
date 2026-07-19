@@ -45,9 +45,18 @@ export interface PartyCharacterView {
   };
 }
 
+export interface PartyInventoryResources {
+  copper: number;
+  capacity: number;
+  used: number;
+  available: number;
+  materials: Readonly<Record<string, number>>;
+}
+
 export interface PartyManagementModel {
   characters: PartyCharacterView[];
   items: PartyEquipmentItem[];
+  resources: PartyInventoryResources;
 }
 
 export interface PartyManagementActions {
