@@ -82,6 +82,17 @@ import type {
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
 import { EnemyRuntimeWatchdog, EnemyTacticalController } from './game/enemies/runtime';
 import type { EnemyRuntimeActor } from './game/enemies/runtime';
+import {
+  EnemyNavigationDebugOverlay,
+  EnemyNavigationSystem,
+  EnemySpawnResolver,
+  buildEnemyTraversalLinks,
+  capabilitiesForEnemy,
+} from './game/enemies/navigation';
+import type {
+  EnemyNavigationAgentState,
+  EnemyNavigationCapabilities,
+} from './game/enemies/navigation';
 import type { AbilityExecutionContext, AbilityRuntimeSnapshot } from './game/abilities';
 import { PlayerMovementController } from './game/movement/PlayerMovementController';
 import { PlayerCameraController } from './game/camera/PlayerCameraController';
@@ -90,6 +101,7 @@ import { UIManager } from './ui/core/UIManager';
 import { DeveloperHud } from './ui/developer/DeveloperHud';
 import { AbilityDeveloperPanel } from './ui/developer/AbilityDeveloperPanel';
 import { CombatLibraryPanel } from './ui/developer/CombatLibraryPanel';
+import { NavigationDeveloperPanel } from './ui/developer/NavigationDeveloperPanel';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
 import type { GameplayHudSnapshot } from './ui/gameplay';
@@ -206,6 +218,8 @@ interface Enemy {
   abilityCooldowns: Map<string, number>;
   statuses: Partial<Record<Element, number>>;
   knockbackVelocity: Vector3;
+  navigationCapabilities: EnemyNavigationCapabilities;
+  navigationState: EnemyNavigationAgentState;
   stateMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>;
 }
 
@@ -407,6 +421,24 @@ const traversalSurfaces = new TraversalSurfaceSystem(
 const worldVolumes = new WorldVolumeSystem(
   scene,
   outdoorZone.worldVolumes,
+);
+const enemyTraversalLinks = buildEnemyTraversalLinks(
+  outdoorZone.traversalSurfaces,
+);
+const enemySpawnResolver = new EnemySpawnResolver(
+  outdoorZone.colliders,
+  outdoorZone.worldVolumes,
+);
+const enemyNavigation = new EnemyNavigationSystem(
+  outdoorZone.colliders,
+  outdoorZone.traversalSurfaces,
+  outdoorZone.dynamicColliders,
+  outdoorZone.worldVolumes,
+  enemyTraversalLinks,
+);
+const enemyNavigationDebug = new EnemyNavigationDebugOverlay(
+  scene,
+  enemyTraversalLinks,
 );
 
 let validationEventValue = 0;
@@ -826,6 +858,10 @@ const combatLibraryPanel = new CombatLibraryPanel(
   developerHud.getPageContent('combat'),
   definitions,
 );
+const navigationDeveloperPanel = new NavigationDeveloperPanel(
+  developerHud.getPageContent('ai'),
+  developerState,
+);
 const damageNumbers = new DamageNumberManager(scene, camera, engine);
 const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
@@ -1192,11 +1228,27 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
       CombatPresentation.projectiles.collisionScale,
     });
   } else if (ability.id === 'ability.retreat') {
-    const away = enemy.mesh.position.subtract(playerRoot.position); away.y = 0;
-    if (away.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(away.normalize().scale(ability.range));
-  } else if (ability.id === 'ability.charge' || ability.id === 'ability.dash' || ability.id === 'ability.leap') {
-    const toward = playerRoot.position.subtract(enemy.mesh.position); toward.y = 0;
-    if (toward.lengthSquared() > 0.001) enemy.mesh.position.addInPlace(toward.normalize().scale(Math.min(ability.range, Math.max(0, distance - 1.35))));
+    const away = enemy.mesh.position.subtract(playerRoot.position);
+    away.y = 0;
+    if (away.lengthSquared() > 0.001) {
+      const desired = enemy.mesh.position.add(away.normalize().scale(ability.range));
+      applyWorldAwareEnemyMovement(enemy, desired, 0.1);
+    }
+  } else if (
+    ability.id === 'ability.charge' ||
+    ability.id === 'ability.dash' ||
+    ability.id === 'ability.leap'
+  ) {
+    const toward = playerRoot.position.subtract(enemy.mesh.position);
+    toward.y = 0;
+    if (toward.lengthSquared() > 0.001) {
+      const desired = enemy.mesh.position.add(
+        toward
+          .normalize()
+          .scale(Math.min(ability.range, Math.max(0, distance - 1.35))),
+      );
+      applyWorldAwareEnemyMovement(enemy, desired, 0.1);
+    }
   }
 
   if (ability.abilityTags.includes('defensive')) {
@@ -1290,6 +1342,48 @@ function resolveEnemyCast(
   executeEnemyAbility(enemy, usage);
   if (machine.getCurrentStateId() === 'casting') {
     machine.request('recover', reason);
+  }
+}
+
+function applyWorldAwareEnemyMovement(
+  enemy: Enemy,
+  desiredPosition: Vector3,
+  dt: number,
+): void {
+  const startPosition = enemy.mesh.position.clone();
+  const homePosition = enemy.stateMachine.blackboard.get('homePosition');
+  const nearbyObstaclePositions = enemies
+    .filter(candidate => candidate !== enemy && candidate.hp > 0)
+    .map(candidate => candidate.mesh.position);
+  const resolution = enemyNavigation.resolve({
+    currentPosition: enemy.mesh.position,
+    desiredPosition,
+    homePosition,
+    leashRange: enemy.definition.leashRange,
+    role: enemy.definition.role,
+    capabilities: enemy.navigationCapabilities,
+    state: enemy.navigationState,
+    dt,
+    nearbyObstaclePositions,
+  });
+
+  enemy.mesh.position.copyFrom(resolution.position);
+  enemyNavigationDebug.showRoute(
+    enemy.entityId,
+    startPosition,
+    desiredPosition,
+    resolution.mode === 'blocked',
+  );
+
+  if (resolution.failureReason !== 'none') {
+    enemy.stateMachine.blackboard.set(
+      'movementReason',
+      `navigation: ${resolution.failureReason}`,
+    );
+    enemy.stateMachine.blackboard.set(
+      'watchdogStatus',
+      resolution.failureReason,
+    );
   }
 }
 
@@ -1425,14 +1519,16 @@ function createEnemyStateMachine(
 
         const slow = (enemy.statuses.frost ?? 0) > 0 ? 0.58 : 1;
         const orbitDirection = blackboard.get('decisionCount') % 2 === 0 ? 1 : -1;
+        const desiredPosition = enemy.mesh.position.clone();
         enemyTactics.movement.apply(
-          enemy.mesh.position,
+          desiredPosition,
           playerRoot.position,
           movement,
           enemy.speed * slow,
           dt,
           orbitDirection,
         );
+        applyWorldAwareEnemyMovement(enemy, desiredPosition, dt);
 
         if (activeMachine.getTimeInState() >= 0.45) {
           activeMachine.request('evaluate', 'tactical-replan');
@@ -1561,9 +1657,10 @@ function createEnemyStateMachine(
         }
         if (toHome.lengthSquared() > 0.001) {
           toHome.normalize();
-          enemy.mesh.position.addInPlace(
+          const desiredPosition = enemy.mesh.position.add(
             toHome.scale(enemy.speed * enemy.definition.returnSpeedMultiplier * dt),
           );
+          applyWorldAwareEnemyMovement(enemy, desiredPosition, dt);
         }
       },
     })
@@ -1572,6 +1669,32 @@ function createEnemyStateMachine(
 
 function updateEnemyRuntimeWatchdog(enemy: Enemy, dt: number): void {
   const machine = enemy.stateMachine;
+  if (enemy.navigationState.mode === 'blocked') {
+    enemy.navigationState.blockedTime += dt;
+    machine.blackboard.set(
+      'watchdogStatus',
+      `navigation: ${enemy.navigationState.failureReason}`,
+    );
+    if (enemy.navigationState.blockedTime > 1.25) {
+      machine.blackboard.set(
+        'lastRecoveryReason',
+        enemy.navigationState.failureReason,
+      );
+      machine.blackboard.set(
+        'recoveryCount',
+        machine.blackboard.get('recoveryCount') + 1,
+      );
+      enemy.navigationState.blockedTime = 0;
+      enemy.navigationState.lastReplanAt = performance.now();
+      machine.request(
+        enemyIsOutsideTerritory(enemy) ? 'return-home' : 'evaluate',
+        'navigation-watchdog-replan',
+      );
+      return;
+    }
+  } else {
+    enemy.navigationState.blockedTime = 0;
+  }
   const result = enemyRuntimeWatchdog.update(
     {
       entityId: enemy.entityId,
@@ -1644,16 +1767,35 @@ function spawnEnemy(
 
   const family = definitions.require<EnemyFamilyDefinition>(`enemy-family.${definition.familyId}`);
   const displayName = `${elite && modifier.modifierId !== 'none' ? modifier.name + ' ' : ''}${definition.familyId === 'humanoid' ? variant.name + ' ' : ''}${definition.name}`;
+  const navigationCapabilities = capabilitiesForEnemy(definition);
 
   const angle = Math.random() * Math.PI * 2;
   const radius = 10 + Math.random() * 4;
+  const requestedSpawn = spawnPosition?.clone() ?? new Vector3(
+    Math.cos(angle) * radius,
+    0,
+    Math.sin(angle) * radius,
+  );
+  const spawnResolution = enemySpawnResolver.resolve(
+    requestedSpawn,
+    navigationCapabilities,
+    enemies.map(candidate => candidate.mesh.position),
+  );
+  enemyNavigationDebug.showSpawnCandidates(spawnResolution.candidates);
+  if (!spawnResolution.position) {
+    feed(
+      `${displayName} spawn rejected: ${spawnResolution.failureReason}.`,
+      'warning',
+    );
+    return;
+  }
   const mesh = definition.role === 'brute' || definition.role === 'boss'
     ? MeshBuilder.CreateIcoSphere(`enemy-${definition.role}`, { radius: definition.role === 'boss' ? 1.45 : elite ? 1.1 : 0.9, subdivisions: 2 }, scene)
     : definition.role === 'crab'
       ? MeshBuilder.CreateBox('enemy-crab', { width: 1.5, height: 0.55, depth: 1.05 }, scene)
       : MeshBuilder.CreateCapsule(`enemy-${definition.role}`, { height: definition.role.includes('mage') || definition.role === 'frost-caster' || definition.role === 'mother-wolf' ? 1.8 : 1.5, radius: definition.role === 'wolf' ? 0.40 : elite ? 0.56 : 0.46 }, scene);
   const y = definition.role === 'boss' ? 1.45 : definition.role === 'brute' ? (elite ? 1.1 : 0.9) : definition.role === 'crab' ? 0.3 : 0.75;
-  mesh.position.set(spawnPosition?.x ?? Math.cos(angle) * radius, y, spawnPosition?.z ?? Math.sin(angle) * radius);
+  mesh.position.set(spawnResolution.position.x, y, spawnResolution.position.z);
   const [r, g, b] = definition.color;
   const [mr, mg, mb] = modifier.colorShift;
   mesh.material = mat(`enemy-${definition.role}-${variant.variantId}-${modifier.modifierId}`, new Color3(Math.min(1, r + mr), Math.min(1, g + mg), Math.min(1, b + mb)), elite ? 0.2 : 0.04);
@@ -1735,6 +1877,20 @@ function spawnEnemy(
     abilityCooldowns: new Map<string, number>(),
     statuses: {},
     knockbackVelocity: Vector3.Zero(),
+    navigationCapabilities,
+    navigationState: {
+      mode: 'idle',
+      failureReason: 'none',
+      verticalVelocity: 0,
+      grounded: true,
+      supportHeight: 0,
+      activeTraversalLinkId: null,
+      routeGoal: null,
+      lastValidPosition: mesh.position.clone(),
+      lastReplanAt: performance.now(),
+      blockedTime: 0,
+      platformWaitTime: 0,
+    },
   });
   enemy.stateMachine = createEnemyStateMachine(enemy);
   enemy.stateMachine.start('evaluate', 'enemy-spawned');
@@ -2922,6 +3078,12 @@ scene.onBeforeRenderObservable.add(() => {
   worldVolumes.setDebugVisible(
     developerState.worldVolumeHighlightsVisible,
   );
+  enemyNavigationDebug.setSettings({
+    showSpawnCandidates: developerState.enemySpawnCandidatesVisible,
+    showTraversalLinks: developerState.enemyTraversalLinksVisible,
+    showPlannedMovement: developerState.enemyNavigationRoutesVisible,
+    showInvalidLandingPoints: developerState.enemyInvalidLandingsVisible,
+  });
 
   enemies.forEach(e => {
     combat.updateKnockback(e, dt);
@@ -3116,6 +3278,17 @@ scene.onBeforeRenderObservable.add(() => {
           `Target Vol   r${inspectedEnemy.targetRadius.toFixed(2)} h${inspectedEnemy.targetHeight.toFixed(2)}`,
           `Territory    ${inspectedEnemy.stateMachine.blackboard.get('territoryStatus') ?? 'n/a'}`,
           `Home Dist    ${(inspectedEnemy.stateMachine.blackboard.get('distanceFromHome') ?? 0).toFixed(1)} / ${inspectedEnemy.definition.leashRange.toFixed(1)}`,
+          '',
+          'NAVIGATION',
+          `Nav Mode     ${inspectedEnemy.navigationState.mode}`,
+          `Nav Failure  ${inspectedEnemy.navigationState.failureReason}`,
+          `Grounded     ${inspectedEnemy.navigationState.grounded ? 'yes' : 'no'}`,
+          `Support      ${inspectedEnemy.navigationState.supportHeight.toFixed(2)}`,
+          `Traversal    ${inspectedEnemy.navigationState.activeTraversalLinkId ?? 'none'}`,
+          `Blocked      ${inspectedEnemy.navigationState.blockedTime.toFixed(2)}s`,
+          `Can Jump     ${inspectedEnemy.navigationCapabilities.canJump ? 'yes' : 'no'}`,
+          `Can Drop     ${inspectedEnemy.navigationCapabilities.canDrop ? 'yes' : 'no'}`,
+          `Platforms    ${inspectedEnemy.navigationCapabilities.canUsePlatforms ? 'yes' : 'no'}`,
           `Decisions    ${inspectedEnemy.stateMachine.blackboard.get('decisionCount') ?? 0}`,
         ] : []),
       ].join('\n'),

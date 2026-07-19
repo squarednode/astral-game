@@ -211,7 +211,7 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities' | 'combat'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'ai'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 

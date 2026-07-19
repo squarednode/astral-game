@@ -4879,6 +4879,39 @@ It continues to show:
 - Ability selection
 - State-machine behavior
 
+# Changelog — 0.6.1g
+
+## Added
+
+- Enemy spawn validation and expanding-ring candidate search
+- Enemy navigation capabilities by archetype role
+- Local world-aware navigation resolver
+- Segment collision testing
+- Ground/support sampling
+- Step, jump, drop, platform, and lift navigation modes
+- Traversal links generated from world traversal surfaces
+- Dynamic enemy and moving-collider avoidance
+- Local left/right route correction
+- Navigation debug overlay
+- AI HUD navigation controls and diagnostics
+- Navigation watchdog recovery reasons
+- Future traversal types for climbing and flying actors
+
+## Changed
+
+- Reposition movement now passes through enemy navigation
+- Return-home movement now respects world geometry
+- Retreat, charge, dash, and leap movement now respects world geometry
+- Invalid enemy spawns are rejected rather than forced
+
+## Preserved
+
+- Tactical ability selection
+- Ability state machine
+- Territory/leash authority
+- Enemy combat definitions
+- Combat presentation tuning
+
 ### Validate
 ```bash
 npm run build

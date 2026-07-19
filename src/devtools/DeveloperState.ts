@@ -15,6 +15,10 @@ export interface DeveloperState {
   worldCollisionEnabled: boolean;
   traversalHighlightsVisible: boolean;
   worldVolumeHighlightsVisible: boolean;
+  enemySpawnCandidatesVisible: boolean;
+  enemyTraversalLinksVisible: boolean;
+  enemyNavigationRoutesVisible: boolean;
+  enemyInvalidLandingsVisible: boolean;
 }
 
 export const developerState: DeveloperState = {
@@ -34,4 +38,8 @@ export const developerState: DeveloperState = {
   worldCollisionEnabled: true,
   traversalHighlightsVisible: false,
   worldVolumeHighlightsVisible: false,
+  enemySpawnCandidatesVisible: false,
+  enemyTraversalLinksVisible: false,
+  enemyNavigationRoutesVisible: false,
+  enemyInvalidLandingsVisible: false,
 };
