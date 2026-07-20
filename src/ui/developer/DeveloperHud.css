@@ -608,3 +608,20 @@
 .encounter-dev-card dt { color: #8b9db7; }
 .encounter-dev-card dd { margin: 0; color: #deebff; }
 .encounter-dev-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.progression-developer-panel { display:grid; gap:10px; }
+.progression-developer-panel header strong,
+.progression-developer-panel header small { display:block; }
+.progression-developer-panel header small { color:#8195b4; margin-top:3px; }
+.progression-dev-toolbar,
+.progression-dev-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.progression-dev-toolbar button,
+.progression-dev-actions button { padding:6px 8px; border:1px solid rgba(117,186,255,.35); border-radius:6px; background:rgba(117,186,255,.1); color:#eef5ff; cursor:pointer; }
+.progression-dev-grid { display:grid; gap:8px; }
+.progression-dev-card { padding:9px; border:1px solid rgba(132,174,235,.18); border-radius:8px; background:rgba(255,255,255,.03); }
+.progression-dev-card > strong,
+.progression-dev-card > small { display:block; }
+.progression-dev-card > small { color:#7890b1; font-size:9px; }
+.progression-dev-card dl { display:grid; grid-template-columns:90px 1fr; gap:3px 7px; margin:8px 0; font:10px/1.35 ui-monospace,monospace; }
+.progression-dev-card dt { color:#8297b6; }
+.progression-dev-card dd { margin:0; color:#dae8ff; }

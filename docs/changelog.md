@@ -5425,6 +5425,26 @@ export {
 
 The supporting files ensure the exported definition names and their runtime types remain aligned.
 
+# Changelog — 0.6.7.1
+
+## Added
+
+- CharacterProgressionRuntime
+- ExperienceRuntime
+- XP curves and growth packages
+- Full-roster XP policy
+- XP rewards from enemies, encounters, and quest completion
+- Active-character progression HUD
+- Level-up notifications
+- Progression Developer HUD page
+- Progression serialization and developer bridge
+
+## Changed
+
+- Character maximum health and attack include level growth.
+- Character movement speed includes level growth.
+
+
 ### Validate
 ```bash
 npm run build

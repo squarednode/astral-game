@@ -1,0 +1,19 @@
+.progression-hud {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 45;
+  width: 220px;
+  padding: 9px 10px;
+  border: 1px solid rgba(123, 173, 242, .32);
+  border-radius: 8px;
+  background: rgba(6, 12, 21, .9);
+  color: #eef5ff;
+  pointer-events: none;
+}
+.progression-hud-header { display:flex; justify-content:space-between; gap:10px; }
+.progression-hud-header strong { font-size:12px; }
+.progression-hud-header span { color:#9fc7ff; font-size:11px; font-weight:700; }
+.progression-hud-bar { height:6px; margin-top:7px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.1); }
+.progression-hud-bar i { display:block; height:100%; background:linear-gradient(90deg,#6e8cff,#9f72ff); }
+.progression-hud small { display:block; margin-top:5px; color:#8ea3c2; font-size:9px; }

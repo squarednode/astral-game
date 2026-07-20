@@ -9,6 +9,7 @@ import './ui/gameplay/GameplayHud.css';
 import './ui/menus/SettingsMenu.css';
 import './ui/shared/InteractionPrompt.css';
 import './ui/encounters/EncounterTracker.css';
+import './ui/progression/ProgressionHud.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -219,6 +220,18 @@ import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
 import { QuestTracker } from './ui/gameplayloop/QuestTracker';
 import { MerchantOverlay } from './ui/gameplayloop/MerchantOverlay';
 import { InteractionPrompt } from './ui/shared/InteractionPrompt';
+import {
+  CharacterProgressionRuntime,
+  ExperienceRuntime,
+} from './game/progression';
+import {
+  characterGrowthPackages,
+  characterProgressionDefinitions,
+  experienceCurves,
+  progressionExperienceRewards,
+} from './game/definitions/progression';
+import { ProgressionHud } from './ui/progression/ProgressionHud';
+import { ProgressionDeveloperPanel } from './ui/developer/ProgressionDeveloperPanel';
 import type {
   GearFamily,
   GearSlot,
@@ -766,6 +779,20 @@ const party: CharacterState[] = defs.map(d => ({
   skillSlots: { 1: 'Q', 2: 'E' },
   shieldRemaining: 0,
 }));
+const progressionRuntime = new CharacterProgressionRuntime(
+  experienceCurves,
+  characterGrowthPackages,
+  characterProgressionDefinitions,
+);
+const experienceRuntime = new ExperienceRuntime(
+  progressionRuntime,
+  {
+    unlockedCharacterIds: () => party.map(character => character.id),
+    activeCharacterIds: () => party.map(character => character.id),
+  },
+  'full-roster',
+);
+
 let activeIndex = 0;
 let active = party[0];
 const playerStatusComponent = statusRuntime.createComponent();
@@ -935,6 +962,19 @@ const gameplayHud = new GameplayHud(
   ui.getLayer('gameplay'),
   ui.getLayer('notifications'),
 );
+const progressionHud = new ProgressionHud(ui.getLayer('gameplay'));
+progressionRuntime.subscribeLevelUps(event => {
+  const character = party.find(candidate => candidate.id === event.characterId);
+  if (!character) return;
+  character.hp = Math.min(hpMax(character), character.hp + event.levelsGained * 20);
+  feed(
+    `${character.name} reached Level ${event.newLevel}.`,
+    'success',
+  );
+});
+progressionRuntime.subscribe(() => {
+  progressionHud.render(progressionRuntime.snapshot(active.id), active.name);
+});
 let movement: PlayerMovementController;
 
 const settingsMenu = new SettingsMenu(
@@ -959,7 +999,7 @@ const unsubscribeSettings = settings.subscribe(current => {
 movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
   getMoveSpeed: () =>
-    active.speed *
+    (active.speed + progressionRuntime.growthModifiers(active.id).movementSpeed) *
     (1 + equipmentStatsFor(active).movementSpeedPercent) *
     worldMovementMultiplier,
   canDodge: () =>
@@ -1759,6 +1799,11 @@ const encounterManager = new EncounterManager(encounterRegistry, {
     events.emit(type as any, payload as any);
     if (type === 'encounter.completed' && typeof payload.encounterId === 'string') {
       questRuntime.recordEncounterCompleted(payload.encounterId);
+      experienceRuntime.award({
+        amount: progressionExperienceRewards.encounter,
+        sourceId: payload.encounterId,
+        sourceType: 'encounter',
+      });
     }
   },
   notify: (title, detail) => {
@@ -1797,6 +1842,19 @@ const encounterDeveloperPanel = new EncounterDeveloperPanel(
   },
 );
 
+const progressionDeveloperPanel = new ProgressionDeveloperPanel(
+  developerHud.getPageContent('progression'),
+  {
+    progression: () => progressionRuntime,
+    experience: () => experienceRuntime,
+    characterName: id => party.find(character => character.id === id)?.name ?? id,
+    refresh: () => {
+      refreshHud();
+      progressionDeveloperPanel.render();
+    },
+  },
+);
+
 const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
   world: worldStateRuntime,
   inventory: inventoryRuntime,
@@ -1814,10 +1872,28 @@ Object.assign(globalThis, {
     destinations: () => destinationRegistry.all(),
     triggers: () => worldTriggerRuntime.snapshot(),
     encounters: () => encounterManager.snapshots(),
+    progression: () => progressionRuntime.snapshots(),
+    grantExperience: (amount: number) => experienceRuntime.award({
+      amount,
+      sourceId: 'developer.global',
+      sourceType: 'developer',
+    }),
+    exportProgression: () => progressionRuntime.serialize(),
+    importProgression: (snapshot: ReturnType<typeof progressionRuntime.serialize>) =>
+      progressionRuntime.deserialize(snapshot),
   },
 });
+let previousWolfQuestState = questRuntime.state('quest.wolf-problem');
 questRuntime.subscribe(() => {
   const state = questRuntime.state('quest.wolf-problem');
+  if (state === 'completed' && previousWolfQuestState !== 'completed') {
+    experienceRuntime.award({
+      amount: progressionExperienceRewards.quest,
+      sourceId: 'quest.wolf-problem',
+      sourceType: 'quest',
+    });
+  }
+  previousWolfQuestState = state;
   worldStateRuntime.setFlag(
     'quest.wolf-problem.active',
     state === 'active' || state === 'ready-to-complete',
@@ -2319,11 +2395,19 @@ function powerFor(c = active): number {
 }
 
 function attackFor(c = active): number {
-  return Math.max(1, c.attackDamage + equipmentStatsFor(c).attack);
+  const growth = progressionRuntime.growthModifiers(c.id);
+  return Math.max(
+    1,
+    c.attackDamage + growth.attack + equipmentStatsFor(c).attack,
+  );
 }
 
 function hpMax(c: CharacterState): number {
-  return Math.max(25, c.maxHp + equipmentStatsFor(c).maximumHealth);
+  const growth = progressionRuntime.growthModifiers(c.id);
+  return Math.max(
+    25,
+    c.maxHp + growth.maximumHealth + equipmentStatsFor(c).maximumHealth,
+  );
 }
 
 function swapBonusFor(c: CharacterState): number {
@@ -2437,6 +2521,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
 
 function refreshHud(): void {
   gameplayHud.render(gameplayHudSnapshot());
+  progressionHud.render(progressionRuntime.snapshot(active.id), active.name);
   renderPartyManagement();
 }
 
@@ -4177,6 +4262,15 @@ function killEnemy(enemy: Enemy): void {
     enemy.entityId,
     enemy.definition.role === 'boss',
   );
+  experienceRuntime.award({
+    amount: enemy.definition.role === 'boss'
+      ? progressionExperienceRewards.bossEnemy
+      : enemy.elite
+        ? progressionExperienceRewards.eliteEnemy
+        : progressionExperienceRewards.enemy,
+    sourceId: enemy.entityId,
+    sourceType: 'enemy',
+  });
   generateLoot(enemy);
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
   enemies = enemies.filter(e => e !== enemy);
