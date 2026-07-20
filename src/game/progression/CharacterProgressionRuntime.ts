@@ -17,11 +17,14 @@ export interface ProgressionLevelEvent {
 
 export class CharacterProgressionRuntime {
   private readonly curves = new Map<string, ExperienceCurveDefinition>();
-  private readonly growthPackages = new Map<string, CharacterGrowthPackageDefinition>();
-  private readonly definitions = new Map<string, CharacterProgressionDefinition>();
+  private readonly growthPackages =
+    new Map<string, CharacterGrowthPackageDefinition>();
+  private readonly definitions =
+    new Map<string, CharacterProgressionDefinition>();
   private readonly states = new Map<string, CharacterProgressionState>();
   private readonly listeners = new Set<() => void>();
-  private readonly levelListeners = new Set<(event: ProgressionLevelEvent) => void>();
+  private readonly levelListeners =
+    new Set<(event: ProgressionLevelEvent) => void>();
 
   constructor(
     curves: readonly ExperienceCurveDefinition[],
@@ -29,15 +32,23 @@ export class CharacterProgressionRuntime {
     definitions: readonly CharacterProgressionDefinition[],
   ) {
     curves.forEach(curve => this.curves.set(curve.id, curve));
-    growthPackages.forEach(growth => this.growthPackages.set(growth.id, growth));
+    growthPackages.forEach(growth =>
+      this.growthPackages.set(growth.id, growth),
+    );
     definitions.forEach(definition => {
       this.definitions.set(definition.characterId, definition);
+
       const level = Math.max(1, definition.startingLevel ?? 1);
+      const startingExperience = Math.max(
+        0,
+        definition.startingExperience ?? 0,
+      );
+
       this.states.set(definition.characterId, {
         characterId: definition.characterId,
         level,
-        experience: Math.max(0, definition.startingExperience ?? 0),
-        totalExperience: Math.max(0, definition.startingExperience ?? 0),
+        experience: startingExperience,
+        totalExperience: startingExperience,
       });
     });
   }
@@ -47,7 +58,9 @@ export class CharacterProgressionRuntime {
     return () => this.listeners.delete(listener);
   }
 
-  subscribeLevelUps(listener: (event: ProgressionLevelEvent) => void): () => void {
+  subscribeLevelUps(
+    listener: (event: ProgressionLevelEvent) => void,
+  ): () => void {
     this.levelListeners.add(listener);
     return () => this.levelListeners.delete(listener);
   }
@@ -64,6 +77,7 @@ export class CharacterProgressionRuntime {
     const curve = this.requireCurve(definition.curveId);
     const previousLevel = state.level;
     const granted = Math.max(0, Math.floor(amount));
+
     state.experience += granted;
     state.totalExperience += granted;
 
@@ -75,8 +89,9 @@ export class CharacterProgressionRuntime {
     }
 
     const levelsGained = state.level - previousLevel;
+
     if (levelsGained > 0) {
-      const event = {
+      const event: ProgressionLevelEvent = {
         characterId,
         previousLevel,
         newLevel: state.level,
@@ -84,6 +99,7 @@ export class CharacterProgressionRuntime {
       };
       this.levelListeners.forEach(listener => listener(event));
     }
+
     this.changed();
     return levelsGained;
   }
@@ -92,8 +108,12 @@ export class CharacterProgressionRuntime {
     const state = this.states.get(characterId);
     const definition = this.definitions.get(characterId);
     if (!state || !definition) return;
+
     const curve = this.requireCurve(definition.curveId);
-    state.level = Math.min(curve.maximumLevel, Math.max(1, Math.floor(level)));
+    state.level = Math.min(
+      curve.maximumLevel,
+      Math.max(1, Math.floor(level)),
+    );
     state.experience = 0;
     this.changed();
   }
@@ -102,89 +122,144 @@ export class CharacterProgressionRuntime {
     const state = this.states.get(characterId);
     const definition = this.definitions.get(characterId);
     if (!state || !definition) return;
+
     state.level = Math.max(1, definition.startingLevel ?? 1);
-    state.experience = Math.max(0, definition.startingExperience ?? 0);
+    state.experience = Math.max(
+      0,
+      definition.startingExperience ?? 0,
+    );
     state.totalExperience = state.experience;
     this.changed();
   }
 
-  snapshot(characterId: string): CharacterProgressionSnapshot | null {
+  snapshot(
+    characterId: string,
+  ): CharacterProgressionSnapshot | null {
     const state = this.states.get(characterId);
     const definition = this.definitions.get(characterId);
     if (!state || !definition) return null;
+
     const curve = this.requireCurve(definition.curveId);
-    const growth = this.requireGrowth(definition.growthPackageId);
-    const required = state.level >= curve.maximumLevel
-      ? 0
-      : curve.experienceRequiredForLevel(state.level);
+    const required =
+      state.level >= curve.maximumLevel
+        ? 0
+        : curve.experienceRequiredForLevel(state.level);
+
     return {
       ...state,
       experienceIntoLevel: state.experience,
       experienceForNextLevel: required,
-      experienceProgress: required <= 0 ? 1 : Math.min(1, state.experience / required),
+      experienceProgress:
+        required <= 0
+          ? 1
+          : Math.min(1, state.experience / required),
       maximumLevel: curve.maximumLevel,
-      growth: this.growthModifiers(state.level, growth),
+      growth: this.calculateGrowthModifiers(characterId),
     };
   }
 
   snapshots(): readonly CharacterProgressionSnapshot[] {
     return this.characterIds()
       .map(id => this.snapshot(id))
-      .filter((value): value is CharacterProgressionSnapshot => value !== null);
+      .filter(
+        (
+          value,
+        ): value is CharacterProgressionSnapshot =>
+          value !== null,
+      );
   }
 
-  growthModifiers(characterId: string): CharacterGrowthModifiers {
-    return this.snapshot(characterId)?.growth ?? {
-      maximumHealth: 0,
-      attack: 0,
-      armor: 0,
-      movementSpeed: 0,
-    };
+  growthModifiers(
+    characterId: string,
+  ): CharacterGrowthModifiers {
+    return (
+      this.snapshot(characterId)?.growth ??
+      this.calculateGrowthModifiers(characterId)
+    );
   }
 
   serialize(): ProgressionSerializedState {
     return {
       version: 1,
       characters: Object.fromEntries(
-        [...this.states.entries()].map(([id, state]) => [id, { ...state }]),
+        [...this.states.entries()].map(([id, state]) => [
+          id,
+          { ...state },
+        ]),
       ),
     };
   }
 
   deserialize(serialized: ProgressionSerializedState): void {
     if (serialized.version !== 1) return;
-    for (const [id, saved] of Object.entries(serialized.characters)) {
+
+    for (const [id, saved] of Object.entries(
+      serialized.characters,
+    )) {
       const state = this.states.get(id);
       if (!state) continue;
+
       state.level = Math.max(1, Math.floor(saved.level));
-      state.experience = Math.max(0, Math.floor(saved.experience));
-      state.totalExperience = Math.max(state.experience, Math.floor(saved.totalExperience));
+      state.experience = Math.max(
+        0,
+        Math.floor(saved.experience),
+      );
+      state.totalExperience = Math.max(
+        state.experience,
+        Math.floor(saved.totalExperience),
+      );
     }
+
     this.changed();
   }
 
-  private growthModifiers(
-    level: number,
-    growth: CharacterGrowthPackageDefinition,
+  private calculateGrowthModifiers(
+    characterId: string,
   ): CharacterGrowthModifiers {
-    const gainedLevels = Math.max(0, level - 1);
+    const state = this.states.get(characterId);
+    const definition = this.definitions.get(characterId);
+
+    if (!state || !definition) {
+      return {
+        maximumHealth: 0,
+        attack: 0,
+        armor: 0,
+        movementSpeed: 0,
+      };
+    }
+
+    const growth = this.requireGrowth(
+      definition.growthPackageId,
+    );
+    const gainedLevels = Math.max(0, state.level - 1);
+
     return {
-      maximumHealth: gainedLevels * growth.maximumHealthPerLevel,
+      maximumHealth:
+        gainedLevels * growth.maximumHealthPerLevel,
       attack: gainedLevels * growth.attackPerLevel,
       armor: gainedLevels * growth.armorPerLevel,
-      movementSpeed: gainedLevels * growth.movementSpeedPerLevel,
+      movementSpeed:
+        gainedLevels * growth.movementSpeedPerLevel,
     };
   }
 
-  private requireCurve(id: string): ExperienceCurveDefinition {
+  private requireCurve(
+    id: string,
+  ): ExperienceCurveDefinition {
     const curve = this.curves.get(id);
-    if (!curve) throw new Error(`Unknown experience curve: ${id}`);
+    if (!curve) {
+      throw new Error(`Unknown experience curve: ${id}`);
+    }
     return curve;
   }
 
-  private requireGrowth(id: string): CharacterGrowthPackageDefinition {
+  private requireGrowth(
+    id: string,
+  ): CharacterGrowthPackageDefinition {
     const growth = this.growthPackages.get(id);
-    if (!growth) throw new Error(`Unknown growth package: ${id}`);
+    if (!growth) {
+      throw new Error(`Unknown growth package: ${id}`);
+    }
     return growth;
   }
 
