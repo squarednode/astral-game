@@ -646,3 +646,51 @@
 .pm-sort {
   min-width: 132px;
 }
+
+
+.pm-experience > div i {
+  background: linear-gradient(90deg, #6f8cff, #ad79ff);
+}
+
+.pm-progression-summary {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(132, 157, 255, .24);
+  border-radius: 9px;
+  background: rgba(90, 108, 200, .08);
+}
+
+.pm-progression-summary > strong {
+  font-size: 18px;
+}
+
+.pm-progression-summary > span {
+  color: #9caed0;
+  font-size: 11px;
+}
+
+.pm-progression-growth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.pm-progression-growth span {
+  flex-basis: 100%;
+  color: #8296b9;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pm-progression-growth b {
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.055);
+  color: #dce8ff;
+  font: 700 10px/1.2 ui-monospace, monospace;
+}

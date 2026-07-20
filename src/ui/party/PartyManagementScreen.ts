@@ -230,8 +230,8 @@ export class PartyManagementScreen {
         <div class="pm-avatar">${character.name.slice(0, 1)}</div>
         <div>
           <strong>${character.name}</strong>
-          <span>${character.role}</span>
-          <small>${FAMILY_LABELS[character.preferredFamily]}</small>
+          <span>${character.role} · Level ${character.level}</span>
+          <small>${FAMILY_LABELS[character.preferredFamily]} · ${character.experienceForNextLevel > 0 ? `${character.experienceIntoLevel}/${character.experienceForNextLevel} XP` : 'Maximum Level'}</small>
         </div>
         <b>${this.characterGearScore(character)}</b>
         ${character.controlled ? '<em>Controlled</em>' : ''}
@@ -248,7 +248,7 @@ export class PartyManagementScreen {
         <div>
           <div class="pm-eyebrow">Selected Character</div>
           <h2>${character.name}</h2>
-          <p>${character.role}</p>
+          <p>${character.role} · Level ${character.level}</p>
         </div>
         <div class="pm-family ${character.preferredFamily}">
           ${FAMILY_LABELS[character.preferredFamily]}
@@ -259,6 +259,13 @@ export class PartyManagementScreen {
         <span>Health ${Math.ceil(character.hp)} / ${Math.ceil(character.maxHp)}</span>
         <div>
           <i style="width:${Math.max(0, character.hp / character.maxHp * 100)}%"></i>
+        </div>
+      </div>
+
+      <div class="pm-health pm-experience" title="${character.experienceForNextLevel > 0 ? `${Math.max(0, character.experienceForNextLevel - character.experienceIntoLevel)} XP remaining` : 'Maximum level reached'}">
+        <span>${character.experienceForNextLevel > 0 ? `Experience ${character.experienceIntoLevel} / ${character.experienceForNextLevel}` : 'Experience · Maximum Level'}</span>
+        <div>
+          <i style="width:${Math.round(character.experienceProgress * 100)}%"></i>
         </div>
       </div>
 
@@ -432,6 +439,19 @@ export class PartyManagementScreen {
 
   private statsTab(character: PartyCharacterView): string {
     return `
+      <div class="pm-progression-summary">
+        <strong>Level ${character.level}</strong>
+        <span>${character.experienceForNextLevel > 0
+          ? `${character.experienceIntoLevel} / ${character.experienceForNextLevel} XP · ${Math.max(0, character.experienceForNextLevel - character.experienceIntoLevel)} remaining`
+          : 'Maximum Level'}</span>
+        <div class="pm-progression-growth">
+          <span>Progression Growth</span>
+          <b>+${character.growth.maximumHealth} Health</b>
+          <b>+${character.growth.attack} Attack</b>
+          <b>+${character.growth.armor.toFixed(1)} Armor</b>
+          <b>+${character.growth.movementSpeed.toFixed(2)} Move Speed</b>
+        </div>
+      </div>
       <div class="pm-summary-bars large">
         ${this.summaryBar('Power', character.summary.power)}
         ${this.summaryBar('Defense', character.summary.defense)}

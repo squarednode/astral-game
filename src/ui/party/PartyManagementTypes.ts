@@ -39,6 +39,17 @@ export interface PartyCharacterView {
   hp: number;
   maxHp: number;
   controlled: boolean;
+  level: number;
+  experienceIntoLevel: number;
+  experienceForNextLevel: number;
+  experienceProgress: number;
+  maximumLevel: number;
+  growth: {
+    maximumHealth: number;
+    attack: number;
+    armor: number;
+    movementSpeed: number;
+  };
   equipment: Partial<Record<GearSlot, PartyEquipmentItem>>;
   skills: PartySkillView[];
   skillSlots: Partial<Record<SkillSlot, SkillId>>;

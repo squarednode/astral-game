@@ -10,6 +10,10 @@ import { NotificationFeed } from './NotificationFeed';
 import { PartyHud } from './PartyHud';
 import { WaveHud } from './WaveHud';
 
+export interface GameplayHudOptions {
+  onRestart?: () => void;
+}
+
 export class GameplayHud {
   readonly element: HTMLDivElement;
   private readonly partyHud: PartyHud;
@@ -25,6 +29,7 @@ export class GameplayHud {
   constructor(
     gameplayLayer: HTMLElement,
     notificationLayer: HTMLElement,
+    private readonly options: GameplayHudOptions = {},
   ) {
     this.hideLegacyHud();
     this.applyTheme(gameplayLayer);
@@ -50,7 +55,10 @@ export class GameplayHud {
     this.restart = document.createElement('button');
     this.restart.type = 'button';
     this.restart.textContent = 'Restart Run';
-    this.restart.addEventListener('click', () => location.reload());
+    this.restart.addEventListener('click', () => {
+      if (this.options.onRestart) this.options.onRestart();
+      else location.reload();
+    });
     this.gameOver.append(title, this.finalScore, this.restart);
     this.element.appendChild(this.gameOver);
   }
@@ -70,6 +78,10 @@ export class GameplayHud {
   showGameOver(summary: string): void {
     this.finalScore.textContent = summary;
     this.gameOver.hidden = false;
+  }
+
+  hideGameOver(): void {
+    this.gameOver.hidden = true;
   }
 
   dispose(): void {

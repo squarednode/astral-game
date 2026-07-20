@@ -5444,6 +5444,19 @@ The supporting files ensure the exported definition names and their runtime type
 - Character maximum health and attack include level growth.
 - Character movement speed includes level growth.
 
+# Changelog — 0.6.7.1a
+
+## Fixed
+
+- Progression Developer HUD could show stale values after XP gains.
+- Party defeat reloaded the page and returned characters to starting progression.
+- The `I` character screen did not show character level or XP.
+
+## Added
+
+- Character-screen XP bar and tooltip.
+- Permanent progression-growth summary.
+- In-place party respawn that preserves persistent progression.
 
 ### Validate
 ```bash

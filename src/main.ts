@@ -961,6 +961,7 @@ const developerHud = new DeveloperHud(
 const gameplayHud = new GameplayHud(
   ui.getLayer('gameplay'),
   ui.getLayer('notifications'),
+  { onRestart: () => respawnAfterDefeat() },
 );
 const progressionHud = new ProgressionHud(ui.getLayer('gameplay'));
 progressionRuntime.subscribeLevelUps(event => {
@@ -973,7 +974,7 @@ progressionRuntime.subscribeLevelUps(event => {
   );
 });
 progressionRuntime.subscribe(() => {
-  progressionHud.render(progressionRuntime.snapshot(active.id), active.name);
+  refreshHud();
 });
 let movement: PlayerMovementController;
 
@@ -1855,6 +1856,10 @@ const progressionDeveloperPanel = new ProgressionDeveloperPanel(
   },
 );
 
+progressionRuntime.subscribe(() => {
+  progressionDeveloperPanel.render();
+});
+
 const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
   world: worldStateRuntime,
   inventory: inventoryRuntime,
@@ -2527,7 +2532,9 @@ function refreshHud(): void {
 
 function partyManagementModel(): PartyManagementModel {
   return {
-    characters: party.map(character => ({
+    characters: party.map(character => {
+      const progression = progressionRuntime.snapshot(character.id);
+      return {
       id: character.id,
       name: character.name,
       role: character.role,
@@ -2547,6 +2554,17 @@ function partyManagementModel(): PartyManagementModel {
         },
       ],
       skillSlots: character.skillSlots,
+      level: progression?.level ?? 1,
+      experienceIntoLevel: progression?.experienceIntoLevel ?? 0,
+      experienceForNextLevel: progression?.experienceForNextLevel ?? 0,
+      experienceProgress: progression?.experienceProgress ?? 0,
+      maximumLevel: progression?.maximumLevel ?? 1,
+      growth: progression?.growth ?? {
+        maximumHealth: 0,
+        attack: 0,
+        armor: 0,
+        movementSpeed: 0,
+      },
       summary: (() => {
         const equipment = equipmentStatsFor(character);
         return {
@@ -2573,7 +2591,8 @@ function partyManagementModel(): PartyManagementModel {
           ),
         };
       })(),
-    })),
+    };
+    }),
     items: loot,
     resources: inventoryRuntime.snapshot(bagItems()),
   };
@@ -4300,6 +4319,57 @@ function hurtActive(
     if (next >= 0) swapTo(next); else endGame();
   }
   refreshHud();
+}
+
+function respawnAfterDefeat(): void {
+  for (const snapshot of encounterManager.snapshots()) {
+    if (snapshot.state === 'active' || snapshot.state === 'phase-transition' || snapshot.state === 'failed') {
+      encounterManager.reset(snapshot.id, 'Party defeated');
+    }
+  }
+
+  for (const enemy of [...enemies]) {
+    enemyTelegraphs.cancel(enemy.mesh);
+    enemyRuntimeWatchdog.remove(enemy.entityId);
+    entities.destroy(enemy.entityId);
+  }
+  enemies = [];
+  hoveredEnemy = null;
+
+  for (const projectile of projectiles) projectile.mesh.dispose();
+  projectiles = [];
+  for (const effect of effects) effect.mesh.dispose();
+  effects = [];
+
+  playerStatusComponent.active.clear();
+  party.forEach(character => {
+    character.hp = hpMax(character);
+    character.shieldRemaining = 0;
+    Object.keys(character.cooldowns).forEach(key => {
+      character.cooldowns[key as keyof typeof character.cooldowns] = 0;
+    });
+    abilityComponents.get(character.id)?.finishCooldowns();
+  });
+
+  activeIndex = 0;
+  active = party[activeIndex];
+  playerBody.material = mat('player', active.color, 0.08);
+
+  const respawnPosition = new Vector3(0, 0, -22);
+  traversalSurfaces.reset();
+  worldVolumes.reset();
+  playerRoot.position.copyFrom(respawnPosition);
+  movement.resetVerticalState(respawnPosition.y);
+  movement.setPointerWorld(respawnPosition);
+  pointerWorld.copyFrom(respawnPosition);
+
+  wave = 1;
+  scheduledWave = null;
+  gameOver = false;
+  gameplayHud.hideGameOver();
+  input.setContext('gameplay');
+  refreshHud();
+  feed('Party restored. Character levels and experience were preserved.', 'success');
 }
 
 function endGame(): void {
