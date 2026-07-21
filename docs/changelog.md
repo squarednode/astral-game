@@ -5458,6 +5458,43 @@ The supporting files ensure the exported definition names and their runtime type
 - Permanent progression-growth summary.
 - In-place party respawn that preserves persistent progression.
 
+# Astral 0.6.7.2 - Roster and Party Framework
+
+This iteration adds the first roster, recruitment, reserve-party, and party-management framework.
+
+## Included
+
+- Maximum active party size of 3, enforced by `RosterRuntime`.
+- Active, reserve, and leader states.
+- Hunter Mara as the first recruitable companion.
+- Hunter Mara unlocks when `quest.wolf-problem` is completed.
+- If the active party is full, Mara enters reserve.
+- Full-roster XP now targets unlocked roster characters.
+- Party HUD and character swapping show/use active party members only.
+- Party Management screen shows active/reserve and leader status.
+- Make Leader, Move to Reserve, and Add to Party controls.
+- Party-full replacement prompt.
+- Sticky roster controls and sticky equipment action footer.
+- Selected item details remain scrollable while Equip remains reachable.
+- Roster serialization exposed through `astralEngineAlpha`.
+
+## Validation
+
+Run the project normally and validate:
+
+1. Open the character screen with `I`.
+2. Confirm three active party members are shown.
+3. Complete Hunter Mara's wolf quest.
+4. Confirm Mara appears in the roster as Reserve because the party is full.
+5. Add Mara to the party and select a member to replace.
+6. Make Mara leader.
+7. Confirm the Party HUD and swap controls only include active members.
+8. Select an item with many stats and confirm the Equip control remains accessible.
+
+## Known existing project issue
+
+The source package still reports the pre-existing `PlayerCameraController.requestShake` type errors when compiled independently. The supplied source-only ZIP also does not contain the project's installed Babylon dependencies.
+
 ### Validate
 ```bash
 npm run build

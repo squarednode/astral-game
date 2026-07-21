@@ -39,6 +39,8 @@ export interface PartyCharacterView {
   hp: number;
   maxHp: number;
   controlled: boolean;
+  rosterStatus: 'active' | 'reserve';
+  leader: boolean;
   level: number;
   experienceIntoLevel: number;
   experienceForNextLevel: number;
@@ -71,6 +73,7 @@ export interface PartyInventoryResources {
 
 export interface PartyManagementModel {
   characters: PartyCharacterView[];
+  maximumActiveCharacters: number;
   items: PartyEquipmentItem[];
   resources: PartyInventoryResources;
 }
@@ -80,6 +83,9 @@ export interface PartyManagementActions {
   equip(itemId: number, characterId: string): void;
   destroyItems(itemIds: number[]): void;
   toggleFavorite(itemId: number): void;
+  setLeader(characterId: string): void;
+  moveToReserve(characterId: string): void;
+  addToParty(characterId: string, replaceCharacterId?: string): void;
   assignSkill(
     characterId: string,
     slot: SkillSlot,

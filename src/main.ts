@@ -232,6 +232,7 @@ import {
 } from './game/definitions/progression';
 import { ProgressionHud } from './ui/progression/ProgressionHud';
 import { ProgressionDeveloperPanel } from './ui/developer/ProgressionDeveloperPanel';
+import { RosterRuntime } from './game/roster';
 import type {
   GearFamily,
   GearSlot,
@@ -784,17 +785,26 @@ const progressionRuntime = new CharacterProgressionRuntime(
   characterGrowthPackages,
   characterProgressionDefinitions,
 );
+const rosterRuntime = new RosterRuntime(
+  party.map(character => ({
+    characterId: character.id,
+    unlockedByDefault: character.id !== 'hunter-mara',
+    activeByDefault: character.id !== 'hunter-mara',
+    recruitmentSource: character.id === 'hunter-mara' ? 'quest.wolf-problem' : 'starter',
+  })),
+  3,
+);
 const experienceRuntime = new ExperienceRuntime(
   progressionRuntime,
   {
-    unlockedCharacterIds: () => party.map(character => character.id),
-    activeCharacterIds: () => party.map(character => character.id),
+    unlockedCharacterIds: () => rosterRuntime.snapshot().unlockedCharacterIds,
+    activeCharacterIds: () => rosterRuntime.snapshot().activeCharacterIds,
   },
   'full-roster',
 );
 
-let activeIndex = 0;
-let active = party[0];
+let activeIndex = Math.max(0, party.findIndex(character => character.id === rosterRuntime.leaderId()));
+let active = party[activeIndex];
 const playerStatusComponent = statusRuntime.createComponent();
 const abilityComponents = new Map<string, AbilityComponent>();
 const abilityEventLog: string[] = [];
@@ -1883,10 +1893,18 @@ Object.assign(globalThis, {
       sourceId: 'developer.global',
       sourceType: 'developer',
     }),
+    roster: () => rosterRuntime.snapshot(),
+    exportRoster: () => rosterRuntime.serialize(),
+    importRoster: (snapshot: ReturnType<typeof rosterRuntime.serialize>) => rosterRuntime.deserialize(snapshot),
     exportProgression: () => progressionRuntime.serialize(),
     importProgression: (snapshot: ReturnType<typeof progressionRuntime.serialize>) =>
       progressionRuntime.deserialize(snapshot),
   },
+});
+
+rosterRuntime.subscribe(() => {
+  renderPartyManagement();
+  refreshHud();
 });
 let previousWolfQuestState = questRuntime.state('quest.wolf-problem');
 questRuntime.subscribe(() => {
@@ -1897,6 +1915,10 @@ questRuntime.subscribe(() => {
       sourceId: 'quest.wolf-problem',
       sourceType: 'quest',
     });
+    if (rosterRuntime.unlock('hunter-mara', true)) {
+      const joinedActive = rosterRuntime.isActive('hunter-mara');
+      feed(joinedActive ? 'Hunter Mara joined the active party.' : 'Hunter Mara joined the roster and is waiting in reserve.', 'success');
+    }
   }
   previousWolfQuestState = state;
   worldStateRuntime.setFlag(
@@ -2353,6 +2375,41 @@ const partyManagement = new PartyManagementScreen(inventoryEl, {
   equip: equipItemToCharacter,
   destroyItems: destroyLootItems,
   toggleFavorite: toggleFavoriteLoot,
+  setLeader: characterId => {
+    if (!rosterRuntime.setLeader(characterId)) return;
+    const index = party.findIndex(character => character.id === characterId);
+    if (index >= 0) {
+      activeIndex = index;
+      active = party[index];
+      playerBody.material = mat('player', active.color, 0.08);
+    }
+    feed(`${active.name} is now party leader.`, 'success');
+    refreshHud();
+  },
+  moveToReserve: characterId => {
+    if (!rosterRuntime.moveToReserve(characterId)) {
+      feed('At least one active party member is required.', 'warning');
+      return;
+    }
+    if (active.id === characterId) {
+      const leaderId = rosterRuntime.leaderId();
+      const index = party.findIndex(character => character.id === leaderId);
+      if (index >= 0) { activeIndex = index; active = party[index]; }
+    }
+    refreshHud();
+  },
+  addToParty: (characterId, replaceCharacterId) => {
+    if (!rosterRuntime.addToActive(characterId, replaceCharacterId)) {
+      feed('The active party is full.', 'warning');
+      return;
+    }
+    if (replaceCharacterId === active.id) {
+      const index = party.findIndex(character => character.id === characterId);
+      if (index >= 0) { activeIndex = index; active = party[index]; }
+    }
+    feed(`${party.find(character => character.id === characterId)?.name ?? characterId} joined the active party.`, 'success');
+    refreshHud();
+  },
   assignSkill: assignSkillSlot,
 });
 
@@ -2447,13 +2504,15 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
   const elite = enemies.find(enemy => enemy.elite);
 
   return {
-    party: party.map((character, index) => ({
+    party: party
+      .filter(character => rosterRuntime.isActive(character.id))
+      .map(character => ({
       id: character.id,
       name: character.name,
       role: character.role,
       hp: character.hp,
       maxHp: hpMax(character),
-      active: index === activeIndex,
+      active: character.id === active.id,
       color: character.color.toHexString(),
     })),
     abilities: [
@@ -2532,7 +2591,10 @@ function refreshHud(): void {
 
 function partyManagementModel(): PartyManagementModel {
   return {
-    characters: party.map(character => {
+    maximumActiveCharacters: rosterRuntime.maximumActiveCharacters,
+    characters: party
+      .filter(character => rosterRuntime.isUnlocked(character.id))
+      .map(character => {
       const progression = progressionRuntime.snapshot(character.id);
       return {
       id: character.id,
@@ -2542,6 +2604,8 @@ function partyManagementModel(): PartyManagementModel {
       hp: character.hp,
       maxHp: hpMax(character),
       controlled: character.id === active.id,
+      rosterStatus: rosterRuntime.isActive(character.id) ? 'active' : 'reserve',
+      leader: rosterRuntime.leaderId() === character.id,
       equipment: character.equipment,
       skills: [
         {
@@ -4130,6 +4194,7 @@ function castSkill(key: SkillKey): void {
 
 function swapTo(index: number): void {
   if (index === activeIndex || index < 0 || index >= party.length || inventoryOpen || gameOver) return;
+  if (!rosterRuntime.isActive(party[index].id)) return;
   if (party[index].hp <= 0 || active.cooldowns.swap > 0) return;
   const prior = active;
   activeIndex = index; active = party[index];
@@ -4188,10 +4253,11 @@ function castAbilitySlot(slot: AbilitySlot): void {
 }
 
 function cycleControl(direction: 1 | -1): void {
-  if (party.length <= 1 || swapInputCooldown > 0 || inventoryOpen || gameOver) return;
+  const activePartyCount = rosterRuntime.snapshot().activeCharacterIds.length;
+  if (activePartyCount <= 1 || swapInputCooldown > 0 || inventoryOpen || gameOver) return;
   for (let step = 1; step <= party.length; step++) {
     const candidate = (activeIndex + direction * step + party.length) % party.length;
-    if (party[candidate].hp <= 0) continue;
+    if (!rosterRuntime.isActive(party[candidate].id) || party[candidate].hp <= 0) continue;
 
     const component = abilityComponents.get(active.id);
     const result = component?.requestExternalAction(

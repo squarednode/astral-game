@@ -694,3 +694,51 @@
   color: #dce8ff;
   font: 700 10px/1.2 ui-monospace, monospace;
 }
+
+
+.pm-roster-badge {
+  position: absolute;
+  bottom: 5px;
+  right: 7px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+.pm-roster-badge.active { background: rgba(63, 166, 103, .2); color: #98efb8; }
+.pm-roster-badge.reserve { background: rgba(130, 145, 170, .18); color: #b9c7dd; }
+.pm-roster-actions {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px;
+  border: 1px solid rgba(124, 169, 234, .22);
+  border-radius: 8px;
+  background: rgba(12, 18, 31, .97);
+}
+.pm-roster-actions strong,
+.pm-roster-actions span { display: block; }
+.pm-roster-actions span { color: #8fa3c0; font-size: 10px; }
+.pm-roster-actions button {
+  padding: 7px 9px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 6px;
+  background: rgba(255,255,255,.07);
+  color: #edf4ff;
+  cursor: pointer;
+}
+.pm-roster-actions button:disabled { opacity: .35; cursor: not-allowed; }
+.pm-selected-item { max-height: 46vh; overflow-y: auto; padding-bottom: 64px; }
+.pm-equip-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,.12);
+}

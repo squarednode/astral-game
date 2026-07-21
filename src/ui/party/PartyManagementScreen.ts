@@ -43,6 +43,7 @@ export class PartyManagementScreen {
   private model: PartyManagementModel = {
     characters: [],
     items: [],
+    maximumActiveCharacters: 3,
     resources: {
       copper: 0,
       capacity: 24,
@@ -231,10 +232,11 @@ export class PartyManagementScreen {
         <div>
           <strong>${character.name}</strong>
           <span>${character.role} · Level ${character.level}</span>
-          <small>${FAMILY_LABELS[character.preferredFamily]} · ${character.experienceForNextLevel > 0 ? `${character.experienceIntoLevel}/${character.experienceForNextLevel} XP` : 'Maximum Level'}</small>
+          <small>${character.rosterStatus === 'active' ? 'Active Party' : 'Reserve'}${character.leader ? ' · Leader' : ''} · ${character.experienceForNextLevel > 0 ? `${character.experienceIntoLevel}/${character.experienceForNextLevel} XP` : 'Maximum Level'}</small>
         </div>
         <b>${this.characterGearScore(character)}</b>
         ${character.controlled ? '<em>Controlled</em>' : ''}
+        <span class="pm-roster-badge ${character.rosterStatus}">${character.rosterStatus}</span>
       </button>
     `;
   }
@@ -267,6 +269,17 @@ export class PartyManagementScreen {
         <div>
           <i style="width:${Math.round(character.experienceProgress * 100)}%"></i>
         </div>
+      </div>
+
+      <div class="pm-roster-actions">
+        <div>
+          <strong>${character.rosterStatus === 'active' ? 'Active Party' : 'Reserve'}</strong>
+          <span>${character.leader ? 'Current leader' : `Party limit ${this.model.characters.filter(candidate => candidate.rosterStatus === 'active').length}/${this.model.maximumActiveCharacters}`}</span>
+        </div>
+        ${character.rosterStatus === 'active'
+          ? `${character.leader ? '' : `<button data-action="set-leader" data-character-id="${character.id}">Make Leader</button>`}
+             <button data-action="move-reserve" data-character-id="${character.id}" ${this.model.characters.filter(candidate => candidate.rosterStatus === 'active').length <= 1 ? 'disabled' : ''}>Move to Reserve</button>`
+          : `<button data-action="add-party" data-character-id="${character.id}">Add to Party</button>`}
       </div>
 
       <nav class="pm-tabs">
@@ -934,6 +947,30 @@ export class PartyManagementScreen {
         this.activeTab = 'equipment';
         this.draw();
         return;
+
+      case 'set-leader':
+        this.actions.setLeader(target.dataset.characterId!);
+        return;
+
+      case 'move-reserve':
+        this.actions.moveToReserve(target.dataset.characterId!);
+        return;
+
+      case 'add-party': {
+        const characterId = target.dataset.characterId!;
+        const active = this.model.characters.filter(character => character.rosterStatus === 'active');
+        if (active.length < this.model.maximumActiveCharacters) {
+          this.actions.addToParty(characterId);
+          return;
+        }
+        const names = active.map((character, index) => `${index + 1}. ${character.name}`).join('\n');
+        const choice = window.prompt(`Party is full. Enter the number of the character to move to reserve:\n\n${names}`);
+        const index = Number(choice) - 1;
+        if (index >= 0 && index < active.length) {
+          this.actions.addToParty(characterId, active[index].id);
+        }
+        return;
+      }
 
       case 'equip':
         this.actions.equip(

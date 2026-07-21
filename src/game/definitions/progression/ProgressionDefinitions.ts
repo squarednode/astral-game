@@ -32,6 +32,13 @@ export const characterGrowthPackages: readonly CharacterGrowthPackageDefinition[
     movementSpeedPerLevel: 0.015,
   },
   {
+    id: 'growth.hunter-mara',
+    maximumHealthPerLevel: 12,
+    attackPerLevel: 2.4,
+    armorPerLevel: 0.9,
+    movementSpeedPerLevel: 0.025,
+  },
+  {
     id: 'growth.tempest',
     maximumHealthPerLevel: 10,
     attackPerLevel: 2.6,
@@ -50,6 +57,11 @@ export const characterProgressionDefinitions: readonly CharacterProgressionDefin
     characterId: 'warden',
     curveId: 'curve.standard-early',
     growthPackageId: 'growth.warden',
+  },
+  {
+    characterId: 'hunter-mara',
+    curveId: 'curve.standard-early',
+    growthPackageId: 'growth.hunter-mara',
   },
   {
     characterId: 'tempest',
