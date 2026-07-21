@@ -20,8 +20,9 @@ export interface CharacterDefinition extends DefinitionBase {
   readonly attackDamage: number;
   readonly attackRange: number;
   readonly attackCooldown: number;
-  readonly qName: string;
-  readonly eName: string;
+  readonly identityTitle: string;
+  readonly identitySummary: string;
+  readonly combatStyle: string;
   readonly preferredFamily: GearFamily;
 }
 
@@ -39,8 +40,9 @@ export function validateCharacterDefinition(
   if (definition.attackDamage < 0) errors.push('attackDamage cannot be negative.');
   if (definition.attackRange <= 0) errors.push('attackRange must be greater than zero.');
   if (definition.attackCooldown <= 0) errors.push('attackCooldown must be greater than zero.');
-  if (!definition.qName.trim()) errors.push('qName cannot be empty.');
-  if (!definition.eName.trim()) errors.push('eName cannot be empty.');
+  if (!definition.identityTitle.trim()) errors.push('identityTitle cannot be empty.');
+  if (!definition.identitySummary.trim()) errors.push('identitySummary cannot be empty.');
+  if (!definition.combatStyle.trim()) errors.push('combatStyle cannot be empty.');
 
   return errors;
 }
@@ -67,8 +69,9 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     attackDamage: 24,
     attackRange: 2.2,
     attackCooldown: 0.52,
-    qName: 'Ground Breaker',
-    eName: 'War Cry',
+    identityTitle: 'Astral Vanguard',
+    identitySummary: 'A durable front-line breaker who turns pressure into decisive openings.',
+    combatStyle: 'Close-range bruiser · stagger · survival',
   },
   {
     id: 'warden',
@@ -84,8 +87,9 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     attackDamage: 16,
     attackRange: 7.0,
     attackCooldown: 0.72,
-    qName: 'Frost Field',
-    eName: 'Ice Barrier',
+    identityTitle: 'Frost Warden',
+    identitySummary: 'A ranged protector who controls space and stabilizes the party.',
+    combatStyle: 'Ranged control · protection · frost',
   },
   {
     id: 'hunter-mara',
@@ -101,8 +105,9 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     attackDamage: 18,
     attackRange: 8.0,
     attackCooldown: 0.62,
-    qName: 'Piercing Shot',
-    eName: 'Hunter Trap',
+    identityTitle: 'Wilds Hunter',
+    identitySummary: 'A mobile ranged specialist who isolates priority targets and controls pursuit lanes.',
+    combatStyle: 'Ranged precision · mobility · pursuit',
   },
   {
     id: 'tempest',
@@ -118,7 +123,8 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     attackDamage: 19,
     attackRange: 3.0,
     attackCooldown: 0.36,
-    qName: 'Chain Arc',
-    eName: 'Blink Strike',
+    identityTitle: 'Tempest Striker',
+    identitySummary: 'A high-speed assassin who attacks from shifting angles and escapes retaliation.',
+    combatStyle: 'Burst · mobility · elemental pressure',
   },
 ];

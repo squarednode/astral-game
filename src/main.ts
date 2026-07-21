@@ -10,6 +10,7 @@ import './ui/menus/SettingsMenu.css';
 import './ui/shared/InteractionPrompt.css';
 import './ui/encounters/EncounterTracker.css';
 import './ui/progression/ProgressionHud.css';
+import './ui/skills/SkillTreeScreen.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -233,6 +234,8 @@ import {
 import { ProgressionHud } from './ui/progression/ProgressionHud';
 import { ProgressionDeveloperPanel } from './ui/developer/ProgressionDeveloperPanel';
 import { RosterRuntime } from './game/roster';
+import { SkillTreeRuntime, characterSkillTrees } from './game/skills';
+import { SkillTreeScreen } from './ui/skills/SkillTreeScreen';
 import type {
   GearFamily,
   GearSlot,
@@ -243,16 +246,15 @@ type Element = CharacterElement;
 type Rarity = ItemRarity;
 type ItemFamily = GearFamily;
 type ItemSlot = GearSlot;
-type SkillKey = 'Q' | 'E';
+type AbilityId = string;
 type AbilitySlot = 1 | 2 | 3 | 4;
 
 type CharacterDef = CharacterDefinition;
 
 interface CharacterState extends CharacterDef {
   hp: number;
-  cooldowns: Record<SkillKey | 'attack' | 'dodge' | 'swap', number>;
+  cooldowns: Record<'attack' | 'dodge' | 'swap', number>;
   equipment: Partial<Record<ItemSlot, LootItem>>;
-  skillSlots: Partial<Record<AbilitySlot, SkillKey>>;
   shieldRemaining: number;
 }
 
@@ -775,15 +777,18 @@ if (defs.length !== characterDefinitions.length) {
 const party: CharacterState[] = defs.map(d => ({
   ...d,
   hp: d.maxHp,
-  cooldowns: { Q: 0, E: 0, attack: 0, dodge: 0, swap: 0 },
+  cooldowns: { attack: 0, dodge: 0, swap: 0 },
   equipment: {},
-  skillSlots: { 1: 'Q', 2: 'E' },
   shieldRemaining: 0,
 }));
 const progressionRuntime = new CharacterProgressionRuntime(
   experienceCurves,
   characterGrowthPackages,
   characterProgressionDefinitions,
+);
+const skillTreeRuntime = new SkillTreeRuntime(
+  characterSkillTrees,
+  characterId => progressionRuntime.snapshot(characterId)?.level ?? 1,
 );
 const rosterRuntime = new RosterRuntime(
   party.map(character => ({
@@ -1868,6 +1873,7 @@ const progressionDeveloperPanel = new ProgressionDeveloperPanel(
 
 progressionRuntime.subscribe(() => {
   progressionDeveloperPanel.render();
+  if (skillTreeOpen) renderSkillTree();
 });
 
 const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
@@ -1877,6 +1883,9 @@ const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
   merchants: merchantRuntime,
   encounters: encounterManager,
   actors: () => Object.fromEntries(actorRuntimes),
+  roster: rosterRuntime,
+  progression: progressionRuntime,
+  skills: skillTreeRuntime,
 });
 
 Object.assign(globalThis, {
@@ -1899,6 +1908,13 @@ Object.assign(globalThis, {
     exportProgression: () => progressionRuntime.serialize(),
     importProgression: (snapshot: ReturnType<typeof progressionRuntime.serialize>) =>
       progressionRuntime.deserialize(snapshot),
+    skills: () => party.map(character => skillTreeRuntime.snapshot(character.id)),
+    exportSkills: () => skillTreeRuntime.serialize(),
+    importSkills: (snapshot: ReturnType<typeof skillTreeRuntime.serialize>) => {
+      skillTreeRuntime.deserialize(snapshot);
+      party.forEach(character => rebuildCharacterAbilityLoadout(character.id));
+      refreshHud();
+    },
   },
 });
 
@@ -2367,6 +2383,10 @@ const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
 const combat = new CombatSystem(damageNumbers, hitFeedback, playerCamera);
 
+const skillTreeHost = document.createElement('div');
+ui.getLayer('menus').appendChild(skillTreeHost);
+let skillTreeOpen = false;
+
 const partyManagement = new PartyManagementScreen(inventoryEl, {
   close: () => {
     closeInventory();
@@ -2411,6 +2431,40 @@ const partyManagement = new PartyManagementScreen(inventoryEl, {
     refreshHud();
   },
   assignSkill: assignSkillSlot,
+});
+
+const skillTreeScreen = new SkillTreeScreen(skillTreeHost, {
+  close: () => {
+    skillTreeOpen = false;
+    skillTreeScreen.setOpen(false);
+    input.setContext('gameplay');
+  },
+  unlock: (characterId, nodeId) => {
+    const character = party.find(candidate => candidate.id === characterId);
+    if (!skillTreeRuntime.unlock(characterId, nodeId)) {
+      feed('This skill node is not available yet.', 'warning');
+      return;
+    }
+    feed(`${character?.name ?? characterId} learned a new skill.`, 'success');
+    renderSkillTree(characterId);
+    refreshHud();
+  },
+});
+
+function renderSkillTree(preferredCharacterId = active.id): void {
+  skillTreeScreen.render(
+    party.filter(character => rosterRuntime.isUnlocked(character.id)).flatMap(character => {
+      const tree = skillTreeRuntime.definition(character.id);
+      const state = skillTreeRuntime.snapshot(character.id);
+      return tree && state ? [{ id: character.id, name: character.name, role: character.role, rosterStatus: rosterRuntime.isActive(character.id) ? 'active' as const : 'reserve' as const, tree, state }] : [];
+    }),
+    preferredCharacterId,
+  );
+}
+
+skillTreeRuntime.subscribe(() => {
+  party.forEach(character => rebuildCharacterAbilityLoadout(character.id));
+  if (skillTreeOpen) renderSkillTree();
 });
 
 function isAbilityActive(state: AbilityStateId): boolean {
@@ -2607,17 +2661,11 @@ function partyManagementModel(): PartyManagementModel {
       rosterStatus: rosterRuntime.isActive(character.id) ? 'active' : 'reserve',
       leader: rosterRuntime.leaderId() === character.id,
       equipment: character.equipment,
-      skills: [
-        {
-          id: 'Q',
-          name: abilityComponents.get(character.id)?.get(1)?.definition.name ?? character.qName,
-        },
-        {
-          id: 'E',
-          name: abilityComponents.get(character.id)?.get(2)?.definition.name ?? character.eName,
-        },
-      ],
-      skillSlots: character.skillSlots,
+      skills: (skillTreeRuntime.snapshot(character.id)?.unlockedAbilityIds ?? []).map(abilityId => ({
+        id: abilityId,
+        name: definitions.get<AbilityDefinition>(abilityId)?.name ?? abilityId,
+      })),
+      skillSlots: skillTreeRuntime.snapshot(character.id)?.skillSlots ?? {},
       level: progression?.level ?? 1,
       experienceIntoLevel: progression?.experienceIntoLevel ?? 0,
       experienceForNextLevel: progression?.experienceForNextLevel ?? 0,
@@ -2722,22 +2770,14 @@ function toggleFavoriteLoot(itemId: number): void {
 function assignSkillSlot(
   characterId: string,
   slot: AbilitySlot,
-  skillId: SkillKey | null,
+  skillId: AbilityId | null,
 ): void {
   const character = party.find(candidate => candidate.id === characterId);
-  if (!character) return;
-
-  if (skillId === null) {
-    delete character.skillSlots[slot];
-  } else {
-    for (const existingSlot of [1, 2, 3, 4] as AbilitySlot[]) {
-      if (character.skillSlots[existingSlot] === skillId) {
-        delete character.skillSlots[existingSlot];
-      }
-    }
-    character.skillSlots[slot] = skillId;
+  if (!character || !skillTreeRuntime.assign(characterId, slot, skillId)) {
+    feed('That ability has not been unlocked for this character.', 'warning');
+    return;
   }
-
+  rebuildCharacterAbilityLoadout(characterId);
   feed(`${character.name} skill slot ${slot} updated.`);
   refreshHud();
 }
@@ -4126,11 +4166,17 @@ function createAbilityRuntime(
   );
 }
 
-const validationAbilityLoadouts: Record<string, readonly string[]> = {
-  vanguard: ['ability.fireball', 'ability.blink', 'ability.shield', 'ability.ice-spear'],
-  warden: ['ability.ice-spear', 'ability.shield', 'ability.blink', 'ability.fireball'],
-  tempest: ['ability.blink', 'ability.fireball', 'ability.ice-spear', 'ability.shield'],
-};
+function rebuildCharacterAbilityLoadout(characterId: string): void {
+  const character = party.find(candidate => candidate.id === characterId);
+  const component = abilityComponents.get(characterId);
+  const state = skillTreeRuntime.snapshot(characterId);
+  if (!character || !component || !state) return;
+  component.clearAssignments();
+  for (const slot of [1, 2, 3, 4] as AbilitySlot[]) {
+    const abilityId = state.skillSlots[slot];
+    if (abilityId) component.assign(slot, createAbilityRuntime(character, slot, abilityId));
+  }
+}
 
 for (const character of party) {
   const component = new AbilityComponent({
@@ -4143,11 +4189,8 @@ for (const character of party) {
       });
     },
   });
-  const loadout = validationAbilityLoadouts[character.id] ?? validationAbilityLoadouts.vanguard;
-  ([1, 2, 3, 4] as AbilitySlot[]).forEach((slot, index) => {
-    component.assign(slot, createAbilityRuntime(character, slot, loadout[index]));
-  });
   abilityComponents.set(character.id, component);
+  rebuildCharacterAbilityLoadout(character.id);
 }
 
 const abilityDeveloperPanel = new AbilityDeveloperPanel(
@@ -4186,10 +4229,6 @@ const abilityDeveloperPanel = new AbilityDeveloperPanel(
 
 function activeAbilitySnapshots(): readonly AbilityRuntimeSnapshot[] {
   return abilityComponents.get(active.id)?.all().map(runtime => runtime.snapshot()) ?? [];
-}
-
-function castSkill(key: SkillKey): void {
-  castAbilitySlot(key === 'Q' ? 1 : 2);
 }
 
 function swapTo(index: number): void {
@@ -4706,6 +4745,13 @@ function handleMenuToggleRequest(): void {
     return;
   }
 
+  if (skillTreeOpen) {
+    skillTreeOpen = false;
+    skillTreeScreen.setOpen(false);
+    input.setContext('gameplay');
+    return;
+  }
+
   if (inventoryOpen) {
     closeInventory();
     input.setContext('gameplay');
@@ -4792,6 +4838,23 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   if (gameOver) {
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
+  }
+
+  if (input.consumePressed('toggleSkillTree')) {
+    skillTreeOpen = !skillTreeOpen;
+    if (skillTreeOpen) {
+      closeInventory();
+      renderSkillTree();
+    }
+    skillTreeScreen.setOpen(skillTreeOpen);
+    input.setContext(skillTreeOpen ? 'skill-tree' : 'gameplay');
+    movement.endPointerMovement();
+  }
+
+  if (skillTreeOpen) {
     flushFrameInfrastructure();
     input.endFrame();
     return;
@@ -5464,6 +5527,7 @@ scene.onBeforeRenderObservable.add(() => {
 });
 
 partyManagement.setOpen(false);
+skillTreeScreen.setOpen(false);
 refreshHud();
 engine.runRenderLoop(() => scene.render());
 window.addEventListener('resize', () => engine.resize());
@@ -5485,6 +5549,7 @@ window.addEventListener('beforeunload', () => {
   developerHud.dispose();
   settingsMenu.dispose();
   gameplayHud.dispose();
+  skillTreeScreen.dispose();
   ui.dispose();
   waterStatus.remove();
 });

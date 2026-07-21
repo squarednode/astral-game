@@ -14,6 +14,7 @@ export type InputAction =
   | 'partyNext'
   | 'partyPrevious'
   | 'toggleInventory'
+  | 'toggleSkillTree'
   | 'toggleSettings'
   | 'toggleDeveloperConsole'
   | 'toggleDeveloperHud';
@@ -21,6 +22,7 @@ export type InputAction =
 export type InputContext =
   | 'gameplay'
   | 'inventory'
+  | 'skill-tree'
   | 'settings'
   | 'developer';
 

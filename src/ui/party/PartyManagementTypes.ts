@@ -2,7 +2,7 @@ export type GearFamily = 'fortified' | 'agile' | 'focused';
 export type GearSlot = 'weapon' | 'armor' | 'relic';
 export type ItemRarity = 'common' | 'magic' | 'rare' | 'legendary';
 export type SkillSlot = 1 | 2 | 3 | 4;
-export type SkillId = 'Q' | 'E';
+export type SkillId = string;
 
 export interface PartyEquipmentItem {
   id: number;

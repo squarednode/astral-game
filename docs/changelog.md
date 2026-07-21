@@ -5495,6 +5495,39 @@ Run the project normally and validate:
 
 The source package still reports the pre-existing `PlayerCameraController.requestShake` type errors when compiled independently. The supplied source-only ZIP also does not contain the project's installed Babylon dependencies.
 
+# Astral Shift 0.6.7.3 — Character Identity and Skill Trees
+
+## Player-facing changes
+
+- `K` opens the new Skill Tree screen.
+- Every unlocked character has an independent skill tree, skill-point balance, unlocked-node state, and four-slot loadout.
+- Characters begin at level 1 with only their default basic attack, movement, jump, and dodge.
+- Ability slots 1–4 begin empty.
+- A character earns one skill point for each level above level 1.
+- Skills must be unlocked in the Skill Tree before they appear in Party Management.
+- Party Management remains the place where unlocked active abilities are assigned to slots 1–4.
+- Active and reserve characters retain separate progression and loadouts.
+
+## Character identity framework
+
+Each playable character now defines an identity title, identity summary, combat style, strengths, and a character-specific starter tree:
+
+- Vanguard — Astral Vanguard
+- Warden — Frost Warden
+- Hunter Mara — Wilds Hunter
+- Tempest — Tempest Striker
+
+The current four runtime-ready prototype abilities were retained as tree content but are no longer granted automatically at level 1.
+
+## Architecture changes
+
+- Removed hard-coded `SkillKey = 'Q' | 'E'` identity.
+- Skill identity now uses permanent ability-definition IDs.
+- Keyboard and controller inputs map to slots, not directly to abilities.
+- Removed character initialization with validation ability loadouts.
+- Added `SkillTreeRuntime` as the single source of truth for unlocked nodes and equipped skill slots.
+- Added skill-tree state to the `astralEngineAlpha` snapshot.
+
 ### Validate
 ```bash
 npm run build

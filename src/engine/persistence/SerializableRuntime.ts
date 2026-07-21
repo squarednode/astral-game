@@ -4,7 +4,7 @@ export interface SerializableRuntime<TState> {
 }
 
 export interface EngineAlphaSnapshot {
-  version: '0.6.6';
+  version: '0.6.7.3';
   createdAt: number;
   world: unknown;
   inventory: unknown;
@@ -12,4 +12,7 @@ export interface EngineAlphaSnapshot {
   merchants: unknown;
   encounters: unknown;
   actors: Readonly<Record<string, unknown>>;
+  roster?: unknown;
+  progression?: unknown;
+  skills?: unknown;
 }

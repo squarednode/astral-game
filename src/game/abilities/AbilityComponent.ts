@@ -35,6 +35,15 @@ export class AbilityComponent {
     this.slots.set(slot, runtime);
   }
 
+  unassign(slot: AbilitySlot): void {
+    this.slots.delete(slot);
+  }
+
+  clearAssignments(): void {
+    this.slots.clear();
+    this.queued = null;
+  }
+
   get(slot: AbilitySlot): AbilityRuntime | undefined {
     return this.slots.get(slot);
   }

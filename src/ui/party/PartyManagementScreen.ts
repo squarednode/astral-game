@@ -418,7 +418,7 @@ export class PartyManagementScreen {
   private skillsTab(character: PartyCharacterView): string {
     return `
       <div class="pm-skills">
-        <p>Assign the character's existing abilities to slots 1–4.</p>
+        <p>Assign abilities unlocked in the character's skill tree to slots 1–4. Level 1 characters begin with no equipped skills.</p>
         ${([1, 2, 3, 4] as SkillSlot[])
           .map(slot => {
             const assigned = character.skillSlots[slot] ?? '';
