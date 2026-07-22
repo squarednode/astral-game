@@ -4408,6 +4408,23 @@ function killEnemy(enemy: Enemy): void {
   refreshHud();
 }
 
+function switchToLivingPartyMemberAfterDefeat(): boolean {
+  const next = party.findIndex((character, index) =>
+    index !== activeIndex &&
+    rosterRuntime.isActive(character.id) &&
+    character.hp > 0,
+  );
+  if (next < 0) return false;
+
+  activeIndex = next;
+  active = party[next];
+  active.cooldowns.swap = 0.42 / equipmentEffectsFor(active).swapCooldownRate;
+  playerBody.material = mat('player', active.color, 0.08);
+  vfxRing(playerRoot.position, active.color, 3.5, 0.35);
+  feed(`${active.name} takes over after the party member was defeated.`, 'warning');
+  return true;
+}
+
 function hurtActive(
   amount: number,
   bypassHitProtection = false,
@@ -4420,8 +4437,7 @@ function hurtActive(
   vfxRing(playerRoot.position, new Color3(1,.12,.12), 1.5, .16);
   if (active.hp <= 0) {
     active.hp = 0;
-    const next = party.findIndex((c, i) => i !== activeIndex && c.hp > 0);
-    if (next >= 0) swapTo(next); else endGame();
+    if (!switchToLivingPartyMemberAfterDefeat()) endGame();
   }
   refreshHud();
 }
@@ -4456,7 +4472,13 @@ function respawnAfterDefeat(): void {
     abilityComponents.get(character.id)?.finishCooldowns();
   });
 
-  activeIndex = 0;
+  const respawnLeaderId = rosterRuntime.leaderId();
+  const respawnLeaderIndex = party.findIndex(character =>
+    character.id === respawnLeaderId && rosterRuntime.isActive(character.id),
+  );
+  activeIndex = respawnLeaderIndex >= 0
+    ? respawnLeaderIndex
+    : Math.max(0, party.findIndex(character => rosterRuntime.isActive(character.id)));
   active = party[activeIndex];
   playerBody.material = mat('player', active.color, 0.08);
 
