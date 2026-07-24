@@ -1,12 +1,14 @@
-import type { CharacterSkillTreeDefinition, SkillNodeDefinition } from './SkillTreeTypes';
+import type { CharacterSkillTreeDefinition, SkillNodeDefinition, SkillPassiveModifier } from './SkillTreeTypes';
 
-const node = (
+type Branch = SkillNodeDefinition['branch'];
+
+const active = (
   characterId: string,
   id: string,
   name: string,
   description: string,
   abilityId: string,
-  branch: SkillNodeDefinition['branch'],
+  branch: Branch,
   tier: number,
   prerequisites: readonly string[] = [],
 ): SkillNodeDefinition => ({
@@ -23,18 +25,43 @@ const node = (
   tier,
 });
 
+const passive = (
+  characterId: string,
+  id: string,
+  name: string,
+  description: string,
+  modifier: SkillPassiveModifier,
+  branch: Branch,
+  tier: number,
+  prerequisites: readonly string[] = [],
+): SkillNodeDefinition => ({
+  id: `${characterId}.${id}`,
+  characterId,
+  name,
+  description,
+  kind: 'passive',
+  passiveModifier: modifier,
+  cost: 1,
+  minimumLevel: tier + 1,
+  prerequisiteNodeIds: prerequisites.map(value => `${characterId}.${value}`),
+  branch,
+  tier,
+});
+
 export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
   {
     characterId: 'vanguard',
     identityTitle: 'Astral Vanguard',
     identitySummary: 'A durable front-line breaker who turns pressure into decisive openings.',
     combatStyle: 'Close-range bruiser · stagger · survival',
-    strengths: ['High durability', 'Area pressure', 'Reliable initiation'],
+    strengths: ['High durability', 'Wide melee pressure', 'Reliable initiation'],
     nodes: [
-      node('vanguard', 'ground-breaker', 'Ground Breaker', 'Hurl a volatile astral impact toward the aim point.', 'ability.fireball', 'assault', 1),
-      node('vanguard', 'rampart', 'Astral Rampart', 'Restore health and raise a temporary protective field.', 'ability.shield', 'survival', 1),
-      node('vanguard', 'breach-step', 'Breach Step', 'Blink through the battle line to establish a new front.', 'ability.blink', 'control', 2, ['ground-breaker']),
-      node('vanguard', 'shatter-spear', 'Shatter Spear', 'Launch a piercing frost strike that slows the target.', 'ability.ice-spear', 'assault', 2, ['rampart']),
+      active('vanguard', 'cleaving-strike', 'Cleaving Strike', 'A broad physical swing that damages enemies in front of the Vanguard.', 'ability.melee-cleave', 'assault', 1),
+      active('vanguard', 'vanguard-charge', 'Vanguard Charge', 'Rush through the battle line and damage enemies at the destination.', 'ability.charge', 'control', 1),
+      passive('vanguard', 'unyielding-frame', 'Unyielding Frame', 'Increase maximum health and stagger resistance.', { maximumHealth: 35, staggerResistance: 0.15 }, 'survival', 1),
+      active('vanguard', 'ground-breaker', 'Ground Breaker', 'Deliver a committed area slam with high impact.', 'ability.heavy-slam', 'assault', 2, ['cleaving-strike']),
+      active('vanguard', 'astral-rampart', 'Astral Rampart', 'Raise a timed barrier and recover a small amount of health.', 'ability.barrier', 'survival', 2, ['unyielding-frame']),
+      passive('vanguard', 'breaker-momentum', 'Breaker Momentum', 'Increase melee damage and attack speed.', { meleeDamagePercent: 0.16, attackSpeedPercent: 0.10, staggerPower: 0.2 }, 'assault', 3, ['ground-breaker']),
     ],
   },
   {
@@ -44,10 +71,12 @@ export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
     combatStyle: 'Ranged control · protection · frost',
     strengths: ['Long reach', 'Defensive support', 'Crowd control'],
     nodes: [
-      node('warden', 'frost-lance', 'Frost Lance', 'Launch a piercing frost projectile that slows enemies.', 'ability.ice-spear', 'control', 1),
-      node('warden', 'ice-barrier', 'Ice Barrier', 'Raise a restorative barrier around the caster.', 'ability.shield', 'survival', 1),
-      node('warden', 'cold-step', 'Cold Step', 'Blink to a selected point and reset positioning.', 'ability.blink', 'control', 2, ['frost-lance']),
-      node('warden', 'astral-flare', 'Astral Flare', 'Launch a high-impact elemental projectile.', 'ability.fireball', 'assault', 2, ['ice-barrier']),
+      active('warden', 'frost-lance', 'Frost Lance', 'Launch a piercing frost projectile that chills enemies.', 'ability.ice-spear', 'control', 1),
+      active('warden', 'ice-barrier', 'Ice Barrier', 'Create a protective barrier around the Warden.', 'ability.shield', 'survival', 1),
+      passive('warden', 'winter-blood', 'Winter Blood', 'Increase armor, health, and resistance to stagger.', { maximumHealth: 20, armor: 5, staggerResistance: 0.12 }, 'survival', 1),
+      active('warden', 'frost-nova', 'Frost Nova', 'Release a close-range frost burst that damages and chills nearby enemies.', 'ability.frost-nova', 'control', 2, ['frost-lance']),
+      active('warden', 'cold-step', 'Cold Step', 'Blink to a selected position to re-establish control.', 'ability.blink', 'control', 2, ['ice-barrier']),
+      passive('warden', 'deep-freeze', 'Deep Freeze', 'Increase projectile damage and ability recovery speed.', { projectileDamagePercent: 0.15, cooldownRatePercent: 0.12 }, 'assault', 3, ['frost-nova']),
     ],
   },
   {
@@ -57,10 +86,12 @@ export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
     combatStyle: 'Ranged precision · mobility · pursuit',
     strengths: ['Safe damage', 'Fast repositioning', 'Target control'],
     nodes: [
-      node('hunter-mara', 'piercing-shot', 'Piercing Shot', 'Fire a fast piercing projectile through the target lane.', 'ability.ice-spear', 'assault', 1),
-      node('hunter-mara', 'hunter-guard', 'Hunter Guard', 'Create a temporary field that protects the hunter.', 'ability.shield', 'survival', 1),
-      node('hunter-mara', 'shadow-track', 'Shadow Track', 'Blink to a selected hunting position.', 'ability.blink', 'control', 2, ['piercing-shot']),
-      node('hunter-mara', 'flare-shot', 'Flare Shot', 'Launch an explosive projectile at the marked lane.', 'ability.fireball', 'assault', 2, ['hunter-guard']),
+      active('hunter-mara', 'piercing-shot', 'Piercing Shot', 'Fire a high-speed projectile that pierces several enemies.', 'ability.piercing-shot', 'assault', 1),
+      active('hunter-mara', 'retreat', 'Hunter Retreat', 'Leap backward from danger while preserving aim direction.', 'ability.retreat', 'control', 1),
+      passive('hunter-mara', 'steady-hands', 'Steady Hands', 'Increase projectile damage and base attack power.', { projectileDamagePercent: 0.14, attack: 6 }, 'assault', 1),
+      active('hunter-mara', 'spread-shot', 'Spread Shot', 'Fire a fan of physical projectiles across the target lane.', 'ability.spread-shot', 'assault', 2, ['piercing-shot']),
+      active('hunter-mara', 'poison-cloud', 'Poison Cloud', 'Create a damaging control zone at the selected location.', 'ability.poison-cloud', 'control', 2, ['retreat']),
+      passive('hunter-mara', 'relentless-pursuit', 'Relentless Pursuit', 'Move faster and recover dodge more quickly.', { movementSpeed: 0.55, dodgeCooldownPercent: 0.15 }, 'control', 3, ['spread-shot']),
     ],
   },
   {
@@ -70,10 +101,12 @@ export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
     combatStyle: 'Burst · mobility · elemental pressure',
     strengths: ['Fast attacks', 'Rapid repositioning', 'Burst windows'],
     nodes: [
-      node('tempest', 'blink-strike', 'Blink Strike', 'Teleport toward the selected point to change attack angle.', 'ability.blink', 'assault', 1),
-      node('tempest', 'storm-ward', 'Storm Ward', 'Raise a temporary defensive field between engagements.', 'ability.shield', 'survival', 1),
-      node('tempest', 'chain-arc', 'Chain Arc', 'Launch a volatile elemental projectile.', 'ability.fireball', 'assault', 2, ['blink-strike']),
-      node('tempest', 'frozen-edge', 'Frozen Edge', 'Launch a piercing frost strike to restrict movement.', 'ability.ice-spear', 'control', 2, ['storm-ward']),
+      active('tempest', 'dash-strike', 'Dash Strike', 'Dash toward the aim point and strike enemies at the destination.', 'ability.dash', 'assault', 1),
+      active('tempest', 'shock-burst', 'Shock Burst', 'Release a lightning burst around the Striker.', 'ability.shock-burst', 'assault', 1),
+      passive('tempest', 'storm-tempo', 'Storm Tempo', 'Increase attack speed and movement speed.', { attackSpeedPercent: 0.15, movementSpeed: 0.5 }, 'control', 1),
+      active('tempest', 'blink-strike', 'Blink Strike', 'Teleport through the target line to create a new attack angle.', 'ability.blink', 'control', 2, ['dash-strike']),
+      active('tempest', 'chain-arc', 'Chain Arc', 'Launch a volatile lightning projectile.', 'ability.magic-missile', 'assault', 2, ['shock-burst']),
+      passive('tempest', 'eye-of-the-storm', 'Eye of the Storm', 'Increase cooldown recovery and dodge availability.', { cooldownRatePercent: 0.15, dodgeCooldownPercent: 0.18 }, 'survival', 3, ['blink-strike']),
     ],
   },
 ];

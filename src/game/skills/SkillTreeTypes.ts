@@ -1,6 +1,20 @@
 export type AbilityId = string;
 export type SkillNodeKind = 'active' | 'passive' | 'upgrade';
 
+export interface SkillPassiveModifier {
+  maximumHealth?: number;
+  attack?: number;
+  armor?: number;
+  movementSpeed?: number;
+  attackSpeedPercent?: number;
+  dodgeCooldownPercent?: number;
+  projectileDamagePercent?: number;
+  meleeDamagePercent?: number;
+  cooldownRatePercent?: number;
+  staggerPower?: number;
+  staggerResistance?: number;
+}
+
 export interface SkillNodeDefinition {
   id: string;
   characterId: string;
@@ -8,6 +22,7 @@ export interface SkillNodeDefinition {
   description: string;
   kind: SkillNodeKind;
   abilityId?: AbilityId;
+  passiveModifier?: SkillPassiveModifier;
   cost: number;
   minimumLevel: number;
   prerequisiteNodeIds: readonly string[];
@@ -41,4 +56,5 @@ export interface CharacterSkillSnapshot extends CharacterSkillState {
   spentSkillPoints: number;
   availableSkillPoints: number;
   unlockedAbilityIds: readonly AbilityId[];
+  passiveModifiers: Readonly<SkillPassiveModifier>;
 }

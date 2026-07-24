@@ -1015,7 +1015,7 @@ const unsubscribeSettings = settings.subscribe(current => {
 movement = new PlayerMovementController(input, playerRoot, {
   canMove: () => !inventoryOpen && !gameOver,
   getMoveSpeed: () =>
-    (active.speed + progressionRuntime.growthModifiers(active.id).movementSpeed) *
+    (active.speed + progressionRuntime.growthModifiers(active.id).movementSpeed + (skillTreeRuntime.snapshot(active.id)?.passiveModifiers.movementSpeed ?? 0)) *
     (1 + equipmentStatsFor(active).movementSpeedPercent) *
     worldMovementMultiplier,
   canDodge: () =>
@@ -1864,6 +1864,13 @@ const progressionDeveloperPanel = new ProgressionDeveloperPanel(
     progression: () => progressionRuntime,
     experience: () => experienceRuntime,
     characterName: id => party.find(character => character.id === id)?.name ?? id,
+    skillSnapshot: id => skillTreeRuntime.snapshot(id),
+    unlockAvailableSkills: id => skillTreeRuntime.unlockAllAvailable(id),
+    resetSkills: id => skillTreeRuntime.reset(id),
+    clearSkillLoadout: id => {
+      for (const slot of [1, 2, 3, 4] as AbilitySlot[]) skillTreeRuntime.assign(id, slot, null);
+      rebuildCharacterAbilityLoadout(id);
+    },
     refresh: () => {
       refreshHud();
       progressionDeveloperPanel.render();
@@ -2510,11 +2517,29 @@ function powerFor(c = active): number {
   return 100 + equipmentStatsFor(c).power;
 }
 
+function passiveFor(c: CharacterState) {
+  return skillTreeRuntime.snapshot(c.id)?.passiveModifiers ?? {};
+}
+
+function attackCooldownFor(c = active): number {
+  const speedBonus = Math.max(0, passiveFor(c).attackSpeedPercent ?? 0);
+  return Math.max(0.12, c.attackCooldown / (1 + speedBonus));
+}
+
+function abilityCooldownRateFor(c = active): number {
+  return 1 + Math.max(0, passiveFor(c).cooldownRatePercent ?? 0);
+}
+
+function dodgeCooldownFor(c = active): number {
+  const reduction = Math.min(0.6, Math.max(0, passiveFor(c).dodgeCooldownPercent ?? 0));
+  return GameBalance.movement.dodgeCooldown * (1 - reduction);
+}
+
 function attackFor(c = active): number {
   const growth = progressionRuntime.growthModifiers(c.id);
   return Math.max(
     1,
-    c.attackDamage + growth.attack + equipmentStatsFor(c).attack,
+    c.attackDamage + growth.attack + equipmentStatsFor(c).attack + (passiveFor(c).attack ?? 0),
   );
 }
 
@@ -2522,7 +2547,7 @@ function hpMax(c: CharacterState): number {
   const growth = progressionRuntime.growthModifiers(c.id);
   return Math.max(
     25,
-    c.maxHp + growth.maximumHealth + equipmentStatsFor(c).maximumHealth,
+    c.maxHp + growth.maximumHealth + equipmentStatsFor(c).maximumHealth + (passiveFor(c).maximumHealth ?? 0),
   );
 }
 
@@ -2573,9 +2598,9 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
       {
         id: 'basic',
         binding: input.getBindingLabel('primaryAttack'),
-        name: 'Basic',
+        name: active.basicAttackName,
         cooldown: active.cooldowns.attack,
-        cooldownMaximum: active.attackCooldown,
+        cooldownMaximum: attackCooldownFor(),
         assigned: true,
       },
       ...([1, 2, 3, 4] as AbilitySlot[]).map(slot => {
@@ -2600,7 +2625,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
         binding: input.getBindingLabel('dodge'),
         name: 'Dodge',
         cooldown: active.cooldowns.dodge,
-        cooldownMaximum: GameBalance.movement.dodgeCooldown,
+        cooldownMaximum: dodgeCooldownFor(),
         assigned: true,
       },
       {
@@ -3861,16 +3886,23 @@ function damageEnemy(
 }
 function basicAttack(): void {
   if (active.cooldowns.attack > 0 || inventoryOpen || gameOver) return;
-  active.cooldowns.attack = active.attackCooldown;
+  active.cooldowns.attack = attackCooldownFor();
   const basicTarget = hoveredEnemy && enemies.includes(hoveredEnemy)
     ? enemyTargetPoint(hoveredEnemy)
     : pointerWorld.clone();
   const dir = basicTarget.subtract(playerRoot.position); dir.y = 0;
   if (dir.lengthSquared() < 0.01) return;
   dir.normalize();
-  if (active.attackRange < 4) {
-    vfxRing(playerRoot.position.add(dir.scale(1.3)), active.color, active.attackRange * 1.15, 0.23);
-    enemies.filter(e => Vector3.Distance(e.mesh.position, playerRoot.position.add(dir.scale(1.1))) < active.attackRange).forEach(e => damageEnemy(e, attackFor(), active.element));
+  const passive = passiveFor(active);
+  const basicDamageMultiplier = active.basicAttackStyle === 'projectile'
+    ? 1 + (passive.projectileDamagePercent ?? 0)
+    : 1 + (passive.meleeDamagePercent ?? 0);
+  const basicDamage = attackFor() * basicDamageMultiplier;
+  if (active.basicAttackStyle !== 'projectile') {
+    const center = playerRoot.position.add(dir.scale(active.basicAttackStyle === 'rapid-melee' ? 1.0 : 1.3));
+    const radius = active.attackRange * (active.basicAttackStyle === 'rapid-melee' ? 0.9 : 1.15);
+    vfxRing(center, active.color, radius, active.basicAttackStyle === 'rapid-melee' ? 0.14 : 0.23);
+    enemies.filter(e => Vector3.Distance(e.mesh.position, center) < active.attackRange).forEach(e => damageEnemy(e, basicDamage, active.element));
   } else {
     const orb = MeshBuilder.CreateSphere(
       'projectile',
@@ -3883,7 +3915,7 @@ function basicAttack(): void {
     );
     orb.position = playerRoot.position.add(new Vector3(0, 0.8, 0)).add(dir.scale(0.8));
     orb.material = mat('projectile', active.color, 0.8);
-    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: attackFor(), element: active.element, pierce: 0, owner: 'player', collisionRadius:
+    projectiles.push({ mesh: orb, vel: dir.scale(15), ttl: 1.0, damage: basicDamage, element: active.element, pierce: active.basicAttackPierce, owner: 'player', collisionRadius:
       0.18 *
       combatSandboxTuning.get().projectileCollisionScale,
     });
@@ -3950,135 +3982,102 @@ function equipmentProjectileDirections(
 
 function executeAbility(context: AbilityExecutionContext): void {
   const { definition, request } = context;
+  const caster = party.find(character => character.id === request.casterId) ?? active;
   const direction = request.aimDirection.clone();
   direction.y = 0;
   if (direction.lengthSquared() > 0.0001) direction.normalize();
+  const passive = passiveFor(caster);
+  const damageMultiplier = definition.family === 'projectile'
+    ? 1 + (passive.projectileDamagePercent ?? 0)
+    : definition.family === 'melee' || definition.family === 'area'
+      ? 1 + (passive.meleeDamagePercent ?? 0)
+      : 1;
+  const damage = (definition.damage ?? definition.power ?? 0) * damageMultiplier;
 
-  if (definition.executorId === 'fireball') {
-    const orb = MeshBuilder.CreateSphere('ability-fireball', {
-        diameter:
-          0.52 *
-          combatSandboxTuning.get().projectileVisualScale,
-      },
-      scene,
-    );
-    orb.dispose();
-    const projectileSpeed =
-      14 * equipmentEffectsFor(active).projectileSpeedMultiplier;
-    for (const [index, projectileDirection] of equipmentProjectileDirections(
-      direction,
-      active,
-    ).entries()) {
-      const projectile = MeshBuilder.CreateSphere(
-        `ability-fireball-${index}`,
-        {
-          diameter:
-            0.52 *
-            combatSandboxTuning.get().projectileVisualScale,
-        },
-        scene,
-      );
-      projectile.position = request.casterPosition
-        .add(new Vector3(0, 0.85, 0))
-        .add(projectileDirection.scale(0.9));
-      projectile.material = mat(
-        'ability-fireball',
-        new Color3(1, 0.32, 0.08),
-        0.85,
-      );
+  const projectileExecutors = new Set([
+    'fireball', 'ice-spear', 'arrow-shot', 'fire-bolt', 'ice-bolt',
+    'magic-missile', 'piercing-shot', 'spread-shot',
+  ]);
+  if (projectileExecutors.has(definition.executorId)) {
+    const baseDirections = definition.executorId === 'spread-shot'
+      ? [-0.24, -0.12, 0, 0.12, 0.24].map(offset => new Vector3(
+          direction.x * Math.cos(offset) - direction.z * Math.sin(offset),
+          0,
+          direction.x * Math.sin(offset) + direction.z * Math.cos(offset),
+        ).normalize())
+      : equipmentProjectileDirections(direction, caster);
+    const speed = Math.max(8, definition.speed ?? 15) * equipmentEffectsFor(caster).projectileSpeedMultiplier;
+    const color = definition.element === 'fire' ? new Color3(1, 0.32, 0.08)
+      : definition.element === 'frost' ? new Color3(0.35, 0.82, 1)
+      : definition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
+      : caster.color;
+    for (const [index, projectileDirection] of baseDirections.entries()) {
+      const projectile = MeshBuilder.CreateSphere(`ability-projectile-${definition.executorId}-${index}`, {
+        diameter: Math.max(0.28, (definition.radius ?? 0.18) * 2) * combatSandboxTuning.get().projectileVisualScale,
+      }, scene);
+      projectile.position = request.casterPosition.add(new Vector3(0, 0.8, 0)).add(projectileDirection.scale(0.9));
+      projectile.material = mat(`ability-${definition.executorId}`, color, 0.8);
       projectiles.push({
         mesh: projectile,
-        vel: projectileDirection.scale(projectileSpeed),
-        ttl: definition.range / projectileSpeed,
-        damage: definition.damage ?? 0,
-        element: 'fire',
-        pierce: 0,
+        vel: projectileDirection.scale(speed),
+        ttl: Math.max(0.5, definition.range / speed),
+        damage,
+        element: definition.element as Element,
+        pierce: definition.executorId === 'piercing-shot' ? 3 : definition.executorId === 'ice-spear' ? 1 : 0,
         owner: 'player',
-        collisionRadius:
-          0.26 *
-          combatSandboxTuning.get().projectileCollisionScale,
+        collisionRadius: Math.max(0.14, definition.radius ?? 0.18) * combatSandboxTuning.get().projectileCollisionScale,
       });
     }
-    vfxRing(request.casterPosition, new Color3(1, 0.35, 0.08), 1.8, 0.18);
+    vfxRing(request.casterPosition, color, 1.8, 0.18);
     return;
   }
 
-  if (definition.executorId === 'ice-spear') {
-    const spear = MeshBuilder.CreateCylinder(
-      'ability-ice-spear',
-      {
-        diameter:
-          0.28 *
-          combatSandboxTuning.get().projectileVisualScale,
-        height:
-          1.4 *
-          combatSandboxTuning.get().projectileVisualScale,
-        tessellation: 8,
-      },
-      scene,
-    );
-    spear.dispose();
-    const projectileSpeed =
-      17 * equipmentEffectsFor(active).projectileSpeedMultiplier;
-    for (const [index, projectileDirection] of equipmentProjectileDirections(
-      direction,
-      active,
-    ).entries()) {
-      const projectile = MeshBuilder.CreateCylinder(
-        `ability-ice-spear-${index}`,
-        {
-          diameter:
-            0.28 *
-            combatSandboxTuning.get().projectileVisualScale,
-          height:
-            1.4 *
-            combatSandboxTuning.get().projectileVisualScale,
-          tessellation: 8,
-        },
-        scene,
-      );
-      projectile.rotation.x = Math.PI / 2;
-      projectile.rotation.y = Math.atan2(
-        projectileDirection.x,
-        projectileDirection.z,
-      );
-      projectile.position = request.casterPosition
-        .add(new Vector3(0, 0.8, 0))
-        .add(projectileDirection.scale(0.9));
-      projectile.material = mat(
-        'ability-ice-spear',
-        new Color3(0.35, 0.82, 1),
-        0.75,
-      );
-      projectiles.push({
-        mesh: projectile,
-        vel: projectileDirection.scale(projectileSpeed),
-        ttl: definition.range / projectileSpeed,
-        damage: definition.damage ?? 0,
-        element: 'frost',
-        pierce: 1,
-        owner: 'player',
-        collisionRadius:
-          0.18 *
-          combatSandboxTuning.get().projectileCollisionScale,
-      });
+  const areaExecutors = new Set(['melee-cleave', 'heavy-slam', 'spin-attack', 'frost-nova', 'shock-burst', 'poison-cloud', 'ground-fire']);
+  if (areaExecutors.has(definition.executorId)) {
+    const centeredOnCaster = definition.targeting === 'self' || definition.executorId === 'melee-cleave';
+    const center = centeredOnCaster
+      ? request.casterPosition.add(direction.scale(definition.executorId === 'melee-cleave' ? 1.3 : 0))
+      : request.aimPosition;
+    const radius = Math.max(2.2, definition.radius ?? definition.range ?? 3);
+    const color = definition.element === 'frost' ? new Color3(0.35, 0.82, 1)
+      : definition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
+      : definition.executorId === 'poison-cloud' ? new Color3(0.35, 0.8, 0.28)
+      : caster.color;
+    vfxRing(center, color, radius, 0.35);
+    enemies.filter(enemy => Vector3.Distance(enemy.mesh.position, center) <= radius)
+      .forEach(enemy => damageEnemy(enemy, damage, definition.element as Element, center));
+    return;
+  }
+
+  if (definition.executorId === 'blink' || definition.executorId === 'dash' || definition.executorId === 'charge' || definition.executorId === 'retreat') {
+    const destination = definition.executorId === 'retreat'
+      ? request.casterPosition.subtract(direction.scale(definition.range))
+      : request.casterPosition.add(direction.scale(definition.range));
+    performBlink(definition.executorId === 'blink' ? request.aimPosition : destination, definition.range);
+    if (definition.executorId === 'dash' || definition.executorId === 'charge') {
+      const radius = definition.executorId === 'charge' ? 2.4 : 1.8;
+      enemies.filter(enemy => Vector3.Distance(enemy.mesh.position, playerRoot.position) <= radius)
+        .forEach(enemy => damageEnemy(enemy, damage, definition.element as Element));
+      vfxRing(playerRoot.position, caster.color, radius, 0.2);
     }
     return;
   }
 
-  if (definition.executorId === 'blink') {
-    performBlink(request.aimPosition, definition.range);
-    return;
-  }
-
-  if (definition.executorId === 'shield') {
-    active.shieldRemaining = Math.max(
-      active.shieldRemaining,
-      (definition.duration ?? 4) * equipmentEffectsFor(active).shieldDurationMultiplier,
+  if (definition.executorId === 'shield' || definition.executorId === 'barrier') {
+    caster.shieldRemaining = Math.max(
+      caster.shieldRemaining,
+      (definition.duration ?? 4) * equipmentEffectsFor(caster).shieldDurationMultiplier,
     );
-    active.hp = Math.min(hpMax(active), active.hp + 24);
+    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 20));
     vfxRing(playerRoot.position, new Color3(0.55, 0.75, 1), 4.2, 0.5);
-    feed('Astral Shield active.');
+    feed(`${definition.name} active.`);
+    return;
+  }
+
+  if (definition.executorId === 'heal' || definition.executorId === 'regeneration') {
+    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 30));
+    vfxRing(playerRoot.position, new Color3(0.35, 1, 0.55), 3.2, 0.35);
+    feed(`${definition.name} restored health.`);
   }
 }
 
@@ -5154,7 +5153,7 @@ scene.onBeforeRenderObservable.add(() => {
       dt,
       developerState.noCooldowns,
       freezeAbilityCastTimers,
-      equipmentEffectsFor(character).abilityCooldownRate,
+      equipmentEffectsFor(character).abilityCooldownRate * abilityCooldownRateFor(character),
     );
     character.shieldRemaining = Math.max(0, character.shieldRemaining - dt);
   });

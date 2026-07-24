@@ -5528,6 +5528,67 @@ The current four runtime-ready prototype abilities were retained as tree content
 - Added `SkillTreeRuntime` as the single source of truth for unlocked nodes and equipped skill slots.
 - Added skill-tree state to the `astralEngineAlpha` snapshot.
 
+# Astral Shift 0.6.7.4 - Growth Packages
+
+## Purpose
+0.6.7.4 combines character combat identity, per-level growth, functional skill trees, active abilities, passive modifiers, and developer validation controls into one growth-package milestone.
+
+## Level 1 baseline
+Every character starts with movement, jump, dodge, and one unique basic attack. No active skills are unlocked or assigned at level 1.
+
+- Vanguard: Vanguard Sweep - durable wide melee basic
+- Warden: Frost Bolt - slower piercing frost projectile
+- Hunter Mara: Hunter Shot - mobile physical ranged basic
+- Tempest: Tempest Flurry - rapid close-range basic
+
+## Growth packages
+Character growth now resolves from:
+
+1. Base character definition
+2. Per-level growth package
+3. Unlocked passive skill modifiers
+4. Equipment modifiers
+5. Temporary combat effects
+
+## Skill trees
+Each character now has six starter nodes using abilities from the existing combat library:
+
+- Four active ability nodes
+- Two passive growth nodes
+- Prerequisite chains and level requirements
+- Independent skill points, unlock state, and equipped slots
+
+Passive nodes apply automatically and do not occupy combat slots.
+
+## Functional ability families
+The player runtime now supports the selected combat-library executors used by the four trees:
+
+- Projectiles and spread projectiles
+- Melee cleaves and area slams
+- Frost and lightning novas
+- Poison control zones
+- Dash, charge, retreat, and blink movement
+- Shield and barrier abilities
+
+## Developer validation
+The Progression developer page now includes:
+
+- Grant XP
+- Level individual characters
+- Unlock currently available nodes
+- Reset a character skill tree
+- Clear equipped skills
+- Inspect level growth and active passive modifiers
+
+## Test sequence
+1. Start a new session and verify each character has only its named basic attack.
+2. Use Developer Tools > Progression to level one character to level 2.
+3. Open the skill tree with K and unlock one active or passive node.
+4. For an active node, open Party Management and assign it to a combat slot.
+5. Verify the ability executes and enters cooldown.
+6. For a passive node, verify the Progression developer card displays the modifier and the related stat changes.
+7. Repeat for all four characters and verify their trees, slots, and passives remain independent.
+
 ### Validate
 ```bash
 npm run build

@@ -72,7 +72,7 @@ export class SkillTreeScreen {
           const available = !unlocked && state.level >= node.minimumLevel && state.availableSkillPoints >= node.cost && prerequisitesMet;
           const status = unlocked ? 'unlocked' : available ? 'available' : 'locked';
           const requirement = unlocked ? 'Unlocked' : state.level < node.minimumLevel ? `Requires level ${node.minimumLevel}` : !prerequisitesMet ? 'Requires prior node' : state.availableSkillPoints < node.cost ? `Requires ${node.cost} point` : 'Available';
-          return `<article class="skill-node ${status} branch-${node.branch}"><div class="skill-node-tier">Tier ${node.tier} · ${node.branch}</div><h3>${node.name}</h3><p>${node.description}</p><small>${requirement}</small>${unlocked ? '<b>✓ Learned</b>' : `<button type="button" data-action="unlock" data-character-id="${character.id}" data-node-id="${node.id}" ${available ? '' : 'disabled'}>Unlock · ${node.cost}</button>`}</article>`;
+          return `<article class="skill-node ${status} branch-${node.branch}"><div class="skill-node-tier">Tier ${node.tier} · ${node.branch} · ${node.kind}</div><h3>${node.name}</h3><p>${node.description}</p><small>${requirement}</small>${unlocked ? '<b>✓ Learned</b>' : `<button type="button" data-action="unlock" data-character-id="${character.id}" data-node-id="${node.id}" ${available ? '' : 'disabled'}>Unlock · ${node.cost}</button>`}</article>`;
         }).join('')}
       </section>
     </main>`;

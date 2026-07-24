@@ -1,4 +1,10 @@
-import type { CharacterSkillTreeDefinition, CharacterSkillSnapshot, SkillTreeSerializedState } from './SkillTreeTypes';
+import type { CharacterSkillTreeDefinition, CharacterSkillSnapshot, SkillPassiveModifier, SkillTreeSerializedState } from './SkillTreeTypes';
+
+const passiveKeys: readonly (keyof SkillPassiveModifier)[] = [
+  'maximumHealth', 'attack', 'armor', 'movementSpeed', 'attackSpeedPercent',
+  'dodgeCooldownPercent', 'projectileDamagePercent', 'meleeDamagePercent',
+  'cooldownRatePercent', 'staggerPower', 'staggerResistance',
+];
 
 export class SkillTreeRuntime {
   private readonly trees = new Map<string, CharacterSkillTreeDefinition>();
@@ -23,8 +29,16 @@ export class SkillTreeRuntime {
     if (!tree) return null;
     const level = Math.max(1, this.levelFor(characterId));
     const unlockedNodeIds = [...(this.unlocked.get(characterId) ?? [])];
-    const spentSkillPoints = tree.nodes.filter(node => unlockedNodeIds.includes(node.id)).reduce((sum, node) => sum + node.cost, 0);
+    const learnedNodes = tree.nodes.filter(node => unlockedNodeIds.includes(node.id));
+    const spentSkillPoints = learnedNodes.reduce((sum, node) => sum + node.cost, 0);
     const earnedSkillPoints = Math.max(0, level - 1);
+    const passiveModifiers: SkillPassiveModifier = {};
+    for (const learned of learnedNodes) {
+      for (const key of passiveKeys) {
+        const value = learned.passiveModifier?.[key];
+        if (value !== undefined) passiveModifiers[key] = (passiveModifiers[key] ?? 0) + value;
+      }
+    }
     return {
       characterId,
       level,
@@ -32,7 +46,8 @@ export class SkillTreeRuntime {
       spentSkillPoints,
       availableSkillPoints: Math.max(0, earnedSkillPoints - spentSkillPoints),
       unlockedNodeIds,
-      unlockedAbilityIds: tree.nodes.filter(node => unlockedNodeIds.includes(node.id) && node.abilityId).map(node => node.abilityId!),
+      unlockedAbilityIds: learnedNodes.filter(node => node.kind === 'active' && node.abilityId).map(node => node.abilityId!),
+      passiveModifiers,
       skillSlots: { ...(this.slots.get(characterId) ?? {}) },
     };
   }
@@ -68,6 +83,25 @@ export class SkillTreeRuntime {
     this.changed();
   }
 
+  unlockAllAvailable(characterId: string): number {
+    let unlockedCount = 0;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const tree = this.trees.get(characterId);
+      if (!tree) break;
+      for (const node of tree.nodes) {
+        if (this.canUnlock(characterId, node.id)) {
+          this.unlocked.get(characterId)!.add(node.id);
+          unlockedCount += 1;
+          changed = true;
+        }
+      }
+    }
+    if (unlockedCount > 0) this.changed();
+    return unlockedCount;
+  }
+
   serialize(): SkillTreeSerializedState {
     return { version: 1, characters: Object.fromEntries([...this.trees.keys()].map(id => [id, { unlockedNodeIds: [...(this.unlocked.get(id) ?? [])], skillSlots: { ...(this.slots.get(id) ?? {}) } }])) };
   }
@@ -78,8 +112,15 @@ export class SkillTreeRuntime {
       const tree = this.trees.get(characterId);
       if (!tree) continue;
       const validNodes = new Set(tree.nodes.map(node => node.id));
-      this.unlocked.set(characterId, new Set(saved.unlockedNodeIds.filter(id => validNodes.has(id))));
-      this.slots.set(characterId, { ...saved.skillSlots });
+      const unlockedNodes = new Set(saved.unlockedNodeIds.filter(id => validNodes.has(id)));
+      const unlockedAbilities = new Set(tree.nodes.filter(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId).map(node => node.abilityId!));
+      const validSlots: Partial<Record<1 | 2 | 3 | 4, string>> = {};
+      for (const slot of [1, 2, 3, 4] as const) {
+        const abilityId = saved.skillSlots[slot];
+        if (abilityId && unlockedAbilities.has(abilityId)) validSlots[slot] = abilityId;
+      }
+      this.unlocked.set(characterId, unlockedNodes);
+      this.slots.set(characterId, validSlots);
     }
     this.changed();
   }
