@@ -14,8 +14,17 @@ export interface GameplayHudOptions {
   onRestart?: () => void;
 }
 
+export type GameplayHudRegionId =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
 export class GameplayHud {
   readonly element: HTMLDivElement;
+  private readonly regions = new Map<GameplayHudRegionId, HTMLDivElement>();
   private readonly partyHud: PartyHud;
   private readonly abilityBar: AbilityBar;
   private readonly castBar: CastBar;
@@ -38,7 +47,22 @@ export class GameplayHud {
     this.element.className = 'gameplay-hud';
     gameplayLayer.appendChild(this.element);
 
-    this.partyHud = new PartyHud(this.element);
+    for (const regionId of [
+      'top-left',
+      'top-center',
+      'top-right',
+      'bottom-left',
+      'bottom-center',
+      'bottom-right',
+    ] as const) {
+      const region = document.createElement('div');
+      region.className = `gameplay-hud-region gameplay-hud-region--${regionId}`;
+      region.dataset.hudRegion = regionId;
+      this.regions.set(regionId, region);
+      this.element.appendChild(region);
+    }
+
+    this.partyHud = new PartyHud(this.getRegion('top-right'));
     this.waveHud = new WaveHud(this.element);
     this.bossBar = new BossBar(this.element);
     this.castBar = new CastBar(this.element);
@@ -61,6 +85,16 @@ export class GameplayHud {
     });
     this.gameOver.append(title, this.finalScore, this.restart);
     this.element.appendChild(this.gameOver);
+  }
+
+  getRegion(regionId: GameplayHudRegionId): HTMLDivElement {
+    const region = this.regions.get(regionId);
+    if (!region) throw new Error(`Gameplay HUD region "${regionId}" is not registered.`);
+    return region;
+  }
+
+  setGameplayVisible(visible: boolean): void {
+    this.element.classList.toggle('gameplay-hud--menu-open', !visible);
   }
 
   render(snapshot: GameplayHudSnapshot): void {
@@ -86,6 +120,7 @@ export class GameplayHud {
 
   dispose(): void {
     this.notifications.dispose();
+    this.regions.clear();
     this.element.remove();
   }
 

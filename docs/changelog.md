@@ -5679,6 +5679,29 @@ the full roster is healed, and the active party respawns at the saved checkpoint
 Current health, temporary effects, cooldowns, enemies, projectiles, and exact world position
 are intentionally not restored.
 
+# Astral Shift 0.6.7.7 - UI and Quest Journal Integration
+
+## Quest journal
+
+- Press `J` or click the tracked quest card to open the journal.
+- Active and completed quests are separated into tabs.
+- Select a quest to view its description, objective progress, state, and actions.
+- Active quests can be tracked, untracked, or abandoned when permitted.
+- Opening the journal blocks gameplay input and dims the gameplay HUD.
+- `J`, `Escape`, or the close button closes the journal.
+
+## HUD layout
+
+- The active-party cards and tracked quest now share a single top-right HUD region.
+- The tracked quest automatically follows the actual party stack height.
+- The region scales for narrower screens and short display heights.
+- The tracked quest card is keyboard focusable and mouse interactive.
+- Full-screen journal content is mounted in the interactive menu layer rather than the gameplay layer.
+
+## Validation
+
+The quest journal, HUD, quest runtime, and related gameplay UI files passed isolated strict TypeScript checks. The full project check remains blocked by the source package not containing the BabylonJS dependency configuration.
+
 ### Validate
 ```bash
 npm run build

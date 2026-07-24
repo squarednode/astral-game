@@ -11,6 +11,9 @@ export const questDefinitions: readonly QuestDefinition[] = [
     id: 'quest.wolf-problem',
     displayName: 'The Wolf Problem',
     description: 'Help Hunter Mara secure the forest route.',
+    questGiver: 'Hunter Mara',
+    turnInHint: 'Return to Hunter Mara at the NPC Camp once every objective is complete.',
+    rewardSummary: ['75 copper', 'Unlock the forest route', 'Recruit Hunter Mara'],
     canAbandon: true,
     abandonPolicy: {
       clearObjectiveProgress: true,
@@ -63,6 +66,7 @@ export const merchantDefinitions: readonly MerchantDefinition[] = [
         id: 'merchant.pack-upgrade',
         displayName: 'Reinforced Pack',
         price: 100,
+        stock: 1,
         condition: {
           type: 'has-currency',
           currencyId: 'copper',

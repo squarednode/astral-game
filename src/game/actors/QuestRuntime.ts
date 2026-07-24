@@ -24,6 +24,9 @@ export interface QuestSnapshot {
   description: string;
   state: QuestState;
   canAbandon: boolean;
+  questGiver?: string;
+  turnInHint?: string;
+  rewardSummary: readonly string[];
   objectives: readonly QuestObjectiveSnapshot[];
 }
 
@@ -328,6 +331,9 @@ export class QuestRuntime {
       canAbandon:
         record.definition.canAbandon !== false &&
         (record.state === 'active' || record.state === 'ready-to-complete'),
+      questGiver: record.definition.questGiver,
+      turnInHint: record.definition.turnInHint,
+      rewardSummary: record.definition.rewardSummary ?? [],
       objectives: record.definition.objectives.map(objective => ({
         id: objective.id,
         label: this.objectiveLabel(objective),

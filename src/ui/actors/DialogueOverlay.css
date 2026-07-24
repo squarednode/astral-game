@@ -6,7 +6,7 @@
   place-items: end center;
   padding: 24px;
   background: linear-gradient(transparent 35%, rgba(2,6,12,.72));
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .dialogue-overlay.hidden { display: none; }

@@ -1,30 +1,85 @@
-.quest-tracker{position:fixed;right:18px;top:84px;z-index:70;width:290px;padding:12px;border:1px solid rgba(130,174,239,.3);border-radius:10px;background:rgba(7,13,23,.9);color:#eef5ff;cursor:pointer}.quest-tracker header span,.quest-tracker header strong{display:block}.quest-tracker header span{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#78aaff}.quest-tracker p{display:grid;grid-template-columns:18px 1fr auto;gap:6px;margin:8px 0;font-size:12px}.quest-tracker p.complete{color:#78d99b}.quest-tracker em{font-style:normal;color:#8fa4c3}.quest-tracker small{color:#8fa4c3}.quest-journal,.merchant-overlay{position:fixed;inset:0;z-index:2400;display:grid;place-items:center;background:rgba(2,5,10,.72)}.quest-journal.hidden,.merchant-overlay.hidden{display:none}.quest-journal{margin:auto;width:min(780px,calc(100vw - 40px));height:min(650px,calc(100vh - 40px));padding:16px;border:1px solid rgba(130,174,239,.35);border-radius:12px;background:#091221;color:#eef5ff;overflow:auto}.quest-journal header,.merchant-panel header{display:flex;justify-content:space-between;align-items:center}.quest-journal header span,.merchant-panel header span{display:block;color:#78aaff;font-size:10px;text-transform:uppercase}.quest-journal nav,.merchant-panel nav{display:flex;gap:7px;margin:12px 0}.quest-journal button,.merchant-panel button{padding:7px 10px;border:1px solid rgba(120,170,240,.3);border-radius:6px;background:rgba(120,170,240,.1);color:#eef5ff;cursor:pointer}.quest-journal-list{display:grid;gap:8px}.quest-journal-list article,.merchant-content article{padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.03)}.quest-journal-list article span{display:block;font-size:11px;color:#b9c9df}.gameplay-toasts{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:2600;display:grid;gap:8px}.gameplay-toasts article{min-width:260px;padding:10px 14px;border:1px solid rgba(121,205,153,.4);border-radius:8px;background:rgba(6,18,14,.94);color:#eef5ff;text-align:center;animation:toast-in .2s ease-out}.gameplay-toasts strong,.gameplay-toasts span{display:block}.gameplay-toasts span{margin-top:3px;color:#a9c5b3;font-size:11px}@keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}.merchant-panel{width:min(820px,calc(100vw - 40px));max-height:calc(100vh - 50px);overflow:auto;padding:16px;border:1px solid rgba(130,174,239,.35);border-radius:12px;background:#091221;color:#eef5ff}.merchant-panel nav button.active{background:rgba(80,130,205,.34)}.merchant-content{display:grid;gap:8px}.merchant-content article{display:flex;justify-content:space-between;align-items:center}.merchant-content article small{display:block;color:#8fa4c3;margin-top:3px}
+.quest-tracker {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid rgba(130, 174, 239, .3);
+  border-radius: 10px;
+  background: rgba(7, 13, 23, .92);
+  color: #eef5ff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.quest-tracker:hover,
+.quest-tracker:focus-visible { border-color: rgba(120, 180, 255, .72); outline: none; }
+.quest-tracker header span,.quest-tracker header strong{display:block}
+.quest-tracker header span{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#78aaff}
+.quest-tracker p{display:grid;grid-template-columns:18px 1fr auto;gap:6px;margin:8px 0;font-size:12px}
+.quest-tracker p.complete{color:#78d99b}
+.quest-tracker em{font-style:normal;color:#8fa4c3}
+.quest-tracker small{color:#8fa4c3}
 
-.quest-journal nav button.active,
-.merchant-panel nav button.active {
-  border-color: rgba(120, 180, 255, .72);
-  background: rgba(80, 130, 205, .34);
+.quest-journal,.merchant-overlay{position:fixed;inset:0;z-index:2400;display:grid;place-items:center;background:rgba(2,5,10,.78);pointer-events:auto}
+.quest-journal.hidden,.merchant-overlay.hidden{display:none}
+.quest-journal-panel{width:min(980px,calc(100vw - 40px));height:min(700px,calc(100vh - 40px));box-sizing:border-box;padding:18px;border:1px solid rgba(130,174,239,.35);border-radius:14px;background:#091221;color:#eef5ff;box-shadow:0 28px 90px rgba(0,0,0,.58);display:grid;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}
+.quest-journal-header,.merchant-panel header{display:flex;justify-content:space-between;align-items:center}
+.quest-journal-header span,.merchant-panel header span{display:block;color:#78aaff;font-size:10px;letter-spacing:.12em;text-transform:uppercase}
+.quest-journal-header strong{font-size:22px}
+.quest-journal-header-actions{display:flex;align-items:center;gap:8px}
+.quest-journal-header-actions kbd{padding:3px 7px;border:1px solid rgba(255,255,255,.18);border-radius:5px;color:#9eb0c8;background:rgba(255,255,255,.05);font:700 11px ui-monospace,monospace}
+.quest-journal-tabs,.merchant-panel nav{display:flex;gap:7px;margin:14px 0}
+.quest-journal button,.merchant-panel button{padding:8px 11px;border:1px solid rgba(120,170,240,.3);border-radius:7px;background:rgba(120,170,240,.1);color:#eef5ff;cursor:pointer}
+.quest-journal button:hover,.quest-journal button:focus-visible{border-color:rgba(120,180,255,.72);outline:none;background:rgba(80,130,205,.24)}
+.quest-journal-tabs button.active,.merchant-panel nav button.active{border-color:rgba(120,180,255,.72);background:rgba(80,130,205,.34)}
+.quest-journal-body{min-height:0;display:grid;grid-template-columns:minmax(220px,30%) minmax(0,1fr);gap:14px}
+.quest-journal-list{min-height:0;overflow:auto;padding-right:5px;display:grid;align-content:start;gap:8px}
+.quest-journal-list-item{width:100%;display:grid!important;gap:4px;text-align:left}
+.quest-journal-list-item span{font-weight:800}
+.quest-journal-list-item small{color:#8fa4c3}
+.quest-journal-list-item.selected{border-color:rgba(120,180,255,.72);background:rgba(80,130,205,.3)}
+.quest-journal-detail{min-width:0;min-height:0;overflow:auto;padding:18px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.03)}
+.quest-journal-title-row{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.quest-journal-title-row h2{margin:3px 0 0;font-size:24px}
+.quest-journal-title-row small{color:#78aaff;text-transform:uppercase;letter-spacing:.08em}
+.quest-journal-tracked{padding:4px 8px;border-radius:999px;background:rgba(103,216,154,.14);color:#78d99b;font-size:11px;font-weight:800}
+.quest-journal-description{max-width:680px;color:#b9c9df;line-height:1.55}
+.quest-journal-quest h3{margin:24px 0 10px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#8fa4c3}
+.quest-journal-objectives{display:grid;gap:8px}
+.quest-journal-objectives>div{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;padding:10px;border-radius:8px;background:rgba(255,255,255,.035)}
+.quest-journal-objectives>div.complete{color:#78d99b}
+.quest-journal-objectives em{font-style:normal;color:#8fa4c3;font-variant-numeric:tabular-nums}
+.quest-journal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.quest-journal button.danger{border-color:rgba(255,112,112,.4);background:rgba(170,50,50,.15);color:#ffb0b0}
+.quest-journal-empty{color:#8fa4c3;text-align:center;padding:30px 10px}
+
+.gameplay-toasts{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:2600;display:grid;gap:8px;pointer-events:none}
+.gameplay-toasts article{min-width:260px;padding:10px 14px;border:1px solid rgba(121,205,153,.4);border-radius:8px;background:rgba(6,18,14,.94);color:#eef5ff;text-align:center;animation:toast-in .2s ease-out}
+.gameplay-toasts strong,.gameplay-toasts span{display:block}
+.gameplay-toasts span{margin-top:3px;color:#a9c5b3;font-size:11px}
+@keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+.merchant-panel{width:min(820px,calc(100vw - 40px));max-height:calc(100vh - 50px);overflow:auto;padding:16px;border:1px solid rgba(130,174,239,.35);border-radius:12px;background:#091221;color:#eef5ff}.merchant-content{display:grid;gap:8px}.merchant-content article{display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.03)}.merchant-content article small{display:block;color:#8fa4c3;margin-top:3px}.merchant-panel button:disabled{opacity:.45;cursor:not-allowed}
+
+@media (max-width:760px){
+  .quest-journal-panel{width:calc(100vw - 20px);height:calc(100vh - 20px);padding:12px}
+  .quest-journal-body{grid-template-columns:1fr;grid-template-rows:minmax(110px,32%) minmax(0,1fr)}
+  .quest-journal-title-row h2{font-size:20px}
 }
 
-.quest-journal-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
+.quest-journal-guidance{display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px;margin-top:10px;padding:10px 12px;border:1px solid rgba(120,170,240,.18);border-radius:8px;background:rgba(120,170,240,.055)}
+.quest-journal-guidance b{color:#8fa4c3;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.quest-journal-guidance span{color:#dbe7f7}
+.quest-journal-guidance.ready{border-color:rgba(103,216,154,.38);background:rgba(103,216,154,.08)}
+.quest-journal-rewards{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.quest-journal-rewards li{padding:8px 10px;border-radius:7px;background:rgba(103,216,154,.07);color:#bce7cc}
+.quest-journal-available-note{margin-top:18px;color:#9eb0c8;font-style:italic}
 
-.quest-journal button.danger {
-  border-color: rgba(255, 112, 112, .4);
-  background: rgba(170, 50, 50, .15);
-  color: #ffb0b0;
-}
-
-.quest-journal-empty {
-  color: #8fa4c3;
-  text-align: center;
-  padding: 30px 10px;
-}
-
-.merchant-panel button:disabled {
-  opacity: .45;
-  cursor: not-allowed;
-}
+.merchant-wallet{display:grid;grid-template-columns:auto auto auto;align-items:center;gap:10px;text-align:right}
+.merchant-wallet small{color:#8fa4c3}
+.merchant-item-copy{min-width:0}
+.merchant-item-copy ul{margin:6px 0 0;padding-left:18px;color:#aebfd5;font-size:11px}
+.merchant-service em{display:block;margin-top:4px;color:#d38f8f;font-size:11px;font-style:normal}
+.merchant-content article{gap:14px}
+.merchant-content article>button{flex:0 0 auto}
+@media (max-width:620px){.merchant-wallet{grid-template-columns:1fr auto}.merchant-wallet small{grid-column:1}.merchant-content article{align-items:flex-start}.merchant-item{display:grid!important}.merchant-item>button{justify-self:start}}

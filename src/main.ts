@@ -1028,6 +1028,29 @@ const gameplayHud = new GameplayHud(
   { onRestart: () => respawnAfterDefeat() },
 );
 const progressionHud = new ProgressionHud(ui.getLayer('gameplay'));
+
+function openGameplayModal(): void {
+  ui.getLayer('menus').classList.add('ui-layer--interactive');
+  gameplayHud.setGameplayVisible(false);
+  movement?.endPointerMovement();
+  input.setContext('inventory');
+}
+
+function closeGameplayModal(): void {
+  const modalStillOpen = Boolean(
+    dialogueRuntime?.snapshot().active ||
+    merchantRuntime?.active() ||
+    questTracker?.isJournalOpen() ||
+    settingsMenu?.isOpen() ||
+    skillTreeOpen ||
+    inventoryOpen ||
+    gameShell?.isOpen(),
+  );
+  if (modalStillOpen) return;
+  ui.getLayer('menus').classList.remove('ui-layer--interactive');
+  gameplayHud.setGameplayVisible(true);
+  input.setContext('gameplay');
+}
 progressionRuntime.subscribeLevelUps(event => {
   const character = party.find(candidate => candidate.id === event.characterId);
   if (!character) return;
@@ -1726,7 +1749,7 @@ const actorActionExecutor = new ActionExecutor({
     if (inventoryOpen) renderPartyManagement();
   },
   startDialogue: id => {
-    dialogueRuntime.start(id);
+    if (dialogueRuntime.start(id)) dialogueOverlay?.render();
   },
   openMerchant: id => {
     if (merchantOverlay?.open(id)) {
@@ -2010,20 +2033,21 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.7.6',
+    buildVersion: '0.6.7.7a',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
     engineSnapshot: engineAlphaSnapshots.serialize(),
     loot: JSON.parse(JSON.stringify(loot)),
     equipmentByCharacter: JSON.parse(JSON.stringify(campaignEquipmentSnapshot())),
+    merchantStock: JSON.parse(JSON.stringify(Object.fromEntries(merchantStock))),
     summary: {
       savedAt,
       playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.7.6',
+      buildVersion: '0.6.7.7a',
     },
   };
 }
@@ -2050,6 +2074,12 @@ function applySaveData(data: AstralSaveData): boolean {
     engineAlphaSnapshots.deserialize(data.engineSnapshot as ReturnType<typeof engineAlphaSnapshots.serialize>);
     if (data.checkpoint) checkpointRuntime.deserialize(data.checkpoint as ReturnType<typeof checkpointRuntime.serialize>);
     loot = JSON.parse(JSON.stringify(data.loot ?? [])) as LootItem[];
+    if (data.merchantStock) {
+      merchantStock.clear();
+      for (const [merchantId, entries] of Object.entries(data.merchantStock)) {
+        merchantStock.set(merchantId, JSON.parse(JSON.stringify(entries)) as Array<{ item: GeneratedItemInstance; price: number }>);
+      }
+    }
     for (const character of party) {
       character.equipment = { ...((data.equipmentByCharacter?.[character.id] ?? {}) as CharacterState['equipment']) };
       rebuildCharacterAbilityLoadout(character.id);
@@ -2196,8 +2226,32 @@ questRuntime.subscribe(() => {
   );
 });
 questTracker = new QuestTracker(
-  ui.getLayer('gameplay'),
+  gameplayHud.getRegion('top-right'),
+  ui.getLayer('menus'),
   questRuntime,
+  {
+    canOpen: () => !gameShell?.isTitle() && !dialogueRuntime.snapshot().active && !merchantRuntime.active(),
+    onOpen: () => {
+      if (developerConsole.isOpen()) developerConsole.close();
+      if (settingsMenu.isOpen()) settingsMenu.setOpen(false);
+      if (skillTreeOpen) {
+        skillTreeOpen = false;
+        skillTreeScreen.setOpen(false);
+      }
+      if (inventoryOpen) closeInventory();
+      ui.getLayer('menus').classList.add('ui-layer--interactive');
+      gameplayHud.setGameplayVisible(false);
+      movement?.endPointerMovement();
+      input.setContext('settings');
+    },
+    onClose: () => {
+      gameplayHud.setGameplayVisible(true);
+      if (!gameShell?.isOpen() && !settingsMenu.isOpen() && !skillTreeOpen && !inventoryOpen) {
+        ui.getLayer('menus').classList.remove('ui-layer--interactive');
+        input.setContext('gameplay');
+      }
+    },
+  },
 );
 
 const merchantStock = new Map<
@@ -2274,7 +2328,9 @@ merchantOverlay = new MerchantOverlay(
       refreshWalletStatus();
       return true;
     },
-    onClose: () => input.setContext('gameplay'),
+    onOpen: () => openGameplayModal(),
+    onClose: () => closeGameplayModal(),
+    feedback: (message, tone = 'neutral') => feed(message, tone),
     onChanged: () => {
       renderPartyManagement();
       refreshWalletStatus();
@@ -2292,14 +2348,14 @@ dialogueRuntime.registerMany(actorDialogueDefinitions);
 const dialogueOverlay = new DialogueOverlay(
   ui.getLayer('menus'),
   dialogueRuntime,
-  speakerId =>
-    actorRegistry.actor(speakerId)?.displayName ?? speakerId,
-  () => {
-    if (dialogueActorId) {
-      actorRuntimes.get(dialogueActorId)?.finishInteraction();
-    }
-    dialogueActorId = null;
-    input.setContext(merchantRuntime?.active() ? 'inventory' : 'gameplay');
+  speakerId => actorRegistry.actor(speakerId)?.displayName ?? speakerId,
+  {
+    onOpened: () => openGameplayModal(),
+    onClosed: () => {
+      if (dialogueActorId) actorRuntimes.get(dialogueActorId)?.finishInteraction();
+      dialogueActorId = null;
+      closeGameplayModal();
+    },
   },
 );
 
@@ -2450,7 +2506,6 @@ function interactWithActor(actorId: string): void {
     if (dialogueRuntime.start(dialogueId)) {
       events.emit('dialogue.started', { dialogueId, actorId });
       dialogueOverlay.render();
-      input.setContext('inventory');
       actorDeveloperPanel.render();
       return;
     }
@@ -5029,6 +5084,11 @@ function closeInventory(): void {
 }
 
 function handleMenuToggleRequest(): void {
+  if (questTracker?.isJournalOpen()) {
+    questTracker.closeJournal();
+    return;
+  }
+
   if (settingsMenu.isOpen()) {
     settingsMenu.setOpen(false);
     input.setContext('gameplay');
@@ -5088,6 +5148,21 @@ scene.onBeforeRenderObservable.add(() => {
     } else if (!settingsMenu.isOpen() && !gameShell.isTitle() && (input.consumeEscapePressed() || input.consumePressed('toggleSettings'))) {
       gameShell.close();
     }
+    settingsMenu.update();
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
+  }
+
+  if (questTracker?.isJournalOpen()) {
+    if (input.consumeEscapePressed()) questTracker.closeJournal();
+    settingsMenu.update();
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
+  }
+
+  if (dialogueRuntime.snapshot().active || merchantRuntime.active()) {
     settingsMenu.update();
     flushFrameInfrastructure();
     input.endFrame();

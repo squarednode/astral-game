@@ -33,6 +33,9 @@ export interface QuestDefinition {
   availability?: ConditionDefinition;
   objectives: readonly QuestObjectiveDefinition[];
   rewards?: readonly ActionDefinition[];
+  questGiver?: string;
+  turnInHint?: string;
+  rewardSummary?: readonly string[];
   repeatable?: boolean;
   canAbandon?: boolean;
   abandonPolicy?: QuestAbandonPolicy;
