@@ -5646,6 +5646,39 @@ The `astralEngineAlpha` developer object also exposes:
 7. Confirm the party appears at the active checkpoint with progression and loadouts intact.
 8. Confirm the interrupted encounter can activate again.
 
+# Astral Shift 0.6.7.6 - Save Runtime and Game Shell
+
+## Title screen
+- Continue most recent save
+- New Game with overwrite warning
+- Load Game
+- Settings
+- Exit fallback for browser builds
+
+## Pause menu
+- Resume
+- Save Game
+- Load Game
+- Restart from Checkpoint
+- Settings
+- Return to Title
+- Exit Game
+
+## Save slots
+- One autosave slot
+- Three manual slots
+- Autosave on checkpoint activation/rest and Hunter Mara recruitment
+- Manual saves are disabled during active encounters
+- Slot cards show date/time, checkpoint, leader, and active-party levels
+
+## Load rules
+Loading restores progression, roster, party composition, leader, quests, world state,
+inventory resources, loot, equipment, skills, and checkpoint state. Combat state is reset,
+the full roster is healed, and the active party respawns at the saved checkpoint.
+
+Current health, temporary effects, cooldowns, enemies, projectiles, and exact world position
+are intentionally not restored.
+
 ### Validate
 ```bash
 npm run build

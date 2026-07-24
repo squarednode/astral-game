@@ -11,6 +11,7 @@ import './ui/shared/InteractionPrompt.css';
 import './ui/encounters/EncounterTracker.css';
 import './ui/progression/ProgressionHud.css';
 import './ui/skills/SkillTreeScreen.css';
+import './ui/shell/GameShell.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -160,6 +161,9 @@ import { StatusRuntime, createStatusDefinitionMap } from './game/status';
 import type { StatusComponent } from './game/status';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
+import { GameShell } from './ui/shell';
+import { SaveRuntime } from './game/save';
+import type { AstralSaveData, SaveSlotId } from './game/save';
 import type { GameplayHudSnapshot } from './ui/gameplay';
 import { CombatSystem } from './game/combat/CombatSystem';
 import { DamageNumberManager } from './game/combat/DamageNumberManager';
@@ -924,6 +928,8 @@ let pointerWorld = new Vector3(0, 0, 4);
 let swapInputCooldown = 0;
 let inventoryOpen = false;
 let gameOver = false;
+let gameShell: GameShell | null = null;
+let sessionPlaytimeSeconds = 0;
 let wave = 1;
 let kills = 0;
 let enemies: Enemy[] = [];
@@ -1042,7 +1048,8 @@ const settingsMenu = new SettingsMenu(
   input,
   {
     onVisibilityChanged: open => {
-      input.setContext(open ? 'settings' : 'gameplay');
+      input.setContext(open ? 'settings' : (gameShell?.isOpen() ? 'settings' : 'gameplay'));
+      if (!open && gameShell?.isOpen()) ui.getLayer('menus').classList.add('ui-layer--interactive');
       movement?.endPointerMovement();
     },
   },
@@ -1056,7 +1063,7 @@ const unsubscribeSettings = settings.subscribe(current => {
 });
 
 movement = new PlayerMovementController(input, playerRoot, {
-  canMove: () => !inventoryOpen && !gameOver,
+  canMove: () => !inventoryOpen && !gameOver && !(gameShell?.isOpen() ?? false),
   getMoveSpeed: () =>
     (active.speed + progressionRuntime.growthModifiers(active.id).movementSpeed + (skillTreeRuntime.snapshot(active.id)?.passiveModifiers.movementSpeed ?? 0)) *
     (1 + equipmentStatsFor(active).movementSpeedPercent) *
@@ -1065,6 +1072,7 @@ movement = new PlayerMovementController(input, playerRoot, {
     active.cooldowns.dodge <= 0 &&
     !inventoryOpen &&
     !gameOver &&
+    !(gameShell?.isOpen() ?? false) &&
     !worldDodgeDisabled,
   onDodgeStarted: (cooldown: number) => {
     active.cooldowns.dodge = cooldown;
@@ -1589,6 +1597,7 @@ function activateCheckpoint(checkpointId: string, notify = true): boolean {
       'success',
     );
   }
+  saveCampaign('autosave', true);
   return true;
 }
 
@@ -1979,7 +1988,146 @@ const engineAlphaSnapshots = new EngineAlphaSnapshotRuntime({
   roster: rosterRuntime,
   progression: progressionRuntime,
   skills: skillTreeRuntime,
+  checkpoints: checkpointRuntime,
 });
+
+
+const saveRuntime = new SaveRuntime();
+
+function campaignEquipmentSnapshot(): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(
+    party.map(character => [character.id, { ...character.equipment }]),
+  );
+}
+
+function createSaveData(): AstralSaveData {
+  const roster = rosterRuntime.snapshot();
+  const leader = party.find(character => character.id === roster.leaderId);
+  const activeLevels = roster.activeCharacterIds.map(
+    id => progressionRuntime.snapshot(id)?.level ?? 1,
+  );
+  const checkpointName = checkpointRuntime.active()?.displayName ?? 'Entrance';
+  const savedAt = Date.now();
+  return {
+    schemaVersion: 1,
+    buildVersion: '0.6.7.6',
+    savedAt,
+    playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
+    checkpoint: checkpointRuntime.serialize(),
+    engineSnapshot: engineAlphaSnapshots.serialize(),
+    loot: JSON.parse(JSON.stringify(loot)),
+    equipmentByCharacter: JSON.parse(JSON.stringify(campaignEquipmentSnapshot())),
+    summary: {
+      savedAt,
+      playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
+      checkpointName,
+      leaderName: leader?.name ?? 'Unknown',
+      partyLevels: activeLevels,
+      buildVersion: '0.6.7.6',
+    },
+  };
+}
+
+function canSaveCampaign(): boolean {
+  if (gameOver) return false;
+  return !encounterManager.snapshots().some(snapshot =>
+    snapshot.state === 'active' || snapshot.state === 'phase-transition',
+  );
+}
+
+function saveCampaign(slotId: SaveSlotId, quiet = false): boolean {
+  if (!canSaveCampaign()) {
+    if (!quiet) feed('Saving is unavailable during an active encounter.', 'warning');
+    return false;
+  }
+  saveRuntime.save(slotId, createSaveData());
+  if (!quiet) feed(slotId === 'autosave' ? 'Game autosaved.' : 'Game saved.', 'success');
+  return true;
+}
+
+function applySaveData(data: AstralSaveData): boolean {
+  try {
+    engineAlphaSnapshots.deserialize(data.engineSnapshot as ReturnType<typeof engineAlphaSnapshots.serialize>);
+    if (data.checkpoint) checkpointRuntime.deserialize(data.checkpoint as ReturnType<typeof checkpointRuntime.serialize>);
+    loot = JSON.parse(JSON.stringify(data.loot ?? [])) as LootItem[];
+    for (const character of party) {
+      character.equipment = { ...((data.equipmentByCharacter?.[character.id] ?? {}) as CharacterState['equipment']) };
+      rebuildCharacterAbilityLoadout(character.id);
+    }
+    sessionPlaytimeSeconds = Math.max(0, Number(data.playtimeSeconds) || 0);
+    refreshWalletStatus();
+    renderPartyManagement();
+    respawnAfterDefeat();
+    refreshHud();
+    return true;
+  } catch (error) {
+    console.error('Save load failed.', error);
+    feed('The selected save could not be loaded.', 'warning');
+    return false;
+  }
+}
+
+function loadCampaign(slotId: SaveSlotId): boolean {
+  const data = saveRuntime.load(slotId);
+  if (!data) {
+    feed('No valid save exists in that slot.', 'warning');
+    return false;
+  }
+  const loaded = applySaveData(data);
+  if (loaded) feed(`Loaded ${data.summary.checkpointName}.`, 'success');
+  return loaded;
+}
+
+const initialCampaignData = createSaveData();
+
+function startNewCampaign(): void {
+  applySaveData(initialCampaignData);
+  checkpointRuntime.activate('checkpoint.entrance');
+  sessionPlaytimeSeconds = 0;
+  gameShell?.close();
+  input.setContext('gameplay');
+  feed('New game started.', 'success');
+}
+
+function continueCampaign(): void {
+  const slot = saveRuntime.mostRecentSlot();
+  if (slot && loadCampaign(slot)) {
+    gameShell?.close();
+    input.setContext('gameplay');
+  }
+}
+
+function exitGame(): void {
+  window.close();
+  setTimeout(() => {
+    gameShell?.showTitle();
+    feed('This browser does not allow the game to close its own tab.', 'warning');
+  }, 50);
+}
+
+gameShell = new GameShell(ui.getLayer('menus'), {
+  summaries: () => saveRuntime.summaries(),
+  onContinue: continueCampaign,
+  onNewGame: startNewCampaign,
+  onSave: slotId => saveCampaign(slotId),
+  onLoad: slotId => loadCampaign(slotId),
+  onRestart: () => {
+    gameShell?.close();
+    respawnAfterDefeat();
+  },
+  onSettings: () => settingsMenu.setOpen(true),
+  onReturnToTitle: () => {
+    settingsMenu.setOpen(false);
+    gameShell?.showTitle();
+  },
+  onExit: exitGame,
+  canSave: canSaveCampaign,
+  onVisibilityChanged: open => {
+    input.setContext(open ? 'settings' : 'gameplay');
+    movement?.endPointerMovement();
+  },
+});
+gameShell.showTitle();
 
 Object.assign(globalThis, {
   astralEngineAlpha: {
@@ -2007,6 +2155,9 @@ Object.assign(globalThis, {
     forceCheckpointRespawn: () => respawnAfterDefeat(),
     skills: () => party.map(character => skillTreeRuntime.snapshot(character.id)),
     exportSkills: () => skillTreeRuntime.serialize(),
+    saveGame: (slotId: SaveSlotId = 'slot1') => saveCampaign(slotId),
+    loadGame: (slotId: SaveSlotId = 'slot1') => loadCampaign(slotId),
+    saveSlots: () => saveRuntime.summaries(),
     importSkills: (snapshot: ReturnType<typeof skillTreeRuntime.serialize>) => {
       skillTreeRuntime.deserialize(snapshot);
       party.forEach(character => rebuildCharacterAbilityLoadout(character.id));
@@ -2031,6 +2182,7 @@ questRuntime.subscribe(() => {
     if (rosterRuntime.unlock('hunter-mara', true)) {
       const joinedActive = rosterRuntime.isActive('hunter-mara');
       feed(joinedActive ? 'Hunter Mara joined the active party.' : 'Hunter Mara joined the roster and is waiting in reserve.', 'success');
+      saveCampaign('autosave', true);
     }
   }
   previousWolfQuestState = state;
@@ -4902,7 +5054,7 @@ function handleMenuToggleRequest(): void {
     return;
   }
 
-  settingsMenu.setOpen(true);
+  gameShell?.showPause();
 }
 
 function flushFrameInfrastructure(): void {
@@ -4929,6 +5081,20 @@ scene.onBeforeRenderObservable.add(() => {
   beginInteractionPromptFrame();
   updateGroundLoot(realDt);
   input.update();
+
+  if (gameShell?.isOpen()) {
+    if (settingsMenu.isOpen() && input.consumeEscapePressed()) {
+      settingsMenu.setOpen(false);
+    } else if (!settingsMenu.isOpen() && !gameShell.isTitle() && (input.consumeEscapePressed() || input.consumePressed('toggleSettings'))) {
+      gameShell.close();
+    }
+    settingsMenu.update();
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
+  }
+
+  sessionPlaytimeSeconds += realDt;
   const dt = combat.update(realDt);
   updateActors(dt);
   updateCheckpointInteraction();

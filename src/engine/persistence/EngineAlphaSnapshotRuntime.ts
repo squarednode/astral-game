@@ -10,6 +10,7 @@ export interface EngineAlphaSnapshotSources {
   roster?: SerializableRuntime<any>;
   progression?: SerializableRuntime<any>;
   skills?: SerializableRuntime<any>;
+  checkpoints?: SerializableRuntime<any>;
 }
 
 export class EngineAlphaSnapshotRuntime {
@@ -17,7 +18,7 @@ export class EngineAlphaSnapshotRuntime {
 
   serialize(): EngineAlphaSnapshot {
     return {
-      version: '0.6.7.3',
+      version: '0.6.7.6',
       createdAt: Date.now(),
       world: this.sources.world.serialize(),
       inventory: this.sources.inventory.serialize(),
@@ -33,6 +34,7 @@ export class EngineAlphaSnapshotRuntime {
       roster: this.sources.roster?.serialize(),
       progression: this.sources.progression?.serialize(),
       skills: this.sources.skills?.serialize(),
+      checkpoints: this.sources.checkpoints?.serialize(),
     };
   }
 
@@ -45,6 +47,7 @@ export class EngineAlphaSnapshotRuntime {
     if (snapshot.roster !== undefined) this.sources.roster?.deserialize(snapshot.roster);
     if (snapshot.progression !== undefined) this.sources.progression?.deserialize(snapshot.progression);
     if (snapshot.skills !== undefined) this.sources.skills?.deserialize(snapshot.skills);
+    if (snapshot.checkpoints !== undefined) this.sources.checkpoints?.deserialize(snapshot.checkpoints);
     const actors = this.sources.actors();
     for (const [id, state] of Object.entries(snapshot.actors)) {
       actors[id]?.deserialize(state);
