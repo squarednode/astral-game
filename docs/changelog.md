@@ -5589,6 +5589,19 @@ The Progression developer page now includes:
 6. For a passive node, verify the Progression developer card displays the modifier and the related stat changes.
 7. Repeat for all four characters and verify their trees, slots, and passives remain independent.
 
+# Astral Shift 0.6.7.4a TypeScript Fix
+
+Replace the two files in the matching project paths:
+
+- `src/main.ts`
+- `src/ui/developer/ProgressionDeveloperPanel.ts`
+
+Fixes:
+- Adds the growth-package skill callbacks to `ProgressionDeveloperPanelOptions`.
+- Explicitly types the five character-ID callback parameters in `main.ts`.
+- Resolves the `skillSnapshot` unknown-property error and the four related implicit-`any` errors.
+
+
 ### Validate
 ```bash
 npm run build

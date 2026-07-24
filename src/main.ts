@@ -1863,11 +1863,11 @@ const progressionDeveloperPanel = new ProgressionDeveloperPanel(
   {
     progression: () => progressionRuntime,
     experience: () => experienceRuntime,
-    characterName: id => party.find(character => character.id === id)?.name ?? id,
-    skillSnapshot: id => skillTreeRuntime.snapshot(id),
-    unlockAvailableSkills: id => skillTreeRuntime.unlockAllAvailable(id),
-    resetSkills: id => skillTreeRuntime.reset(id),
-    clearSkillLoadout: id => {
+    characterName: (id: string) => party.find(character => character.id === id)?.name ?? id,
+    skillSnapshot: (id: string) => skillTreeRuntime.snapshot(id),
+    unlockAvailableSkills: (id: string) => skillTreeRuntime.unlockAllAvailable(id),
+    resetSkills: (id: string) => skillTreeRuntime.reset(id),
+    clearSkillLoadout: (id: string) => {
       for (const slot of [1, 2, 3, 4] as AbilitySlot[]) skillTreeRuntime.assign(id, slot, null);
       rebuildCharacterAbilityLoadout(id);
     },
