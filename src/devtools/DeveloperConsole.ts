@@ -86,6 +86,16 @@ export class DeveloperConsole {
       </section>
 
       <section>
+        <h3>Checkpoints</h3>
+        <div class="dev-grid">
+          <button data-action="checkpoint-activate">Activate Nearest</button>
+          <button data-action="checkpoint-teleport">Go to Active</button>
+          <button data-action="checkpoint-respawn">Force Respawn</button>
+          <button data-action="checkpoint-clear">Clear Checkpoint</button>
+        </div>
+      </section>
+
+      <section>
         <h3>World</h3>
         <div class="dev-grid">
           <button data-action="teleport-entrance">Entrance</button>
@@ -157,6 +167,10 @@ export class DeveloperConsole {
         case 'loot-rare': this.actions.spawnLoot('rare'); break;
         case 'loot-legendary': this.actions.spawnLoot('legendary'); break;
         case 'clear-loot': this.actions.clearInventory(); break;
+        case 'checkpoint-activate': this.actions.activateNearestCheckpoint(); break;
+        case 'checkpoint-teleport': this.actions.teleportToActiveCheckpoint(); break;
+        case 'checkpoint-respawn': this.actions.forceCheckpointRespawn(); break;
+        case 'checkpoint-clear': this.actions.clearCheckpoint(); break;
         case 'teleport-entrance':
           this.actions.teleportToLandmark('entrance');
           break;
@@ -211,7 +225,7 @@ export class DeveloperConsole {
   refresh(): void {
     const info = this.actions.getStatus();
     this.status.textContent =
-      `Wave ${info.wave} · ${info.enemies} enemies · ${info.loot} items · ${info.activeCharacter}`;
+      `Wave ${info.wave} · ${info.enemies} enemies · ${info.loot} items · ${info.activeCharacter} · Checkpoint: ${info.checkpoint}`;
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach(button => {
       const key = button.dataset.toggle as ToggleKey;

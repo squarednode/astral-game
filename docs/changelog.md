@@ -5601,6 +5601,50 @@ Fixes:
 - Explicitly types the five character-ID callback parameters in `main.ts`.
 - Resolves the `skillSnapshot` unknown-property error and the four related implicit-`any` errors.
 
+# Astral Shift 0.6.7.5 - Checkpoint Runtime
+
+## Runtime behavior
+
+- Four interactive checkpoints are created from existing world landmarks:
+  - Entrance
+  - NPC Camp
+  - Old Bridge
+  - Exit Gate
+- Stand near a checkpoint and use the normal Interact input to activate or rest.
+- Activation restores health, shields, cooldowns, ability cooldowns, and active status effects for the full unlocked roster.
+- Only active-party members determine defeat.
+- A party wipe resets active/failed encounters and removes active enemies, projectiles, and temporary effects.
+- Respawn returns the party to the last active checkpoint.
+- Control returns to the active party leader when possible, otherwise the first active party member.
+- Levels, XP, roster composition, recruitment, skill unlocks, passives, equipment, and skill loadouts are preserved through checkpoint respawn.
+- The Entrance is the default session checkpoint.
+
+## Developer controls
+
+Open the Developer Console and use the Checkpoints section:
+
+- Activate Nearest
+- Go to Active
+- Force Respawn
+- Clear Checkpoint
+
+The `astralEngineAlpha` developer object also exposes:
+
+- `checkpoints()`
+- `activateCheckpoint(id)`
+- `clearCheckpoint()`
+- `forceCheckpointRespawn()`
+
+## Test sequence
+
+1. Damage active and reserve characters.
+2. Activate a checkpoint and confirm the entire roster is healed.
+3. Change party composition, unlock/equip skills, and gain XP.
+4. Start an encounter and allow all active-party members to die.
+5. Confirm reserves do not enter combat or delay the defeat screen.
+6. Select restart.
+7. Confirm the party appears at the active checkpoint with progression and loadouts intact.
+8. Confirm the interrupted encounter can activate again.
 
 ### Validate
 ```bash

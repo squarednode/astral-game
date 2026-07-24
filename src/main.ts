@@ -235,6 +235,8 @@ import { ProgressionHud } from './ui/progression/ProgressionHud';
 import { ProgressionDeveloperPanel } from './ui/developer/ProgressionDeveloperPanel';
 import { RosterRuntime } from './game/roster';
 import { SkillTreeRuntime, characterSkillTrees } from './game/skills';
+import { CheckpointRuntime } from './game/checkpoints';
+import type { CheckpointDefinition } from './game/checkpoints';
 import { SkillTreeScreen } from './ui/skills/SkillTreeScreen';
 import type {
   GearFamily,
@@ -528,6 +530,47 @@ const worldVolumes = new WorldVolumeSystem(
   scene,
   outdoorZone.worldVolumes,
 );
+
+const checkpointLandmarkIds = ['entrance', 'npc-camp', 'bridge', 'exit'] as const;
+const checkpointDefinitions: CheckpointDefinition[] = checkpointLandmarkIds
+  .map(landmarkId => outdoorZone.landmarks.find(landmark => landmark.id === landmarkId))
+  .filter((landmark): landmark is NonNullable<typeof landmark> => Boolean(landmark))
+  .map(landmark => ({
+    id: `checkpoint.${landmark.id}`,
+    displayName: landmark.label,
+    position: {
+      x: landmark.position.x,
+      y: landmark.position.y,
+      z: landmark.position.z,
+    },
+    activationRadius: 2.25,
+  }));
+const checkpointRuntime = new CheckpointRuntime(
+  checkpointDefinitions,
+  'checkpoint.entrance',
+);
+const checkpointMarkers = new Map<string, Mesh>();
+for (const checkpoint of checkpointDefinitions) {
+  const marker = MeshBuilder.CreateCylinder(
+    `checkpoint-marker-${checkpoint.id}`,
+    { diameter: 1.15, height: 0.12, tessellation: 24 },
+    scene,
+  );
+  marker.position.set(checkpoint.position.x, checkpoint.position.y + 0.08, checkpoint.position.z);
+  marker.material = mat(`checkpoint-${checkpoint.id}`, new Color3(0.32, 0.84, 1), 0.5);
+  marker.isPickable = false;
+  checkpointMarkers.set(checkpoint.id, marker);
+}
+
+function refreshCheckpointMarkers(): void {
+  const activeId = checkpointRuntime.snapshot().activeCheckpointId;
+  for (const [id, marker] of checkpointMarkers) {
+    marker.scaling.setAll(id === activeId ? 1.35 : 1);
+    marker.visibility = id === activeId ? 1 : 0.65;
+  }
+}
+checkpointRuntime.subscribe(refreshCheckpointMarkers);
+refreshCheckpointMarkers();
 const enemyTraversalLinks = buildEnemyTraversalLinks(
   outdoorZone.traversalSurfaces,
 );
@@ -1520,6 +1563,49 @@ function renderInteractionPrompt(): void {
   });
 }
 
+function restoreRosterAtCheckpoint(): void {
+  party.forEach(character => {
+    character.hp = hpMax(character);
+    character.shieldRemaining = 0;
+    Object.keys(character.cooldowns).forEach(key => {
+      character.cooldowns[key as keyof typeof character.cooldowns] = 0;
+    });
+    abilityComponents.get(character.id)?.finishCooldowns();
+  });
+  playerStatusComponent.active.clear();
+}
+
+function activateCheckpoint(checkpointId: string, notify = true): boolean {
+  const checkpoint = checkpointRuntime.get(checkpointId);
+  if (!checkpoint) return false;
+  const changed = checkpointRuntime.activate(checkpointId);
+  restoreRosterAtCheckpoint();
+  refreshHud();
+  if (notify) {
+    feed(
+      changed
+        ? `Checkpoint activated: ${checkpoint.displayName}. Full roster restored.`
+        : `Checkpoint rested: ${checkpoint.displayName}. Full roster restored.`,
+      'success',
+    );
+  }
+  return true;
+}
+
+function updateCheckpointInteraction(): void {
+  if (gameOver || inventoryOpen) return;
+  const checkpoint = checkpointRuntime.nearest(playerRoot.position);
+  if (!checkpoint) return;
+  const isActive = checkpointRuntime.snapshot().activeCheckpointId === checkpoint.id;
+  requestInteractionPrompt(
+    60,
+    isActive ? 'Rest at' : 'Activate',
+    checkpoint.displayName,
+    isActive ? 'Restore the full roster' : 'Set as the party respawn point',
+  );
+  if (input.consumePressed('interact')) activateCheckpoint(checkpoint.id);
+}
+
 let dialogueRuntime: DialogueRuntime;
 let questRuntime: QuestRuntime;
 let merchantRuntime: MerchantRuntime;
@@ -1915,6 +2001,10 @@ Object.assign(globalThis, {
     exportProgression: () => progressionRuntime.serialize(),
     importProgression: (snapshot: ReturnType<typeof progressionRuntime.serialize>) =>
       progressionRuntime.deserialize(snapshot),
+    checkpoints: () => checkpointRuntime.snapshot(),
+    activateCheckpoint: (id: string) => activateCheckpoint(id),
+    clearCheckpoint: () => checkpointRuntime.clear(),
+    forceCheckpointRespawn: () => respawnAfterDefeat(),
     skills: () => party.map(character => skillTreeRuntime.snapshot(character.id)),
     exportSkills: () => skillTreeRuntime.serialize(),
     importSkills: (snapshot: ReturnType<typeof skillTreeRuntime.serialize>) => {
@@ -4461,15 +4551,7 @@ function respawnAfterDefeat(): void {
   for (const effect of effects) effect.mesh.dispose();
   effects = [];
 
-  playerStatusComponent.active.clear();
-  party.forEach(character => {
-    character.hp = hpMax(character);
-    character.shieldRemaining = 0;
-    Object.keys(character.cooldowns).forEach(key => {
-      character.cooldowns[key as keyof typeof character.cooldowns] = 0;
-    });
-    abilityComponents.get(character.id)?.finishCooldowns();
-  });
+  restoreRosterAtCheckpoint();
 
   const respawnLeaderId = rosterRuntime.leaderId();
   const respawnLeaderIndex = party.findIndex(character =>
@@ -4481,10 +4563,14 @@ function respawnAfterDefeat(): void {
   active = party[activeIndex];
   playerBody.material = mat('player', active.color, 0.08);
 
-  const respawnPosition = new Vector3(0, 0, -22);
+  const checkpoint = checkpointRuntime.active() ?? checkpointRuntime.get('checkpoint.entrance');
+  const respawnPosition = checkpoint
+    ? new Vector3(checkpoint.position.x, checkpoint.position.y, checkpoint.position.z)
+    : new Vector3(0, 0, -22);
   traversalSurfaces.reset();
   worldVolumes.reset();
   playerRoot.position.copyFrom(respawnPosition);
+  if (typeof checkpoint?.facing === 'number') playerRoot.rotation.y = checkpoint.facing;
   movement.resetVerticalState(respawnPosition.y);
   movement.setPointerWorld(respawnPosition);
   pointerWorld.copyFrom(respawnPosition);
@@ -4495,7 +4581,7 @@ function respawnAfterDefeat(): void {
   gameplayHud.hideGameOver();
   input.setContext('gameplay');
   refreshHud();
-  feed('Party restored. Character levels and experience were preserved.', 'success');
+  feed(`Party restored at ${checkpoint?.displayName ?? 'the entrance'}. Progression and loadouts were preserved.`, 'success');
 }
 
 function endGame(): void {
@@ -4581,6 +4667,42 @@ const developerActions: DeveloperActions = {
     feed('Developer: inventory cleared.');
   },
 
+  activateNearestCheckpoint: () => {
+    const nearest = [...checkpointRuntime.all()].sort((a, b) => {
+      const distanceA = Math.hypot(a.position.x - playerRoot.position.x, a.position.z - playerRoot.position.z);
+      const distanceB = Math.hypot(b.position.x - playerRoot.position.x, b.position.z - playerRoot.position.z);
+      return distanceA - distanceB;
+    })[0];
+    if (!nearest) return;
+    activateCheckpoint(nearest.id);
+  },
+
+  clearCheckpoint: () => {
+    checkpointRuntime.clear();
+    refreshCheckpointMarkers();
+    feed('Developer: active checkpoint cleared.', 'warning');
+  },
+
+  forceCheckpointRespawn: () => {
+    respawnAfterDefeat();
+  },
+
+  teleportToActiveCheckpoint: () => {
+    const checkpoint = checkpointRuntime.active();
+    if (!checkpoint) {
+      feed('Developer: no active checkpoint.', 'warning');
+      return;
+    }
+    const destination = new Vector3(checkpoint.position.x, checkpoint.position.y, checkpoint.position.z);
+    traversalSurfaces.reset();
+    worldVolumes.reset();
+    playerRoot.position.copyFrom(destination);
+    movement.resetVerticalState(destination.y);
+    movement.setPointerWorld(destination);
+    pointerWorld.copyFrom(destination);
+    feed(`Developer teleported: ${checkpoint.displayName}.`, 'success');
+  },
+
   teleportToLandmark: (landmarkId: string) => {
     teleportPlayerToLandmark(landmarkId, 'Developer teleported');
   },
@@ -4603,6 +4725,7 @@ const developerActions: DeveloperActions = {
     enemies: enemies.length,
     loot: loot.length,
     activeCharacter: active.name,
+    checkpoint: checkpointRuntime.active()?.displayName ?? 'none',
   }),
 };
 
@@ -4808,6 +4931,7 @@ scene.onBeforeRenderObservable.add(() => {
   input.update();
   const dt = combat.update(realDt);
   updateActors(dt);
+  updateCheckpointInteraction();
   encounterManager.update(
     dt,
     { x: playerRoot.position.x, y: playerRoot.position.y, z: playerRoot.position.z },
