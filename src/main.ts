@@ -2108,7 +2108,7 @@ function loadCampaign(slotId: SaveSlotId): boolean {
   return loaded;
 }
 
-const initialCampaignData = createSaveData();
+let initialCampaignData: AstralSaveData;
 
 function startNewCampaign(): void {
   applySaveData(initialCampaignData);
@@ -2283,6 +2283,11 @@ function buildMerchantStock(
 
 buildMerchantStock('merchant.camp-supplies', 'loot.standard-enemy', 3);
 buildMerchantStock('merchant.blacksmith', 'loot.standard-enemy', 5, 'magic');
+
+// Capture the clean new-game state only after merchant stock has been initialized.
+// createSaveData() serializes merchantStock, so calling it earlier halts startup
+// with a temporal-dead-zone ReferenceError before the render loop begins.
+initialCampaignData = createSaveData();
 
 merchantOverlay = new MerchantOverlay(
   ui.getLayer('menus'),
