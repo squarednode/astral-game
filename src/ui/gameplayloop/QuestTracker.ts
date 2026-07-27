@@ -38,7 +38,7 @@ export class QuestTracker {
       }
     });
     this.journal.addEventListener('click', this.onJournalClick);
-    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keydown', this.onKeyDown, true);
     trackerParent.appendChild(this.root);
     journalParent.append(this.journal, this.toasts);
     quests.subscribe(() => this.render());
@@ -271,7 +271,7 @@ export class QuestTracker {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
-    if (event.key.toLowerCase() === 'j') {
+    if (event.code === 'KeyJ' || event.key.toLowerCase() === 'j') {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
       event.preventDefault();
