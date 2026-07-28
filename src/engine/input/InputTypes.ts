@@ -14,6 +14,7 @@ export type InputAction =
   | 'partyNext'
   | 'partyPrevious'
   | 'toggleInventory'
+  | 'toggleJournal'
   | 'toggleSkillTree'
   | 'toggleSettings'
   | 'toggleDeveloperConsole'

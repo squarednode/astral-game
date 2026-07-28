@@ -5160,7 +5160,9 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   if (questTracker?.isJournalOpen()) {
-    if (input.consumeEscapePressed()) questTracker.closeJournal();
+    if (input.consumeEscapePressed() || input.consumePressed('toggleJournal')) {
+      questTracker.closeJournal();
+    }
     settingsMenu.update();
     flushFrameInfrastructure();
     input.endFrame();
@@ -5168,6 +5170,14 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   if (dialogueRuntime.snapshot().active || merchantRuntime.active()) {
+    settingsMenu.update();
+    flushFrameInfrastructure();
+    input.endFrame();
+    return;
+  }
+
+  if (input.consumePressed('toggleJournal')) {
+    questTracker.openJournal();
     settingsMenu.update();
     flushFrameInfrastructure();
     input.endFrame();
