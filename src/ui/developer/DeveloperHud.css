@@ -625,3 +625,27 @@
 .progression-dev-card dl { display:grid; grid-template-columns:90px 1fr; gap:3px 7px; margin:8px 0; font:10px/1.35 ui-monospace,monospace; }
 .progression-dev-card dt { color:#8297b6; }
 .progression-dev-card dd { margin:0; color:#dae8ff; }
+
+.runtime-dev-panel { display:grid; gap:12px; }
+.runtime-dev-header { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.runtime-dev-header small,.runtime-dev-card small { display:block; color:#8295b5; margin-top:3px; }
+.runtime-dev-toggle { display:flex; gap:6px; align-items:center; color:#b9cae4; font-size:11px; }
+.runtime-dev-panel details { border:1px solid rgba(165,190,225,.16); border-radius:8px; background:rgba(255,255,255,.025); }
+.runtime-dev-panel summary { cursor:pointer; padding:9px 10px; color:#cfe1ff; font-weight:700; font-size:11px; }
+.runtime-dev-panel summary span { float:right; color:#7fdca7; font-weight:500; }
+.runtime-dev-grid,.runtime-dev-save-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:0 9px 9px; }
+.runtime-dev-card { padding:9px; border:1px solid rgba(165,190,225,.14); border-radius:7px; background:rgba(4,10,18,.52); min-width:0; }
+.runtime-dev-card-title { display:flex; justify-content:space-between; gap:8px; }
+.runtime-dev-state { color:#7fdca7; font-size:9px; text-transform:uppercase; }
+.runtime-dev-objectives { display:grid; gap:4px; margin:8px 0; }
+.runtime-dev-objectives>div,.runtime-dev-list>div { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:6px; align-items:center; font-size:10px; }
+.runtime-dev-objectives button { padding:2px 5px; }
+.runtime-dev-toolbar,.runtime-dev-actions { display:flex; flex-wrap:wrap; gap:6px; padding:0 9px 9px; }
+.runtime-dev-card .runtime-dev-actions { padding:0; margin-top:8px; }
+.runtime-dev-panel button { padding:6px 8px; border:1px solid rgba(117,186,255,.35); border-radius:6px; background:rgba(117,186,255,.1); color:#edf5ff; cursor:pointer; font-size:10px; }
+.runtime-dev-panel button:disabled { opacity:.38; cursor:not-allowed; }
+.runtime-dev-list { display:grid; gap:6px; padding:0 9px 9px; }
+.runtime-dev-danger { padding:0 9px 9px; color:#ffb0aa; font-size:10px; }
+.runtime-dev-danger button { border-color:rgba(255,111,105,.55); background:rgba(255,111,105,.13); }
+body.playtest-mode .developer-hud-compact { display:none; }
+@media(max-width:700px){.runtime-dev-grid,.runtime-dev-save-grid{grid-template-columns:1fr}.runtime-dev-header{align-items:flex-start;flex-direction:column}}

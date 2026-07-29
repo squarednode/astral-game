@@ -13,7 +13,8 @@ export type DeveloperHudPageId =
   | 'loot'
   | 'actors'
   | 'encounters'
-  | 'progression';
+  | 'progression'
+  | 'runtime';
 
 export interface DeveloperOverviewMetrics {
   fps: number;
@@ -44,6 +45,7 @@ const PAGE_LABELS: Readonly<Record<DeveloperHudPageId, string>> = {
   actors: 'Actors & World',
   encounters: 'Encounters',
   progression: 'Progression',
+  runtime: 'Runtime Tools',
 };
 
 export class DeveloperHud {
@@ -57,7 +59,7 @@ export class DeveloperHud {
   >();
   private readonly pages = new Map<DeveloperHudPageId, HTMLElement>();
   private readonly textPages = new Map<
-    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors' | 'encounters' | 'progression'>,
+    Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors' | 'encounters' | 'progression' | 'runtime'>,
     HTMLPreElement
   >();
   private open = false;
@@ -195,6 +197,13 @@ export class DeveloperHud {
     body.appendChild(progression);
     this.pages.set('progression', progression);
 
+    const runtime = document.createElement('article');
+    runtime.className = 'developer-hud-page developer-runtime-page';
+    runtime.dataset.page = 'runtime';
+    runtime.hidden = true;
+    body.appendChild(runtime);
+    this.pages.set('runtime', runtime);
+
     const movement = document.createElement('article');
     movement.className = 'developer-hud-page developer-movement-page';
     movement.dataset.page = 'movement';
@@ -249,12 +258,12 @@ export class DeveloperHud {
     }
   }
 
-  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot' | 'actors' | 'encounters' | 'progression'): HTMLElement {
+  getPageContent(pageId: 'movement' | 'abilities' | 'combat' | 'sandbox' | 'ai' | 'status' | 'loot' | 'actors' | 'encounters' | 'progression' | 'runtime'): HTMLElement {
     return this.pages.get(pageId)!;
   }
 
   setPageText(
-    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors' | 'encounters' | 'progression'>,
+    pageId: Exclude<DeveloperHudPageId, 'overview' | 'movement' | 'abilities' | 'combat' | 'sandbox' | 'loot' | 'actors' | 'encounters' | 'progression' | 'runtime'>,
     text: string,
   ): void {
     this.textPages.get(pageId)!.textContent = text;

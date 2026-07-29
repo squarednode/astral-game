@@ -5702,6 +5702,41 @@ are intentionally not restored.
 
 The quest journal, HUD, quest runtime, and related gameplay UI files passed isolated strict TypeScript checks. The full project check remains blocked by the source package not containing the BabylonJS dependency configuration.
 
+# Astral Shift 0.6.7.8 - Developer Tools Consolidation
+
+## Runtime Tools page
+Open the developer workspace with `U`, then select **Runtime Tools**.
+
+### Quest controls
+- Accept available quests
+- Advance individual objectives
+- Force objectives complete and turn in
+- Abandon eligible quests
+- Reset a quest to its available state
+
+### Commerce controls
+- Grant 100 or 1,000 copper
+- Inspect stock count per merchant
+- Refresh individual merchant stock
+- Refresh all merchant stock
+
+### Save and checkpoint controls
+- Inspect autosave and three manual slots
+- Save, load, or delete each slot
+- Activate the nearest checkpoint
+- Teleport to the active checkpoint
+- Force checkpoint respawn
+- Clear the active checkpoint
+
+### Playtest mode
+Playtest mode hides the compact engine diagnostic badge while leaving all runtime systems enabled. `U` can still open the developer workspace so playtest mode can be disabled.
+
+### Reset controls
+Reset Session restores the clean new-game baseline after confirmation.
+
+## Validation
+The new developer files pass strict TypeScript checks. The complete source check reports only the pre-existing missing BabylonJS dependency and existing `requestShake` typing errors from the supplied source package.
+
 ### Validate
 ```bash
 npm run build

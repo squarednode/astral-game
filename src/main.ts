@@ -3,7 +3,7 @@ import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
 import './ui/actors/DialogueOverlay.css';
 import './ui/gameplayloop/GameplayLoop.css';
-import './ui/quests/QuestJournal.css';
+import './ui/quest/QuestJournal.css';
 import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
@@ -224,7 +224,7 @@ import {
 import { DialogueOverlay } from './ui/actors/DialogueOverlay';
 import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
 import { QuestTracker } from './ui/gameplayloop/QuestTracker';
-import { QuestJournal } from './ui/quests/QuestJournal';
+import { QuestJournal } from './ui/quest/QuestJournal';
 import { MerchantOverlay } from './ui/gameplayloop/MerchantOverlay';
 import { InteractionPrompt } from './ui/shared/InteractionPrompt';
 import {
@@ -239,6 +239,7 @@ import {
 } from './game/definitions/progression';
 import { ProgressionHud } from './ui/progression/ProgressionHud';
 import { ProgressionDeveloperPanel } from './ui/developer/ProgressionDeveloperPanel';
+import { RuntimeDeveloperPanel } from './ui/developer/RuntimeDeveloperPanel';
 import { RosterRuntime } from './game/roster';
 import { SkillTreeRuntime, characterSkillTrees } from './game/skills';
 import { CheckpointRuntime } from './game/checkpoints';
@@ -2036,7 +2037,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.7.7a',
+    buildVersion: '0.6.7.8',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2050,7 +2051,7 @@ function createSaveData(): AstralSaveData {
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.7.7a',
+      buildVersion: '0.6.7.8',
     },
   };
 }
@@ -2368,6 +2369,101 @@ const dialogueOverlay = new DialogueOverlay(
     },
   },
 );
+
+
+let developerPlaytestMode = localStorage.getItem('astral-shift.developer.playtest-mode') === 'true';
+document.body.classList.toggle('playtest-mode', developerPlaytestMode);
+
+function refreshDeveloperMerchant(merchantId: string): void {
+  if (merchantId === 'merchant.blacksmith') {
+    buildMerchantStock(merchantId, 'loot.standard-enemy', 5, 'magic');
+  } else {
+    buildMerchantStock(merchantId, 'loot.standard-enemy', 3);
+  }
+  merchantOverlay?.render();
+  feed(`Developer: refreshed ${merchantId}.`, 'success');
+}
+
+const runtimeDeveloperPanel = new RuntimeDeveloperPanel(
+  developerHud.getPageContent('runtime'),
+  {
+    quests: () => questRuntime.all(),
+    acceptQuest: id => questRuntime.accept(id),
+    advanceQuest: (id, objectiveId, amount) => questRuntime.advance(id, objectiveId, amount),
+    completeQuest: id => {
+      const quest = questRuntime.snapshot(id);
+      if (!quest) return false;
+      if (quest.state === 'available') questRuntime.accept(id);
+      const active = questRuntime.snapshot(id);
+      active?.objectives.forEach(objective => questRuntime.setProgress(id, objective.id, objective.required, true));
+      return questRuntime.complete(id);
+    },
+    abandonQuest: id => questRuntime.abandon(id),
+    resetQuest: id => {
+      const state = questRuntime.serialize();
+      if (state.quests[id]) state.quests[id] = { state: 'available', progress: {} };
+      if (state.trackedQuestId === id) state.trackedQuestId = null;
+      questRuntime.deserialize(state);
+    },
+    copper: () => inventoryRuntime.snapshot(bagItems()).copper,
+    addCopper: amount => {
+      inventoryRuntime.addCopper(amount);
+      refreshWalletStatus();
+      feed(`Developer: added ${amount} copper.`, 'success');
+    },
+    merchantStock: () => [...merchantStock.entries()].map(([merchantId, stock]) => ({ merchantId, count: stock.length })),
+    refreshMerchant: refreshDeveloperMerchant,
+    refreshAllMerchants: () => [...merchantStock.keys()].forEach(refreshDeveloperMerchant),
+    saveSlots: () => saveRuntime.summaries(),
+    save: slotId => saveCampaign(slotId),
+    load: slotId => loadCampaign(slotId),
+    deleteSave: slotId => {
+      saveRuntime.delete(slotId);
+      feed(`Developer: deleted ${slotId}.`, 'warning');
+    },
+    activeCheckpoint: () => checkpointRuntime.active()?.displayName ?? 'none',
+    activateNearestCheckpoint: () => {
+      const nearest = [...checkpointRuntime.all()].sort((a, b) => {
+        const da = Math.hypot(a.position.x - playerRoot.position.x, a.position.z - playerRoot.position.z);
+        const db = Math.hypot(b.position.x - playerRoot.position.x, b.position.z - playerRoot.position.z);
+        return da - db;
+      })[0];
+      if (nearest) activateCheckpoint(nearest.id);
+    },
+    teleportToCheckpoint: () => {
+      const checkpoint = checkpointRuntime.active();
+      if (!checkpoint) return;
+      const destination = new Vector3(checkpoint.position.x, checkpoint.position.y, checkpoint.position.z);
+      traversalSurfaces.reset();
+      worldVolumes.reset();
+      playerRoot.position.copyFrom(destination);
+      movement.resetVerticalState(destination.y);
+      movement.setPointerWorld(destination);
+      pointerWorld.copyFrom(destination);
+    },
+    forceRespawn: () => respawnAfterDefeat(),
+    clearCheckpoint: () => {
+      checkpointRuntime.clear();
+      refreshCheckpointMarkers();
+    },
+    playtestMode: () => developerPlaytestMode,
+    setPlaytestMode: enabled => {
+      developerPlaytestMode = enabled;
+      localStorage.setItem('astral-shift.developer.playtest-mode', String(enabled));
+      document.body.classList.toggle('playtest-mode', enabled);
+      if (enabled) developerHud.setOpen(false);
+    },
+    resetSession: () => startNewCampaign(),
+    refresh: () => {
+      refreshHud();
+      questTracker.render();
+      runtimeDeveloperPanel.render();
+    },
+  },
+);
+
+questRuntime.subscribe(() => runtimeDeveloperPanel.render());
+checkpointRuntime.subscribe(() => runtimeDeveloperPanel.render());
 
 function actorColor(roleTags: readonly string[]): Color3 {
   if (roleTags.includes('merchant')) return new Color3(0.85, 0.56, 0.2);
