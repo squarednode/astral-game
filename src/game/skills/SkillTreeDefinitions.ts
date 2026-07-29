@@ -51,7 +51,7 @@ const passive = (
 export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
   {
     characterId: 'vanguard',
-    identityTitle: 'Astral Vanguard',
+    identityTitle: 'Warrior',
     identitySummary: 'A durable front-line breaker who turns pressure into decisive openings.',
     combatStyle: 'Close-range bruiser · stagger · survival',
     strengths: ['High durability', 'Wide melee pressure', 'Reliable initiation'],
@@ -66,7 +66,7 @@ export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
   },
   {
     characterId: 'warden',
-    identityTitle: 'Frost Warden',
+    identityTitle: 'Mage',
     identitySummary: 'A ranged protector who controls space and stabilizes the party.',
     combatStyle: 'Ranged control · protection · frost',
     strengths: ['Long reach', 'Defensive support', 'Crowd control'],
@@ -81,7 +81,7 @@ export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
   },
   {
     characterId: 'hunter-mara',
-    identityTitle: 'Wilds Hunter',
+    identityTitle: 'Hunter',
     identitySummary: 'A mobile ranged specialist who isolates priority targets and controls pursuit lanes.',
     combatStyle: 'Ranged precision · mobility · pursuit',
     strengths: ['Safe damage', 'Fast repositioning', 'Target control'],
@@ -96,7 +96,7 @@ export const characterSkillTrees: readonly CharacterSkillTreeDefinition[] = [
   },
   {
     characterId: 'tempest',
-    identityTitle: 'Tempest Striker',
+    identityTitle: 'Rogue',
     identitySummary: 'A high-speed assassin who attacks from shifting angles and escapes retaliation.',
     combatStyle: 'Burst · mobility · elemental pressure',
     strengths: ['Fast attacks', 'Rapid repositioning', 'Burst windows'],

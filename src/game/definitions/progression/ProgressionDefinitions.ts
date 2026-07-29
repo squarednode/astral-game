@@ -9,9 +9,9 @@ export const experienceCurves: readonly ExperienceCurveDefinition[] = [
     id: 'curve.standard-early',
     maximumLevel: 50,
     experienceRequiredForLevel(level: number): number {
-      const authored = [0, 100, 175, 275, 400];
+      const authored = [0, 10, 25, 45, 70];
       if (level < authored.length) return authored[level];
-      return Math.round(400 + Math.pow(level - 4, 1.35) * 165);
+      return Math.round(70 + Math.pow(level - 4, 1.35) * 28);
     },
   },
 ];
@@ -19,30 +19,30 @@ export const experienceCurves: readonly ExperienceCurveDefinition[] = [
 export const characterGrowthPackages: readonly CharacterGrowthPackageDefinition[] = [
   {
     id: 'growth.vanguard',
-    maximumHealthPerLevel: 20,
-    attackPerLevel: 3,
-    armorPerLevel: 1.5,
+    maximumHealthPerLevel: 1.0,
+    attackPerLevel: 0.08,
+    armorPerLevel: 0.02,
     movementSpeedPerLevel: 0.02,
   },
   {
     id: 'growth.warden',
-    maximumHealthPerLevel: 14,
-    attackPerLevel: 2,
-    armorPerLevel: 1.2,
+    maximumHealthPerLevel: 0.5,
+    attackPerLevel: 0.10,
+    armorPerLevel: 0.01,
     movementSpeedPerLevel: 0.015,
   },
   {
     id: 'growth.hunter-mara',
-    maximumHealthPerLevel: 12,
-    attackPerLevel: 2.4,
-    armorPerLevel: 0.9,
+    maximumHealthPerLevel: 0.7,
+    attackPerLevel: 0.09,
+    armorPerLevel: 0.01,
     movementSpeedPerLevel: 0.025,
   },
   {
     id: 'growth.tempest',
-    maximumHealthPerLevel: 10,
-    attackPerLevel: 2.6,
-    armorPerLevel: 0.8,
+    maximumHealthPerLevel: 0.7,
+    attackPerLevel: 0.10,
+    armorPerLevel: 0.01,
     movementSpeedPerLevel: 0.035,
   },
 ];
@@ -71,9 +71,9 @@ export const characterProgressionDefinitions: readonly CharacterProgressionDefin
 ];
 
 export const progressionExperienceRewards = {
-  enemy: 18,
-  eliteEnemy: 40,
-  bossEnemy: 100,
-  encounter: 75,
-  quest: 125,
+  enemy: 1,
+  eliteEnemy: 4,
+  bossEnemy: 10,
+  encounter: 3,
+  quest: 5,
 } as const;

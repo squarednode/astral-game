@@ -5747,6 +5747,31 @@ The new developer files pass strict TypeScript checks. The complete source check
 - Merchant equipment refreshes every five minutes.
 - Quest developer completion grants required wolf pelts before turn-in validation.
 
+# Astral Shift 0.6.8.0 - Baseline Combat Expectations
+
+This tuning build establishes the low-number combat scale used by the first real level.
+
+## Playable baselines
+- Warrior: 10 HP, 1.0 narrow melee damage.
+- Rogue: 8 HP, 1.2 very narrow fast melee damage.
+- Hunter: 8 HP, 1.0 ranged physical damage.
+- Mage: 6 HP, 1.2 ranged magical damage.
+- New games start with Warrior only. The full starting-character choice is planned for 0.6.8.1.
+
+## Starter enemies
+- Level 1 Crab: 5 HP, 0 damaging attack, 0 XP.
+- Level 1 Wolf: 5 HP, 1 melee damage, 1 XP.
+- Mother Wolf: 20 HP, 2 melee damage, 4 XP.
+
+## Progression
+- Level 2 requires 10 total XP.
+- Character level growth is restrained to preserve the low-number scale.
+- Crab kills grant no XP; starter wolves grant 1 XP.
+
+## Notes
+Existing saves can still restore their saved roster. Use New Game to test the one-character baseline.
+
+
 ### Validate
 ```bash
 npm run build

@@ -843,8 +843,8 @@ const skillTreeRuntime = new SkillTreeRuntime(
 const rosterRuntime = new RosterRuntime(
   party.map(character => ({
     characterId: character.id,
-    unlockedByDefault: character.id !== 'hunter-mara',
-    activeByDefault: character.id !== 'hunter-mara',
+    unlockedByDefault: character.id === 'vanguard',
+    activeByDefault: character.id === 'vanguard',
     recruitmentSource: character.id === 'hunter-mara' ? 'quest.wolf-problem' : 'starter',
   })),
   3,
@@ -2037,7 +2037,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.7.9',
+    buildVersion: '0.6.8.0',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2052,7 +2052,7 @@ function createSaveData(): AstralSaveData {
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.7.9',
+      buildVersion: '0.6.8.0',
     },
   };
 }
@@ -2977,7 +2977,7 @@ function attackFor(c = active): number {
 function hpMax(c: CharacterState): number {
   const growth = progressionRuntime.growthModifiers(c.id);
   return Math.max(
-    25,
+    1,
     c.maxHp + growth.maximumHealth + equipmentStatsFor(c).maximumHealth + (passiveFor(c).maximumHealth ?? 0),
   );
 }
@@ -3302,7 +3302,10 @@ function enemyIsOutsideTerritory(enemy: Enemy): boolean {
 function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
   const ability = definitions.require<AbilityDefinition>(usage.abilityId);
   const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
-  const power = (ability.power ?? ability.damage ?? enemy.damage) * usage.powerMultiplier;
+  const usesStarterDamageBaseline = enemy.definition.familyId === 'wolf' || enemy.definition.familyId === 'crab';
+  const power = (usesStarterDamageBaseline
+    ? enemy.damage
+    : (ability.power ?? ability.damage ?? enemy.damage)) * usage.powerMultiplier;
 
   if (ability.projectileId) {
     const projectileDefinition = definitions.get<ProjectileDefinition>(
@@ -4329,7 +4332,17 @@ function basicAttack(): void {
     const center = playerRoot.position.add(dir.scale(active.basicAttackStyle === 'rapid-melee' ? 1.0 : 1.3));
     const radius = active.attackRange * (active.basicAttackStyle === 'rapid-melee' ? 0.9 : 1.15);
     vfxRing(center, active.color, radius, active.basicAttackStyle === 'rapid-melee' ? 0.14 : 0.23);
-    enemies.filter(e => Vector3.Distance(e.mesh.position, center) < active.attackRange).forEach(e => damageEnemy(e, basicDamage, active.element));
+    const halfWidth = active.basicAttackStyle === 'rapid-melee' ? 0.34 : 0.62;
+    enemies
+      .filter(enemy => {
+        const offset = enemy.mesh.position.subtract(playerRoot.position);
+        offset.y = 0;
+        const forward = Vector3.Dot(offset, dir);
+        if (forward < 0.15 || forward > active.attackRange) return false;
+        const lateral = offset.subtract(dir.scale(forward)).length();
+        return lateral <= halfWidth + enemy.targetRadius * 0.35;
+      })
+      .forEach(enemy => damageEnemy(enemy, basicDamage, active.element));
   } else {
     const orb = MeshBuilder.CreateSphere(
       'projectile',
@@ -4813,11 +4826,17 @@ function killEnemy(enemy: Enemy): void {
     enemy.definition.role === 'boss',
   );
   experienceRuntime.award({
-    amount: enemy.definition.role === 'boss'
-      ? progressionExperienceRewards.bossEnemy
-      : enemy.elite
-        ? progressionExperienceRewards.eliteEnemy
-        : progressionExperienceRewards.enemy,
+    amount: enemy.definition.role === 'crab'
+      ? 0
+      : enemy.definition.role === 'mother-wolf'
+        ? 4
+        : enemy.definition.role === 'wolf'
+          ? 1
+          : enemy.definition.role === 'boss'
+            ? progressionExperienceRewards.bossEnemy
+            : enemy.elite
+              ? progressionExperienceRewards.eliteEnemy
+              : progressionExperienceRewards.enemy,
     sourceId: enemy.entityId,
     sourceType: 'enemy',
   });
