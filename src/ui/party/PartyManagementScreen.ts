@@ -5,11 +5,9 @@ import type {
   PartyEquipmentItem,
   PartyManagementActions,
   PartyManagementModel,
-  SkillId,
-  SkillSlot,
 } from './PartyManagementTypes';
 
-type Filter = 'all' | GearSlot | GearFamily | 'legendary' | 'recent';
+type Filter = 'all' | 'equipped' | GearSlot | GearFamily | 'legendary' | 'recent';
 type SortMode =
   | 'recommended'
   | 'power'
@@ -18,7 +16,7 @@ type SortMode =
   | 'type'
   | 'family'
   | 'name';
-type CharacterTab = 'equipment' | 'skills' | 'stats';
+type CharacterTab = 'equipment' | 'stats';
 
 const RARITY_ORDER = {
   common: 1,
@@ -128,7 +126,6 @@ export class PartyManagementScreen {
           <div>
             <div class="pm-eyebrow">Command Center</div>
             <h1>Party Management</h1>
-            <p>Character selection here is independent from the controlled character.</p>
           </div>
           <div class="pm-header-actions">
             <div class="pm-party-power">
@@ -284,15 +281,12 @@ export class PartyManagementScreen {
 
       <nav class="pm-tabs">
         ${this.tabButton('equipment', 'Equipment')}
-        ${this.tabButton('skills', 'Skills')}
         ${this.tabButton('stats', 'Statistics')}
       </nav>
 
       ${this.activeTab === 'equipment'
         ? this.equipmentTab(character, selectedItem)
-        : this.activeTab === 'skills'
-          ? this.skillsTab(character)
-          : this.statsTab(character)}
+        : this.statsTab(character)}
     `;
   }
 
@@ -415,41 +409,6 @@ export class PartyManagementScreen {
     `;
   }
 
-  private skillsTab(character: PartyCharacterView): string {
-    return `
-      <div class="pm-skills">
-        <p>Assign abilities unlocked in the character's skill tree to slots 1–4. Level 1 characters begin with no equipped skills.</p>
-        ${([1, 2, 3, 4] as SkillSlot[])
-          .map(slot => {
-            const assigned = character.skillSlots[slot] ?? '';
-            return `
-              <label class="pm-skill-slot">
-                <span>Slot ${slot}</span>
-                <select
-                  data-input="skill-slot"
-                  data-character-id="${character.id}"
-                  data-skill-slot="${slot}"
-                >
-                  <option value="">Unassigned</option>
-                  ${character.skills
-                    .map(skill => `
-                      <option
-                        value="${skill.id}"
-                        ${assigned === skill.id ? 'selected' : ''}
-                      >
-                        ${skill.name}
-                      </option>
-                    `)
-                    .join('')}
-                </select>
-              </label>
-            `;
-          })
-          .join('')}
-      </div>
-    `;
-  }
-
   private statsTab(character: PartyCharacterView): string {
     return `
       <div class="pm-progression-summary">
@@ -512,6 +471,7 @@ export class PartyManagementScreen {
 
       <div class="pm-filters">
         ${this.filterButton('all', 'All')}
+        ${this.filterButton('equipped', 'Equipped')}
         ${this.filterButton('weapon', 'Weapons')}
         ${this.filterButton('armor', 'Armor')}
         ${this.filterButton('relic', 'Relics')}
@@ -633,10 +593,11 @@ export class PartyManagementScreen {
 
       switch (this.filter) {
         case 'all': return true;
+        case 'equipped': return Boolean(this.equippedBy(item.id));
         case 'weapon':
         case 'armor':
         case 'relic':
-          return item.slot === this.filter;
+          return item.slot === this.filter && !this.equippedBy(item.id);
         case 'fortified':
         case 'agile':
         case 'focused':
@@ -1037,14 +998,6 @@ export class PartyManagementScreen {
       localStorage.setItem('astral.partyInventorySort', this.sortMode);
       this.draw();
       return;
-    }
-
-    if (target.dataset.input === 'skill-slot') {
-      this.actions.assignSkill(
-        target.dataset.characterId!,
-        Number(target.dataset.skillSlot) as SkillSlot,
-        (target.value || null) as SkillId | null,
-      );
     }
   };
 

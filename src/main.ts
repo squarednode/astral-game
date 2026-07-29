@@ -991,7 +991,7 @@ walletStatus.id = 'wallet-status';
 walletStatus.style.cssText = [
   'position:fixed',
   'top:18px',
-  'right:18px',
+  'left:18px',
   'z-index:35',
   'padding:8px 12px',
   'border:1px solid rgba(255,255,255,.22)',
@@ -2037,7 +2037,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.7.8',
+    buildVersion: '0.6.7.9',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2045,13 +2045,14 @@ function createSaveData(): AstralSaveData {
     loot: JSON.parse(JSON.stringify(loot)),
     equipmentByCharacter: JSON.parse(JSON.stringify(campaignEquipmentSnapshot())),
     merchantStock: JSON.parse(JSON.stringify(Object.fromEntries(merchantStock))),
+    merchantRefreshAt: Object.fromEntries(merchantRefreshAt),
     summary: {
       savedAt,
       playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.7.8',
+      buildVersion: '0.6.7.9',
     },
   };
 }
@@ -2083,6 +2084,13 @@ function applySaveData(data: AstralSaveData): boolean {
       for (const [merchantId, entries] of Object.entries(data.merchantStock)) {
         merchantStock.set(merchantId, JSON.parse(JSON.stringify(entries)) as Array<{ item: GeneratedItemInstance; price: number }>);
       }
+    }
+    merchantRefreshAt.clear();
+    for (const [merchantId, refreshAt] of Object.entries(data.merchantRefreshAt ?? {})) {
+      merchantRefreshAt.set(merchantId, Math.max(Date.now(), Number(refreshAt) || 0));
+    }
+    for (const merchantId of merchantStock.keys()) {
+      if (!merchantRefreshAt.has(merchantId)) merchantRefreshAt.set(merchantId, Date.now() + MERCHANT_REFRESH_MS);
     }
     for (const character of party) {
       character.equipment = { ...((data.equipmentByCharacter?.[character.id] ?? {}) as CharacterState['equipment']) };
@@ -2260,10 +2268,9 @@ questTracker = new QuestTracker(
   { onOpenJournal: questId => questJournal.open(questId) },
 );
 
-const merchantStock = new Map<
-  string,
-  Array<{ item: GeneratedItemInstance; price: number }>
->();
+const merchantStock = new Map<string, Array<{ item: GeneratedItemInstance; price: number }>>();
+const merchantRefreshAt = new Map<string, number>();
+const MERCHANT_REFRESH_MS = 5 * 60 * 1000;
 
 function buildMerchantStock(
   merchantId: string,
@@ -2285,6 +2292,7 @@ function buildMerchantStock(
     }
   }
   merchantStock.set(merchantId, stock);
+  merchantRefreshAt.set(merchantId, Date.now() + MERCHANT_REFRESH_MS);
 }
 
 buildMerchantStock('merchant.camp-supplies', 'loot.standard-enemy', 3);
@@ -2295,13 +2303,22 @@ buildMerchantStock('merchant.blacksmith', 'loot.standard-enemy', 5, 'magic');
 // with a temporal-dead-zone ReferenceError before the render loop begins.
 initialCampaignData = createSaveData();
 
+function refreshExpiredMerchantStock(now = Date.now()): void {
+  for (const [merchantId, refreshAt] of merchantRefreshAt) {
+    if (now < refreshAt) continue;
+    if (merchantId === 'merchant.blacksmith') buildMerchantStock(merchantId, 'loot.standard-enemy', 5, 'magic');
+    else buildMerchantStock(merchantId, 'loot.standard-enemy', 3);
+    feed(`${merchantId.replace('merchant.', '').replace('-', ' ')} restocked.`, 'success');
+  }
+}
+
 merchantOverlay = new MerchantOverlay(
   ui.getLayer('menus'),
   merchantRuntime,
   {
     inventory: () => bagItems(),
     wallet: () => inventoryRuntime.snapshot(bagItems()),
-    stock: merchantId => merchantStock.get(merchantId) ?? [],
+    stock: merchantId => { refreshExpiredMerchantStock(); return merchantStock.get(merchantId) ?? []; },
     purchaseStock: (merchantId, index) => {
       const stock = merchantStock.get(merchantId);
       const entry = stock?.[index];
@@ -2395,7 +2412,18 @@ const runtimeDeveloperPanel = new RuntimeDeveloperPanel(
       if (!quest) return false;
       if (quest.state === 'available') questRuntime.accept(id);
       const active = questRuntime.snapshot(id);
-      active?.objectives.forEach(objective => questRuntime.setProgress(id, objective.id, objective.required, true));
+      active?.objectives.forEach(objective => {
+        const text = `${objective.id} ${objective.label}`.toLowerCase();
+        if (text.includes('pelt')) {
+          const materialId = 'wolf-pelt';
+          const missing = Math.max(0, objective.required - inventoryRuntime.getMaterial(materialId));
+          if (missing > 0) inventoryRuntime.addMaterial(materialId, missing);
+          questRuntime.syncMaterial(materialId, inventoryRuntime.getMaterial(materialId));
+        }
+        questRuntime.setProgress(id, objective.id, objective.required, true);
+      });
+      refreshWalletStatus();
+      renderPartyManagement();
       return questRuntime.complete(id);
     },
     abandonQuest: id => questRuntime.abandon(id),
@@ -2840,7 +2868,6 @@ const partyManagement = new PartyManagementScreen(inventoryEl, {
     feed(`${party.find(character => character.id === characterId)?.name ?? characterId} joined the active party.`, 'success');
     refreshHud();
   },
-  assignSkill: assignSkillSlot,
 });
 
 const skillTreeScreen = new SkillTreeScreen(skillTreeHost, {
@@ -2849,6 +2876,7 @@ const skillTreeScreen = new SkillTreeScreen(skillTreeHost, {
     skillTreeScreen.setOpen(false);
     input.setContext('gameplay');
   },
+  assign: assignSkillSlot,
   unlock: (characterId, nodeId) => {
     const character = party.find(candidate => candidate.id === characterId);
     if (!skillTreeRuntime.unlock(characterId, nodeId)) {
@@ -2866,7 +2894,7 @@ function renderSkillTree(preferredCharacterId = active.id): void {
     party.filter(character => rosterRuntime.isUnlocked(character.id)).flatMap(character => {
       const tree = skillTreeRuntime.definition(character.id);
       const state = skillTreeRuntime.snapshot(character.id);
-      return tree && state ? [{ id: character.id, name: character.name, role: character.role, rosterStatus: rosterRuntime.isActive(character.id) ? 'active' as const : 'reserve' as const, tree, state }] : [];
+      return tree && state ? [{ id: character.id, name: character.name, role: character.role, rosterStatus: rosterRuntime.isActive(character.id) ? 'active' as const : 'reserve' as const, tree, state, abilities: state.unlockedAbilityIds.map(abilityId => ({ id: abilityId, name: definitions.get<AbilityDefinition>(abilityId)?.name ?? abilityId })) }] : [];
     }),
     preferredCharacterId,
   );
@@ -3041,6 +3069,7 @@ function gameplayHudSnapshot(): GameplayHudSnapshot {
       },
     ],
     wave,
+    showWaveHud: false,
     kills,
     power: powerFor(),
     activeCast: (() => {
@@ -3089,11 +3118,6 @@ function partyManagementModel(): PartyManagementModel {
       rosterStatus: rosterRuntime.isActive(character.id) ? 'active' : 'reserve',
       leader: rosterRuntime.leaderId() === character.id,
       equipment: character.equipment,
-      skills: (skillTreeRuntime.snapshot(character.id)?.unlockedAbilityIds ?? []).map(abilityId => ({
-        id: abilityId,
-        name: definitions.get<AbilityDefinition>(abilityId)?.name ?? abilityId,
-      })),
-      skillSlots: skillTreeRuntime.snapshot(character.id)?.skillSlots ?? {},
       level: progression?.level ?? 1,
       experienceIntoLevel: progression?.experienceIntoLevel ?? 0,
       experienceForNextLevel: progression?.experienceForNextLevel ?? 0,
@@ -5752,6 +5776,7 @@ scene.onBeforeRenderObservable.add(() => {
 
   const elite = enemies.find(e => e.elite);
   if (Math.floor(now / 100) !== Math.floor((now - dt * 1000) / 100)) { refreshHud(); statusDeveloperPanel.refresh(); }
+  refreshExpiredMerchantStock(Date.now());
 
   entityStatusTimer -= dt;
   if (entityStatusTimer <= 0) {

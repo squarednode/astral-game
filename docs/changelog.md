@@ -5737,6 +5737,16 @@ Reset Session restores the clean new-game baseline after confirmation.
 ## Validation
 The new developer files pass strict TypeScript checks. The complete source check reports only the pre-existing missing BabylonJS dependency and existing `requestShake` typing errors from the supplied source package.
 
+# Astral Shift 0.6.7.9 — Playtest Integration + Refinement
+
+- Skills are unlocked and equipped in the K menu.
+- Party Management focuses on roster, equipment, and statistics.
+- Inventory All includes equipped items; Equipped shows only equipped gear; slot tabs hide equipped items.
+- Permanent test/wave HUD is hidden outside wave encounters.
+- Wallet moved away from party cards.
+- Merchant equipment refreshes every five minutes.
+- Quest developer completion grants required wolf pelts before turn-in validation.
+
 ### Validate
 ```bash
 npm run build

@@ -101,7 +101,8 @@ export class GameplayHud {
     this.partyHud.render(snapshot.party);
     this.abilityBar.render(snapshot.abilities);
     this.castBar.render(snapshot.activeCast);
-    this.waveHud.render(snapshot.wave, snapshot.kills, snapshot.power);
+    this.waveHud.element.hidden = !snapshot.showWaveHud;
+    if (snapshot.showWaveHud) this.waveHud.render(snapshot.wave, snapshot.kills, snapshot.power);
     this.bossBar.render(snapshot.boss);
   }
 

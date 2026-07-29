@@ -1,8 +1,6 @@
 export type GearFamily = 'fortified' | 'agile' | 'focused';
 export type GearSlot = 'weapon' | 'armor' | 'relic';
 export type ItemRarity = 'common' | 'magic' | 'rare' | 'legendary';
-export type SkillSlot = 1 | 2 | 3 | 4;
-export type SkillId = string;
 
 export interface PartyEquipmentItem {
   id: number;
@@ -24,11 +22,6 @@ export interface PartyEquipmentItem {
   effectDescriptions: readonly string[];
   favorite: boolean;
   legendaryPower?: string;
-}
-
-export interface PartySkillView {
-  id: SkillId;
-  name: string;
 }
 
 export interface PartyCharacterView {
@@ -53,8 +46,6 @@ export interface PartyCharacterView {
     movementSpeed: number;
   };
   equipment: Partial<Record<GearSlot, PartyEquipmentItem>>;
-  skills: PartySkillView[];
-  skillSlots: Partial<Record<SkillSlot, SkillId>>;
   summary: {
     power: number;
     defense: number;
@@ -86,9 +77,4 @@ export interface PartyManagementActions {
   setLeader(characterId: string): void;
   moveToReserve(characterId: string): void;
   addToParty(characterId: string, replaceCharacterId?: string): void;
-  assignSkill(
-    characterId: string,
-    slot: SkillSlot,
-    skillId: SkillId | null,
-  ): void;
 }

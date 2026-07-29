@@ -1,5 +1,7 @@
 import type { CharacterSkillSnapshot, CharacterSkillTreeDefinition } from '../../game/skills';
 
+export interface SkillTreeAbilityView { id: string; name: string; }
+
 export interface SkillTreeCharacterView {
   id: string;
   name: string;
@@ -7,12 +9,14 @@ export interface SkillTreeCharacterView {
   rosterStatus: 'active' | 'reserve';
   tree: CharacterSkillTreeDefinition;
   state: CharacterSkillSnapshot;
+  abilities: readonly SkillTreeAbilityView[];
 }
 
 export interface SkillTreeScreenActions {
   close(): void;
   unlock(characterId: string, nodeId: string): void;
   selectCharacter?(characterId: string): void;
+  assign(characterId: string, slot: 1 | 2 | 3 | 4, abilityId: string | null): void;
 }
 
 export class SkillTreeScreen {
@@ -22,6 +26,7 @@ export class SkillTreeScreen {
   constructor(private readonly host: HTMLDivElement, private readonly actions: SkillTreeScreenActions) {
     host.classList.add('skill-tree-host', 'hidden');
     host.addEventListener('click', this.onClick);
+    host.addEventListener('change', this.onChange);
   }
 
   setOpen(open: boolean): void {
@@ -39,6 +44,7 @@ export class SkillTreeScreen {
 
   dispose(): void {
     this.host.removeEventListener('click', this.onClick);
+    this.host.removeEventListener('change', this.onChange);
     this.host.parentElement?.classList.remove('ui-layer--interactive');
   }
 
@@ -47,7 +53,7 @@ export class SkillTreeScreen {
     this.host.innerHTML = `
       <div class="skill-tree-shell">
         <header class="skill-tree-header">
-          <div><span>Character Progression</span><h1>Skill Tree</h1><p>Unlock abilities here, then assign them to combat slots in Party Management.</p></div>
+          <div><span>Character Progression</span><h1>Skill Tree</h1></div>
           <button type="button" data-action="close" aria-label="Close skill tree">×</button>
         </header>
         <nav class="skill-character-list">
@@ -64,6 +70,15 @@ export class SkillTreeScreen {
         <div><span>Character Identity</span><h2>${tree.identityTitle}</h2><p>${tree.identitySummary}</p><strong>${tree.combatStyle}</strong></div>
         <div class="skill-point-card"><small>Available</small><b>${state.availableSkillPoints}</b><span>${state.spentSkillPoints} spent · ${state.earnedSkillPoints} earned</span></div>
         <ul>${tree.strengths.map(strength => `<li>${strength}</li>`).join('')}</ul>
+      </section>
+      <section class="skill-loadout-panel">
+        <div><span>Combat Loadout</span><h2>Equipped Skills</h2><p>Assign unlocked active abilities to slots 1–4.</p></div>
+        <div class="skill-loadout-slots">
+          ${([1, 2, 3, 4] as const).map(slot => {
+            const assigned = state.skillSlots[slot] ?? '';
+            return `<label><span>Slot ${slot}</span><select data-action="assign" data-character-id="${character.id}" data-slot="${slot}"><option value="">Unassigned</option>${character.abilities.map(ability => `<option value="${ability.id}" ${assigned === ability.id ? 'selected' : ''}>${ability.name}</option>`).join('')}</select></label>`;
+          }).join('')}
+        </div>
       </section>
       <section class="skill-node-grid">
         ${tree.nodes.map(node => {
@@ -92,4 +107,11 @@ export class SkillTreeScreen {
     }
     if (action === 'unlock' && button.dataset.characterId && button.dataset.nodeId) this.actions.unlock(button.dataset.characterId, button.dataset.nodeId);
   };
+
+  private onChange = (event: Event): void => {
+    const select = (event.target as HTMLElement).closest<HTMLSelectElement>('select[data-action="assign"]');
+    if (!select?.dataset.characterId || !select.dataset.slot) return;
+    this.actions.assign(select.dataset.characterId, Number(select.dataset.slot) as 1 | 2 | 3 | 4, select.value || null);
+  };
 }
+

@@ -12,7 +12,7 @@ export interface SaveSummary {
 
 export interface AstralSaveData {
   schemaVersion: 1;
-  buildVersion: '0.6.7.6' | '0.6.7.7a' | '0.6.7.8';
+  buildVersion: '0.6.7.6' | '0.6.7.7a' | '0.6.7.8' | '0.6.7.9';
   savedAt: number;
   playtimeSeconds: number;
   checkpoint: unknown;
@@ -20,5 +20,6 @@ export interface AstralSaveData {
   loot: unknown[];
   equipmentByCharacter: Record<string, Record<string, unknown>>;
   merchantStock?: Record<string, Array<{ item: unknown; price: number }>>;
+  merchantRefreshAt?: Record<string, number>;
   summary: Omit<SaveSummary, 'slotId'>;
 }

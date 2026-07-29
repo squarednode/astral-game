@@ -33,6 +33,7 @@ export interface GameplayHudSnapshot {
   readonly party: readonly GameplayCharacterView[];
   readonly abilities: readonly GameplayAbilityView[];
   readonly wave: number;
+  readonly showWaveHud?: boolean;
   readonly kills: number;
   readonly power: number;
   readonly boss?: GameplayBossView;
