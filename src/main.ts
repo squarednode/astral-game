@@ -3,6 +3,7 @@ import './devtools/DeveloperConsole.css';
 import './ui/party/PartyManagementScreen.css';
 import './ui/actors/DialogueOverlay.css';
 import './ui/gameplayloop/GameplayLoop.css';
+import './ui/quests/QuestJournal.css';
 import './ui/UIManager.css';
 import './ui/developer/DeveloperHud.css';
 import './ui/gameplay/GameplayHud.css';
@@ -223,6 +224,7 @@ import {
 import { DialogueOverlay } from './ui/actors/DialogueOverlay';
 import { ActorDeveloperPanel } from './ui/developer/ActorDeveloperPanel';
 import { QuestTracker } from './ui/gameplayloop/QuestTracker';
+import { QuestJournal } from './ui/quests/QuestJournal';
 import { MerchantOverlay } from './ui/gameplayloop/MerchantOverlay';
 import { InteractionPrompt } from './ui/shared/InteractionPrompt';
 import {
@@ -1040,7 +1042,7 @@ function closeGameplayModal(): void {
   const modalStillOpen = Boolean(
     dialogueRuntime?.snapshot().active ||
     merchantRuntime?.active() ||
-    questTracker?.isJournalOpen() ||
+    questJournal?.isOpen() ||
     settingsMenu?.isOpen() ||
     skillTreeOpen ||
     inventoryOpen ||
@@ -1642,6 +1644,7 @@ let dialogueRuntime: DialogueRuntime;
 let questRuntime: QuestRuntime;
 let merchantRuntime: MerchantRuntime;
 let questTracker: QuestTracker;
+let questJournal: QuestJournal;
 let merchantOverlay: MerchantOverlay;
 const actorConditionEvaluator = new ConditionEvaluator({
   getWorldFlag: id => worldStateRuntime.getFlag(id),
@@ -2225,8 +2228,7 @@ questRuntime.subscribe(() => {
     state === 'completed',
   );
 });
-questTracker = new QuestTracker(
-  gameplayHud.getRegion('top-right'),
+questJournal = new QuestJournal(
   ui.getLayer('menus'),
   questRuntime,
   {
@@ -2246,12 +2248,15 @@ questTracker = new QuestTracker(
     },
     onClose: () => {
       gameplayHud.setGameplayVisible(true);
-      if (!gameShell?.isOpen() && !settingsMenu.isOpen() && !skillTreeOpen && !inventoryOpen) {
-        ui.getLayer('menus').classList.remove('ui-layer--interactive');
-        input.setContext('gameplay');
-      }
+      closeGameplayModal();
     },
   },
+);
+questTracker = new QuestTracker(
+  gameplayHud.getRegion('top-right'),
+  ui.getLayer('notifications'),
+  questRuntime,
+  { onOpenJournal: questId => questJournal.open(questId) },
 );
 
 const merchantStock = new Map<
@@ -5089,8 +5094,8 @@ function closeInventory(): void {
 }
 
 function handleMenuToggleRequest(): void {
-  if (questTracker?.isJournalOpen()) {
-    questTracker.closeJournal();
+  if (questJournal?.isOpen()) {
+    questJournal.close();
     return;
   }
 
@@ -5159,9 +5164,9 @@ scene.onBeforeRenderObservable.add(() => {
     return;
   }
 
-  if (questTracker?.isJournalOpen()) {
+  if (questJournal?.isOpen()) {
     if (input.consumeEscapePressed() || input.consumePressed('toggleJournal')) {
-      questTracker.closeJournal();
+      questJournal.close();
     }
     settingsMenu.update();
     flushFrameInfrastructure();
@@ -5177,7 +5182,7 @@ scene.onBeforeRenderObservable.add(() => {
   }
 
   if (input.consumePressed('toggleJournal')) {
-    questTracker.openJournal();
+    questJournal.open();
     settingsMenu.update();
     flushFrameInfrastructure();
     input.endFrame();

@@ -33,7 +33,7 @@ export class GameShell {
   }
 
   isOpen(): boolean { return !this.element.hidden; }
-  isTitle(): boolean { return this.mode === 'title'; }
+  isTitle(): boolean { return this.isOpen() && this.mode === 'title'; }
   showTitle(): void { this.mode = 'title'; this.element.hidden = false; this.activateLayer(); this.render(); this.options.onVisibilityChanged?.(true, true); }
   showPause(): void { this.mode = 'pause'; this.element.hidden = false; this.activateLayer(); this.render(); this.options.onVisibilityChanged?.(true, false); }
   close(): void { this.element.hidden = true; this.parent.classList.remove('ui-layer--interactive'); this.options.onVisibilityChanged?.(false, false); }

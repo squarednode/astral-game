@@ -447,13 +447,19 @@ export class InputManager {
       const raw = window.localStorage.getItem('astral.input-profile.v1');
       if (!raw) return cloneProfile(DEFAULT_INPUT_PROFILE);
       const parsed = JSON.parse(raw) as Partial<InputBindingProfile>;
+      // Merge saved bindings over the current defaults instead of treating an
+      // older profile as a complete replacement. This migrates newly-added
+      // actions (for example toggleJournal / KeyJ) into existing player
+      // profiles while preserving any bindings the player has customized.
       return {
-        keyboard: parsed.keyboard
-          ? { ...parsed.keyboard }
-          : { ...DEFAULT_INPUT_PROFILE.keyboard },
-        gamepadButtons: parsed.gamepadButtons
-          ? { ...parsed.gamepadButtons }
-          : { ...DEFAULT_INPUT_PROFILE.gamepadButtons },
+        keyboard: {
+          ...DEFAULT_INPUT_PROFILE.keyboard,
+          ...(parsed.keyboard ?? {}),
+        },
+        gamepadButtons: {
+          ...DEFAULT_INPUT_PROFILE.gamepadButtons,
+          ...(parsed.gamepadButtons ?? {}),
+        },
       };
     } catch {
       return cloneProfile(DEFAULT_INPUT_PROFILE);
