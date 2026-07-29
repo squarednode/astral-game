@@ -2889,7 +2889,7 @@ const skillTreeScreen = new SkillTreeScreen(skillTreeHost, {
   },
 });
 
-function renderSkillTree(preferredCharacterId = active.id): void {
+function renderSkillTree(preferredCharacterId?: string): void {
   skillTreeScreen.render(
     party.filter(character => rosterRuntime.isUnlocked(character.id)).flatMap(character => {
       const tree = skillTreeRuntime.definition(character.id);
@@ -5373,7 +5373,7 @@ scene.onBeforeRenderObservable.add(() => {
     skillTreeOpen = !skillTreeOpen;
     if (skillTreeOpen) {
       closeInventory();
-      renderSkillTree();
+      renderSkillTree(active.id);
     }
     skillTreeScreen.setOpen(skillTreeOpen);
     input.setContext(skillTreeOpen ? 'skill-tree' : 'gameplay');

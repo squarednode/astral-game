@@ -138,7 +138,7 @@ export class GameplayHud {
   }
 
   private hideLegacyHud(): void {
-    for (const selector of [
+    const directSelectors = [
       '#party',
       '#abilities',
       '#lootFeed',
@@ -147,9 +147,53 @@ export class GameplayHud {
       '#wave',
       '#kills',
       '#power',
-    ]) {
-      const element = document.querySelector<HTMLElement>(selector);
-      if (element) element.hidden = true;
+      '#objective',
+      '#objectives',
+      '#instructions',
+      '#mission',
+      '#waveHud',
+      '#testHud',
+      '.legacy-hud',
+      '.legacy-wave-hud',
+      '.sandbox-objective',
+    ];
+
+    for (const selector of directSelectors) {
+      document.querySelectorAll<HTMLElement>(selector).forEach(element => {
+        element.hidden = true;
+        element.style.setProperty('display', 'none', 'important');
+      });
     }
+
+    // Older builds group Wave/Kills/Power inside an unlabelled parent panel.
+    const metricElements = ['#wave', '#kills', '#power']
+      .map(selector => document.querySelector<HTMLElement>(selector))
+      .filter((element): element is HTMLElement => Boolean(element));
+    if (metricElements.length > 1) {
+      let candidate: HTMLElement | null = metricElements[0].parentElement;
+      while (candidate && candidate !== document.body) {
+        if (metricElements.every(element => candidate?.contains(element))) {
+          candidate.hidden = true;
+          candidate.style.setProperty('display', 'none', 'important');
+          break;
+        }
+        candidate = candidate.parentElement;
+      }
+    }
+
+    // Remove the original sandbox instruction panel even when its IDs differ.
+    const legacyPhrases = [
+      'defeat enemies and test the party rotation',
+      'astral swap',
+    ];
+    document.querySelectorAll<HTMLElement>('aside, section, div').forEach(element => {
+      if (element.closest('.gameplay-hud')) return;
+      const text = (element.textContent ?? '').trim().toLowerCase();
+      if (!legacyPhrases.some(phrase => text.includes(phrase))) return;
+      const panel = element.closest<HTMLElement>('aside, section, [class*="panel"], [class*="hud"]') ?? element;
+      if (panel === document.body) return;
+      panel.hidden = true;
+      panel.style.setProperty('display', 'none', 'important');
+    });
   }
 }
