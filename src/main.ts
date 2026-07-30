@@ -2074,7 +2074,10 @@ function saveCampaign(slotId: SaveSlotId, quiet = false): boolean {
   return true;
 }
 
+let isApplyingCampaignState = false;
+
 function applySaveData(data: AstralSaveData): boolean {
+  isApplyingCampaignState = true;
   try {
     engineAlphaSnapshots.deserialize(data.engineSnapshot as ReturnType<typeof engineAlphaSnapshots.serialize>);
     if (data.checkpoint) checkpointRuntime.deserialize(data.checkpoint as ReturnType<typeof checkpointRuntime.serialize>);
@@ -2106,6 +2109,9 @@ function applySaveData(data: AstralSaveData): boolean {
     console.error('Save load failed.', error);
     feed('The selected save could not be loaded.', 'warning');
     return false;
+  } finally {
+    isApplyingCampaignState = false;
+    previousWolfQuestState = questRuntime.state('quest.wolf-problem');
   }
 }
 
@@ -2120,12 +2126,25 @@ function loadCampaign(slotId: SaveSlotId): boolean {
   return loaded;
 }
 
-let initialCampaignData: AstralSaveData;
+let initialCampaignDataJson = '';
+
+function freshInitialCampaignData(): AstralSaveData {
+  return JSON.parse(initialCampaignDataJson) as AstralSaveData;
+}
 
 function startNewCampaign(): void {
-  applySaveData(initialCampaignData);
+  if (!initialCampaignDataJson) {
+    feed('New-game data is not ready. Please reload the game.', 'warning');
+    return;
+  }
+
+  const started = applySaveData(freshInitialCampaignData());
+  if (!started) return;
+
   checkpointRuntime.activate('checkpoint.entrance');
   sessionPlaytimeSeconds = 0;
+  gameOver = false;
+  previousWolfQuestState = questRuntime.state('quest.wolf-problem');
   gameShell?.close();
   input.setContext('gameplay');
   feed('New game started.', 'success');
@@ -2215,6 +2234,10 @@ rosterRuntime.subscribe(() => {
 let previousWolfQuestState = questRuntime.state('quest.wolf-problem');
 questRuntime.subscribe(() => {
   const state = questRuntime.state('quest.wolf-problem');
+  if (isApplyingCampaignState) {
+    previousWolfQuestState = state;
+    return;
+  }
   if (state === 'completed' && previousWolfQuestState !== 'completed') {
     experienceRuntime.award({
       amount: progressionExperienceRewards.quest,
@@ -2301,7 +2324,7 @@ buildMerchantStock('merchant.blacksmith', 'loot.standard-enemy', 5, 'magic');
 // Capture the clean new-game state only after merchant stock has been initialized.
 // createSaveData() serializes merchantStock, so calling it earlier halts startup
 // with a temporal-dead-zone ReferenceError before the render loop begins.
-initialCampaignData = createSaveData();
+initialCampaignDataJson = JSON.stringify(createSaveData());
 
 function refreshExpiredMerchantStock(now = Date.now()): void {
   for (const [merchantId, refreshAt] of merchantRefreshAt) {
