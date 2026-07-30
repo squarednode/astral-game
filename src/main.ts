@@ -4911,6 +4911,11 @@ function hurtActive(
 }
 
 function respawnAfterDefeat(): void {
+  // Defeat must never change recruitment or party composition. Some encounter
+  // reset callbacks can touch progression state, so preserve the exact roster
+  // before resetting the world and reapply it afterward.
+  const rosterBeforeRespawn = rosterRuntime.serialize();
+
   for (const snapshot of encounterManager.snapshots()) {
     if (snapshot.state === 'active' || snapshot.state === 'phase-transition' || snapshot.state === 'failed') {
       encounterManager.reset(snapshot.id, 'Party defeated');
@@ -4930,6 +4935,7 @@ function respawnAfterDefeat(): void {
   for (const effect of effects) effect.mesh.dispose();
   effects = [];
 
+  rosterRuntime.deserialize(rosterBeforeRespawn);
   restoreRosterAtCheckpoint();
 
   const respawnLeaderId = rosterRuntime.leaderId();
