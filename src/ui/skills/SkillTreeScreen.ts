@@ -83,7 +83,6 @@ export class SkillTreeScreen {
       <section class="skill-path-summary">
         ${(tree.paths ?? []).map(path => `<article class="branch-${path.branch}"><strong>${path.name}</strong><span>${state.pathPoints[path.id] ?? 0} points spent</span><small>${path.summary}</small></article>`).join('')}
       </section>
-      ${state.disconnectedUnlockedNodeIds.length ? `<div class="skill-tree-warning">Legacy migration: ${state.disconnectedUnlockedNodeIds.length} unlocked node${state.disconnectedUnlockedNodeIds.length === 1 ? '' : 's'} no longer connect to the current constellation. They remain learned, but new unlocks must follow the graph.</div>` : ''}
       <section class="skill-node-grid">
         ${tree.nodes.map(node => {
           const unlocked = state.unlockedNodeIds.includes(node.id);

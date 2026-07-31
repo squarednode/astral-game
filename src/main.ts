@@ -168,6 +168,7 @@ import { CharacterChoiceScreen } from './ui/character/CharacterChoiceScreen';
 import type { CharacterChoiceOption } from './ui/character/CharacterChoiceScreen';
 import { SaveRuntime } from './game/save';
 import type { AstralSaveData, SaveSlotId } from './game/save';
+import { BUILD_VERSION, CURRENT_SAVE_SCHEMA } from './game/version';
 import type { GameplayHudSnapshot } from './ui/gameplay';
 import { CombatSystem } from './game/combat/CombatSystem';
 import { DamageNumberManager } from './game/combat/DamageNumberManager';
@@ -2064,8 +2065,8 @@ function createSaveData(): AstralSaveData {
   const checkpointName = checkpointRuntime.active()?.displayName ?? 'Entrance';
   const savedAt = Date.now();
   return {
-    schemaVersion: 1,
-    buildVersion: '0.6.8.4',
+    schemaVersion: CURRENT_SAVE_SCHEMA,
+    buildVersion: BUILD_VERSION,
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2081,7 +2082,7 @@ function createSaveData(): AstralSaveData {
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.8.4',
+      buildVersion: BUILD_VERSION,
     },
   };
 }

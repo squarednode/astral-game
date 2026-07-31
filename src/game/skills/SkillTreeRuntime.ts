@@ -193,12 +193,34 @@ export class SkillTreeRuntime {
     for (const [characterId, saved] of Object.entries(state.characters)) {
       const tree = this.trees.get(characterId);
       if (!tree) continue;
-      const validNodes = new Set(tree.nodes.map(node => node.id));
-      // Valid historical unlocks are preserved even when an older tree did not contain the
-      // current graph prerequisites. The runtime reports them as disconnected for inspection,
-      // but all new purchases must follow the 0.6.8.4 constellation rules.
-      const unlockedNodes = new Set(saved.unlockedNodeIds.filter(id => validNodes.has(id)));
-      const unlockedAbilities = new Set(tree.nodes.filter(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId).map(node => node.abilityId!));
+
+      // Rebuild saved unlocks through the current constellation rules. Invalid,
+      // disconnected, over-level, and retired nodes are discarded automatically;
+      // because available points are derived from level minus valid spend, every
+      // discarded node is fully refunded without storing legacy state.
+      const requested = new Set(saved.unlockedNodeIds);
+      const unlockedNodes = new Set<string>();
+      const level = Math.max(1, this.levelFor(characterId));
+      let progressed = true;
+      while (progressed) {
+        progressed = false;
+        const learned = tree.nodes.filter(node => unlockedNodes.has(node.id));
+        const spent = learned.reduce((sum, node) => sum + node.cost, 0);
+        const available = Math.max(0, level - 1 - spent);
+        const pathPoints = this.calculatePathPoints(tree, learned);
+        for (const node of tree.nodes) {
+          if (!requested.has(node.id) || unlockedNodes.has(node.id)) continue;
+          const eligibility = this.eligibilityFor(tree, node, level, available, unlockedNodes, pathPoints);
+          if (!eligibility.canUnlock) continue;
+          unlockedNodes.add(node.id);
+          progressed = true;
+          break;
+        }
+      }
+
+      const unlockedAbilities = new Set(tree.nodes
+        .filter(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId)
+        .map(node => node.abilityId!));
       const validSlots: Partial<Record<1 | 2 | 3 | 4, string>> = {};
       const validNodeSlots: Partial<Record<1 | 2 | 3 | 4, string>> = {};
       let restoredUltimate = false;
