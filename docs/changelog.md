@@ -5771,6 +5771,24 @@ This tuning build establishes the low-number combat scale used by the first real
 ## Notes
 Existing saves can still restore their saved roster. Use New Game to test the one-character baseline.
 
+# Astral Shift 0.6.8.1 - Starting Character and Recruitment Flow
+
+## Player flow
+
+1. New Game opens a choice between Warrior, Rogue, and Mage.
+2. The campaign begins with only the selected character unlocked and active.
+3. Activating the NPC Camp checkpoint opens a choice between the two remaining starter characters.
+4. Completing The Wolf Problem recruits Hunter.
+5. Defeating the first boss recruits the final unselected starter character.
+6. The roster ends with four unlocked characters, three active slots, and one reserve when the intended sequence is followed.
+
+## Save support
+
+The save file now records the chosen starter, camp recruit, Hunter recruitment, and final starter recruitment. Older saves infer this state from their roster when possible.
+
+## Developer tools
+
+Runtime Tools includes controls to restart with any starter and grant each recruitment stage for testing.
 
 ### Validate
 ```bash
