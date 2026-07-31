@@ -9,9 +9,11 @@ export const experienceCurves: readonly ExperienceCurveDefinition[] = [
     id: 'curve.standard-early',
     maximumLevel: 50,
     experienceRequiredForLevel(level: number): number {
-      const authored = [0, 10, 25, 45, 70];
+      // Per-level requirements. Cumulative totals are 10, 25, 45, and 70 XP
+      // for levels 2 through 5, matching the first-level progression plan.
+      const authored = [0, 10, 15, 20, 25, 32, 40, 50, 62, 75, 90];
       if (level < authored.length) return authored[level];
-      return Math.round(70 + Math.pow(level - 4, 1.35) * 28);
+      return Math.round(90 + Math.pow(level - 10, 1.22) * 18);
     },
   },
 ];
@@ -19,31 +21,31 @@ export const experienceCurves: readonly ExperienceCurveDefinition[] = [
 export const characterGrowthPackages: readonly CharacterGrowthPackageDefinition[] = [
   {
     id: 'growth.vanguard',
-    maximumHealthPerLevel: 1.0,
-    attackPerLevel: 0.08,
-    armorPerLevel: 0.02,
-    movementSpeedPerLevel: 0.02,
+    maximumHealthPerLevel: 0.75,
+    attackPerLevel: 0.04,
+    armorPerLevel: 0.01,
+    movementSpeedPerLevel: 0.01,
   },
   {
     id: 'growth.warden',
-    maximumHealthPerLevel: 0.5,
-    attackPerLevel: 0.10,
-    armorPerLevel: 0.01,
-    movementSpeedPerLevel: 0.015,
+    maximumHealthPerLevel: 0.4,
+    attackPerLevel: 0.07,
+    armorPerLevel: 0.005,
+    movementSpeedPerLevel: 0.012,
   },
   {
     id: 'growth.hunter-mara',
-    maximumHealthPerLevel: 0.7,
-    attackPerLevel: 0.09,
-    armorPerLevel: 0.01,
-    movementSpeedPerLevel: 0.025,
+    maximumHealthPerLevel: 0.6,
+    attackPerLevel: 0.05,
+    armorPerLevel: 0.006,
+    movementSpeedPerLevel: 0.018,
   },
   {
     id: 'growth.tempest',
-    maximumHealthPerLevel: 0.7,
-    attackPerLevel: 0.10,
-    armorPerLevel: 0.01,
-    movementSpeedPerLevel: 0.035,
+    maximumHealthPerLevel: 0.5,
+    attackPerLevel: 0.06,
+    armorPerLevel: 0.005,
+    movementSpeedPerLevel: 0.025,
   },
 ];
 

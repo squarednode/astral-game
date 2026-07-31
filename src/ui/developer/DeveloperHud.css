@@ -649,3 +649,20 @@
 .runtime-dev-danger button { border-color:rgba(255,111,105,.55); background:rgba(255,111,105,.13); }
 body.playtest-mode .developer-hud-compact { display:none; }
 @media(max-width:700px){.runtime-dev-grid,.runtime-dev-save-grid{grid-template-columns:1fr}.runtime-dev-header{align-items:flex-start;flex-direction:column}}
+
+.progression-dev-projections {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0;
+  padding: 7px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px;
+  background: rgba(0,0,0,.2);
+}
+.progression-dev-projections > div {
+  display: grid;
+  grid-template-columns: 44px 88px 1fr;
+  gap: 7px;
+  font-size: 11px;
+}
+.progression-dev-projections span { opacity: .78; }

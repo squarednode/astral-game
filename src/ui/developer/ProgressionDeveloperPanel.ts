@@ -5,6 +5,7 @@ export interface ProgressionDeveloperPanelOptions {
   progression(): CharacterProgressionRuntime;
   experience(): ExperienceRuntime;
   characterName(id: string): string;
+  characterBaseStats(id: string): { maximumHealth: number; attack: number; movementSpeed: number };
   skillSnapshot(id: string): CharacterSkillSnapshot | null;
   unlockAvailableSkills(id: string): number;
   resetSkills(id: string): void;
@@ -37,6 +38,13 @@ export class ProgressionDeveloperPanel {
         <div class="progression-dev-grid">
           ${snapshots.map(snapshot => {
             const skills = this.options.skillSnapshot(snapshot.characterId);
+            const base = this.options.characterBaseStats(snapshot.characterId);
+            const projectionLevels = [1, 5, 10];
+            const projections = projectionLevels.map(level => {
+              const growth = this.options.progression().projectedGrowth(snapshot.characterId, level);
+              const totalXp = this.options.progression().totalExperienceRequiredForLevel(snapshot.characterId, level);
+              return { level, totalXp, health: base.maximumHealth + growth.maximumHealth, attack: base.attack + growth.attack, speed: base.movementSpeed + growth.movementSpeed };
+            });
             const passiveRows = Object.entries(skills?.passiveModifiers ?? {})
               .filter(([, value]) => Number(value) !== 0)
               .map(([key, value]) => `${key}: ${Number(value).toFixed(2)}`)
@@ -54,6 +62,9 @@ export class ProgressionDeveloperPanel {
                 <dt>Armor growth</dt><dd>+${snapshot.growth.armor.toFixed(1)}</dd>
                 <dt>Passives</dt><dd>${passiveRows}</dd>
               </dl>
+              <div class="progression-dev-projections">
+                ${projections.map(item => `<div><b>Lv ${item.level}</b><span>${item.totalXp} total XP</span><span>${item.health.toFixed(1)} HP · ${item.attack.toFixed(2)} ATK · ${item.speed.toFixed(2)} SPD</span></div>`).join('')}
+              </div>
               <div class="progression-dev-actions">
                 <button data-action="level" data-id="${snapshot.characterId}" data-level="${snapshot.level + 1}">Level +1</button>
                 <button data-action="unlock-skills" data-id="${snapshot.characterId}">Unlock Available</button>

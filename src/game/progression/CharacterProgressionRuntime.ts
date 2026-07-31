@@ -115,7 +115,38 @@ export class CharacterProgressionRuntime {
       Math.max(1, Math.floor(level)),
     );
     state.experience = 0;
+    state.totalExperience = this.totalExperienceRequiredForLevel(characterId, state.level);
     this.changed();
+  }
+
+
+  initializeRecruitAtLevel(characterId: string, level: number): void {
+    const state = this.states.get(characterId);
+    const definition = this.definitions.get(characterId);
+    if (!state || !definition) return;
+
+    const curve = this.requireCurve(definition.curveId);
+    const targetLevel = Math.min(curve.maximumLevel, Math.max(1, Math.floor(level)));
+    state.level = targetLevel;
+    state.experience = 0;
+    state.totalExperience = this.totalExperienceRequiredForLevel(characterId, targetLevel);
+    this.changed();
+  }
+
+  totalExperienceRequiredForLevel(characterId: string, level: number): number {
+    const definition = this.definitions.get(characterId);
+    if (!definition) return 0;
+    const curve = this.requireCurve(definition.curveId);
+    const targetLevel = Math.min(curve.maximumLevel, Math.max(1, Math.floor(level)));
+    let total = 0;
+    for (let current = 1; current < targetLevel; current += 1) {
+      total += curve.experienceRequiredForLevel(current);
+    }
+    return total;
+  }
+
+  projectedGrowth(characterId: string, level: number): CharacterGrowthModifiers {
+    return this.calculateGrowthModifiersAtLevel(characterId, level);
   }
 
   reset(characterId: string): void {
@@ -204,8 +235,9 @@ export class CharacterProgressionRuntime {
         0,
         Math.floor(saved.experience),
       );
+      const levelFloor = this.totalExperienceRequiredForLevel(id, state.level);
       state.totalExperience = Math.max(
-        state.experience,
+        levelFloor + state.experience,
         Math.floor(saved.totalExperience),
       );
     }
@@ -228,10 +260,19 @@ export class CharacterProgressionRuntime {
       };
     }
 
-    const growth = this.requireGrowth(
-      definition.growthPackageId,
-    );
-    const gainedLevels = Math.max(0, state.level - 1);
+    return this.calculateGrowthModifiersAtLevel(characterId, state.level);
+  }
+
+  private calculateGrowthModifiersAtLevel(
+    characterId: string,
+    level: number,
+  ): CharacterGrowthModifiers {
+    const definition = this.definitions.get(characterId);
+    if (!definition) {
+      return { maximumHealth: 0, attack: 0, armor: 0, movementSpeed: 0 };
+    }
+    const growth = this.requireGrowth(definition.growthPackageId);
+    const gainedLevels = Math.max(0, Math.floor(level) - 1);
 
     return {
       maximumHealth:

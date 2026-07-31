@@ -2006,6 +2006,14 @@ const progressionDeveloperPanel = new ProgressionDeveloperPanel(
     progression: () => progressionRuntime,
     experience: () => experienceRuntime,
     characterName: (id: string) => party.find(character => character.id === id)?.name ?? id,
+    characterBaseStats: (id: string) => {
+      const character = party.find(candidate => candidate.id === id);
+      return {
+        maximumHealth: character?.maxHp ?? 0,
+        attack: character?.attackDamage ?? 0,
+        movementSpeed: character?.speed ?? 0,
+      };
+    },
     skillSnapshot: (id: string) => skillTreeRuntime.snapshot(id),
     unlockAvailableSkills: (id: string) => skillTreeRuntime.unlockAllAvailable(id),
     resetSkills: (id: string) => skillTreeRuntime.reset(id),
@@ -2057,7 +2065,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.8.1',
+    buildVersion: '0.6.8.2',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2073,7 +2081,7 @@ function createSaveData(): AstralSaveData {
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.8.1',
+      buildVersion: '0.6.8.2',
     },
   };
 }
@@ -2256,14 +2264,33 @@ function beginNewCampaignSelection(): void {
   });
 }
 
+function prepareRecruitProgression(characterId: string): number {
+  const leaderId = rosterRuntime.leaderId() ?? active.id;
+  const leaderLevel = progressionRuntime.snapshot(leaderId)?.level ?? 1;
+  progressionRuntime.initializeRecruitAtLevel(characterId, leaderLevel);
+  skillTreeRuntime.reset(characterId);
+  for (const slot of [1, 2, 3, 4] as AbilitySlot[]) {
+    skillTreeRuntime.assign(characterId, slot, null);
+  }
+  const recruit = party.find(character => character.id === characterId);
+  if (recruit) {
+    recruit.equipment = {};
+    recruit.hp = hpMax(recruit);
+    recruit.shieldRemaining = 0;
+  }
+  rebuildCharacterAbilityLoadout(characterId);
+  return leaderLevel;
+}
+
 function grantCampRecruit(characterId: StarterCharacterId): boolean {
   if (!recruitmentFlow.starterId || recruitmentFlow.campRecruitId) return false;
   if (characterId === recruitmentFlow.starterId || !starterCharacterIds.includes(characterId)) return false;
+  const recruitLevel = prepareRecruitProgression(characterId);
   if (!rosterRuntime.unlock(characterId, true)) return false;
   recruitmentFlow.campRecruitId = characterId;
   refreshHud();
   renderPartyManagement();
-  feed(`${party.find(character => character.id === characterId)?.name ?? characterId} joined the party at camp.`, 'success');
+  feed(`${party.find(character => character.id === characterId)?.name ?? characterId} joined the party at camp at Level ${recruitLevel}.`, 'success');
   saveCampaign('autosave', true);
   return true;
 }
@@ -2294,13 +2321,14 @@ function recruitFinalStarterFromBoss(): boolean {
   if (!recruitmentFlow.starterId || recruitmentFlow.finalRecruitId) return false;
   const finalId = starterCharacterIds.find(id => id !== recruitmentFlow.starterId && id !== recruitmentFlow.campRecruitId);
   if (!finalId) return false;
+  const recruitLevel = prepareRecruitProgression(finalId);
   const changed = rosterRuntime.unlock(finalId, true);
   recruitmentFlow.finalRecruitId = finalId;
   const recruit = party.find(character => character.id === finalId);
   feed(
     rosterRuntime.isActive(finalId)
-      ? `${recruit?.name ?? finalId} joined the active party after the boss victory.`
-      : `${recruit?.name ?? finalId} joined the roster and is waiting in reserve.`,
+      ? `${recruit?.name ?? finalId} joined the active party at Level ${recruitLevel} after the boss victory.`
+      : `${recruit?.name ?? finalId} joined the roster at Level ${recruitLevel} and is waiting in reserve.`,
     'success',
   );
   saveCampaign('autosave', true);
@@ -2409,9 +2437,10 @@ questRuntime.subscribe(() => {
       sourceType: 'quest',
     });
     recruitHunterFromQuest();
+    const recruitLevel = prepareRecruitProgression('hunter-mara');
     if (rosterRuntime.unlock('hunter-mara', true)) {
       const joinedActive = rosterRuntime.isActive('hunter-mara');
-      feed(joinedActive ? 'Hunter Mara joined the active party.' : 'Hunter Mara joined the roster and is waiting in reserve.', 'success');
+      feed(joinedActive ? `Hunter joined the active party at Level ${recruitLevel}.` : `Hunter joined the roster at Level ${recruitLevel} and is waiting in reserve.`, 'success');
       saveCampaign('autosave', true);
     }
   }
@@ -2672,7 +2701,7 @@ const runtimeDeveloperPanel = new RuntimeDeveloperPanel(
     recruitment: () => ({ ...recruitmentFlow }),
     chooseStarter: id => startNewCampaign(id as StarterCharacterId),
     chooseCampRecruit: id => grantCampRecruit(id as StarterCharacterId),
-    grantHunter: () => { recruitHunterFromQuest(); rosterRuntime.unlock('hunter-mara', true); refreshHud(); renderPartyManagement(); },
+    grantHunter: () => { recruitHunterFromQuest(); prepareRecruitProgression('hunter-mara'); rosterRuntime.unlock('hunter-mara', true); refreshHud(); renderPartyManagement(); },
     grantFinalRecruit: () => { recruitFinalStarterFromBoss(); },
     resetSession: () => startNewCampaign(recruitmentFlow.starterId ?? 'vanguard'),
     refresh: () => {

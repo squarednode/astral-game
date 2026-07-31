@@ -5790,6 +5790,31 @@ The save file now records the chosen starter, camp recruit, Hunter recruitment, 
 
 Runtime Tools includes controls to restart with any starter and grant each recruitment stage for testing.
 
+# Astral Shift 0.6.8.2 - Character Growth and XP Tuning
+
+## Progression curve
+- Level 2 requires 10 XP total.
+- Level 3 requires 25 XP total.
+- Level 4 requires 45 XP total.
+- Level 5 requires 70 XP total.
+- Later levels use restrained authored per-level requirements before transitioning to a scalable curve.
+
+## Character growth
+- Warrior emphasizes health and armor with restrained damage growth.
+- Rogue emphasizes attack and movement speed.
+- Hunter emphasizes balanced health, projectile damage, and mobility.
+- Mage emphasizes damage growth while retaining the lowest health growth.
+
+## Recruitment catch-up
+- Newly recruited characters join at the current party leader's level.
+- Recruits start with 0 XP toward their next level.
+- Recruits do not inherit skills, passives, equipment, or skill-slot assignments.
+- Once recruited, active and reserve characters receive full-roster XP equally.
+
+## Developer tools
+The Progression page now shows level 1, level 5, and level 10 projections for total XP, health, attack, and movement speed.
+
+
 ### Validate
 ```bash
 npm run build
