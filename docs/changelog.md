@@ -5886,6 +5886,37 @@ The Progression developer page now reports:
 
 The temporary rectangular skill screen also displays current path spending and accurate lock reasons. The circular constellation renderer remains scheduled for 0.6.8.5.
 
+# Astral Shift 0.6.8.5 — Radial Constellation UI
+
+This release replaces the temporary skill-node list with the first complete radial constellation screen.
+
+## Layout
+- Scrollable roster column for unlocked current and future characters.
+- Selected-character header with level and available skill points.
+- Four visual equipped-skill slots at the top of the screen.
+- Compact four-ring constellation with three consistent path sectors.
+- Contextual inspector panel and cursor hover card.
+
+## Interaction
+- Hovering a node opens a quick preview card.
+- Clicking a node pins full details without spending points.
+- Unlocking always requires a second explicit confirmation.
+- Number keys 1–4 select a loadout slot.
+- Learned active skills can be assigned to any slot from the pinned inspector.
+- Only one ultimate remains enforceable by the 0.6.8.4 runtime.
+- Escape closes confirmation, then pinned details, then the skill screen.
+
+## Visual states
+- Available nodes pulse and illuminate their connected route.
+- Unlocked nodes and links retain their path color.
+- Unaffordable nodes remain visible but muted.
+- Inaccessible nodes and unrelated routes are dimmed.
+- Equipped nodes show their assigned slot number.
+- Ultimates use a larger diamond treatment.
+
+No save schema change is required for this UI-only release.
+
+
 ### Validate
 ```bash
 npm run build
