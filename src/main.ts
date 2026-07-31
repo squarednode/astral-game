@@ -2232,6 +2232,10 @@ function startNewCampaign(starterId: StarterCharacterId): void {
   input.setContext('gameplay');
   refreshHud();
   renderPartyManagement();
+  // Replace any older campaign autosave immediately. Without this, Continue
+  // can select a stale pre-0.6.8 save whose roster still contains three active
+  // characters before the player reaches the first checkpoint.
+  saveCampaign('autosave', true);
   feed(`${active.name} begins the journey.`, 'success');
 }
 
@@ -2334,6 +2338,11 @@ gameShell = new GameShell(ui.getLayer('menus'), {
   onSettings: () => settingsMenu.setOpen(true),
   onReturnToTitle: () => {
     settingsMenu.setOpen(false);
+    // Continue should represent the current campaign, not whichever slot was
+    // last written earlier in the session. Capture all roster, recruitment,
+    // checkpoint, skill, quest, equipment, and merchant state before showing
+    // the title whenever saving is currently safe.
+    if (canSaveCampaign()) saveCampaign('autosave', true);
     gameShell?.showTitle();
   },
   onExit: exitGame,
