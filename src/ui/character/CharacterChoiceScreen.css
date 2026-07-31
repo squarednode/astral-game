@@ -1,0 +1,21 @@
+.character-choice-backdrop { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 32px; background: rgba(3, 8, 18, .88); backdrop-filter: blur(8px); pointer-events: auto; }
+.character-choice-backdrop[hidden] { display: none; }
+.character-choice-panel { width: min(1040px, 96vw); max-height: 92vh; overflow: auto; padding: 28px; border: 1px solid rgba(125, 196, 255, .42); border-radius: 18px; background: linear-gradient(155deg, rgba(14, 25, 48, .98), rgba(7, 12, 26, .98)); box-shadow: 0 28px 80px rgba(0,0,0,.55); color: #eef7ff; }
+.character-choice-header { text-align: center; margin-bottom: 22px; }
+.character-choice-header h1 { margin: 0 0 6px; font-size: clamp(28px, 4vw, 46px); letter-spacing: .04em; }
+.character-choice-header p { margin: 0; color: #a9bdd4; }
+.character-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.character-choice-card { min-height: 300px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; border: 1px solid rgba(130, 165, 205, .28); border-radius: 14px; background: rgba(13, 24, 44, .88); color: inherit; cursor: pointer; text-align: center; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.character-choice-card:hover, .character-choice-card:focus-visible { transform: translateY(-3px); border-color: var(--character-accent); outline: none; }
+.character-choice-card.is-selected { border-color: var(--character-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--character-accent) 35%, transparent), 0 16px 36px rgba(0,0,0,.35); }
+.character-choice-icon { width: 64px; height: 64px; display: grid; place-items: center; border: 2px solid var(--character-accent); border-radius: 50%; font-size: 30px; font-weight: 800; background: color-mix(in srgb, var(--character-accent) 18%, #101b31); }
+.character-choice-card strong { font-size: 24px; }
+.character-choice-card small { color: #a9bdd4; }
+.character-choice-stats { margin-top: 5px; font-weight: 800; color: #fff; }
+.character-choice-attack { color: var(--character-accent); font-weight: 700; }
+.character-choice-card p { margin: 7px 0 0; color: #c8d5e4; line-height: 1.45; }
+.character-choice-actions { display: flex; justify-content: center; gap: 12px; margin-top: 24px; }
+.character-choice-actions button { min-width: 150px; padding: 11px 18px; border: 1px solid rgba(135, 179, 221, .45); border-radius: 9px; background: rgba(25, 43, 70, .92); color: #edf7ff; font-weight: 750; cursor: pointer; }
+.character-choice-actions .character-choice-confirm { background: linear-gradient(135deg, #27699f, #4a3b9e); }
+.character-choice-actions button:disabled { opacity: .4; cursor: default; }
+@media (max-width: 780px) { .character-choice-grid { grid-template-columns: 1fr; } .character-choice-card { min-height: 0; } }

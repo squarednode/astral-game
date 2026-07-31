@@ -24,6 +24,11 @@ export interface RuntimeDeveloperPanelOptions {
   clearCheckpoint(): void;
   playtestMode(): boolean;
   setPlaytestMode(enabled: boolean): void;
+  recruitment(): { starterId: string | null; campRecruitId: string | null; hunterRecruited: boolean; finalRecruitId: string | null };
+  chooseStarter(id: string): void;
+  chooseCampRecruit(id: string): boolean;
+  grantHunter(): void;
+  grantFinalRecruit(): void;
   resetSession(): void;
   refresh(): void;
 }
@@ -43,12 +48,36 @@ export class RuntimeDeveloperPanel {
     const slots = this.options.saveSlots();
     const slotMap = new Map(slots.map(slot => [slot.slotId, slot]));
     const merchants = this.options.merchantStock();
+    const recruitment = this.options.recruitment();
     this.host.innerHTML = `
       <section class="runtime-dev-panel">
         <header class="runtime-dev-header">
           <div><strong>GAMEPLAY RUNTIME TOOLS</strong><small>Quest, commerce, save, checkpoint, and playtest controls</small></div>
           <label class="runtime-dev-toggle"><input type="checkbox" data-action="playtest" ${this.options.playtestMode() ? 'checked' : ''}> Playtest mode</label>
         </header>
+
+
+        <details open>
+          <summary>RECRUITMENT FLOW <span>${recruitment.starterId ?? 'no starter'}</span></summary>
+          <div class="runtime-dev-toolbar">
+            <button data-action="starter" data-character="vanguard">Start Warrior</button>
+            <button data-action="starter" data-character="tempest">Start Rogue</button>
+            <button data-action="starter" data-character="warden">Start Mage</button>
+          </div>
+          <div class="runtime-dev-list">
+            <div><span>Starter</span><b>${recruitment.starterId ?? 'not selected'}</b></div>
+            <div><span>Camp recruit</span><b>${recruitment.campRecruitId ?? 'pending'}</b></div>
+            <div><span>Hunter</span><b>${recruitment.hunterRecruited ? 'recruited' : 'locked'}</b></div>
+            <div><span>Final starter</span><b>${recruitment.finalRecruitId ?? 'locked'}</b></div>
+          </div>
+          <div class="runtime-dev-toolbar">
+            <button data-action="camp-recruit" data-character="vanguard">Camp Warrior</button>
+            <button data-action="camp-recruit" data-character="tempest">Camp Rogue</button>
+            <button data-action="camp-recruit" data-character="warden">Camp Mage</button>
+            <button data-action="grant-hunter">Grant Hunter</button>
+            <button data-action="grant-final">Grant Final Starter</button>
+          </div>
+        </details>
 
         <details open>
           <summary>QUESTS <span>${quests.length}</span></summary>
@@ -148,6 +177,10 @@ export class RuntimeDeveloperPanel {
       case 'checkpoint-teleport': this.options.teleportToCheckpoint(); break;
       case 'checkpoint-respawn': this.options.forceRespawn(); break;
       case 'checkpoint-clear': this.options.clearCheckpoint(); break;
+      case 'starter': if (button.dataset.character && confirm('Restart with this starter?')) this.options.chooseStarter(button.dataset.character); break;
+      case 'camp-recruit': if (button.dataset.character) this.options.chooseCampRecruit(button.dataset.character); break;
+      case 'grant-hunter': this.options.grantHunter(); break;
+      case 'grant-final': this.options.grantFinalRecruit(); break;
       case 'reset-session': if (confirm('Reset the current session to a new-game state?')) this.options.resetSession(); break;
     }
     this.options.refresh();

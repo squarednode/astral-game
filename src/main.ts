@@ -13,6 +13,7 @@ import './ui/encounters/EncounterTracker.css';
 import './ui/progression/ProgressionHud.css';
 import './ui/skills/SkillTreeScreen.css';
 import './ui/shell/GameShell.css';
+import './ui/character/CharacterChoiceScreen.css';
 import {
   ArcRotateCamera,
   Color3,
@@ -163,6 +164,8 @@ import type { StatusComponent } from './game/status';
 import { GameplayHud } from './ui/gameplay';
 import { SettingsMenu } from './ui/menus';
 import { GameShell } from './ui/shell';
+import { CharacterChoiceScreen } from './ui/character/CharacterChoiceScreen';
+import type { CharacterChoiceOption } from './ui/character/CharacterChoiceScreen';
 import { SaveRuntime } from './game/save';
 import type { AstralSaveData, SaveSlotId } from './game/save';
 import type { GameplayHudSnapshot } from './ui/gameplay';
@@ -932,6 +935,22 @@ let swapInputCooldown = 0;
 let inventoryOpen = false;
 let gameOver = false;
 let gameShell: GameShell | null = null;
+let characterChoiceScreen: CharacterChoiceScreen | null = null;
+
+type StarterCharacterId = 'vanguard' | 'tempest' | 'warden';
+interface RecruitmentFlowState {
+  starterId: StarterCharacterId | null;
+  campRecruitId: StarterCharacterId | null;
+  hunterRecruited: boolean;
+  finalRecruitId: StarterCharacterId | null;
+}
+const starterCharacterIds: readonly StarterCharacterId[] = ['vanguard', 'tempest', 'warden'];
+let recruitmentFlow: RecruitmentFlowState = {
+  starterId: null,
+  campRecruitId: null,
+  hunterRecruited: false,
+  finalRecruitId: null,
+};
 let sessionPlaytimeSeconds = 0;
 let wave = 1;
 let kills = 0;
@@ -1624,6 +1643,7 @@ function activateCheckpoint(checkpointId: string, notify = true): boolean {
     );
   }
   saveCampaign('autosave', true);
+  if (checkpointId === 'checkpoint.npc-camp') queueMicrotask(() => offerCampRecruitChoice());
   return true;
 }
 
@@ -2037,7 +2057,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.8.0',
+    buildVersion: '0.6.8.1',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2046,13 +2066,14 @@ function createSaveData(): AstralSaveData {
     equipmentByCharacter: JSON.parse(JSON.stringify(campaignEquipmentSnapshot())),
     merchantStock: JSON.parse(JSON.stringify(Object.fromEntries(merchantStock))),
     merchantRefreshAt: Object.fromEntries(merchantRefreshAt),
+    recruitmentFlow: { ...recruitmentFlow },
     summary: {
       savedAt,
       playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.8.0',
+      buildVersion: '0.6.8.1',
     },
   };
 }
@@ -2099,6 +2120,25 @@ function applySaveData(data: AstralSaveData): boolean {
       character.equipment = { ...((data.equipmentByCharacter?.[character.id] ?? {}) as CharacterState['equipment']) };
       rebuildCharacterAbilityLoadout(character.id);
     }
+    const savedRecruitment = data.recruitmentFlow;
+    if (savedRecruitment) {
+      recruitmentFlow = {
+        starterId: starterCharacterIds.includes(savedRecruitment.starterId as StarterCharacterId) ? savedRecruitment.starterId as StarterCharacterId : null,
+        campRecruitId: starterCharacterIds.includes(savedRecruitment.campRecruitId as StarterCharacterId) ? savedRecruitment.campRecruitId as StarterCharacterId : null,
+        hunterRecruited: Boolean(savedRecruitment.hunterRecruited),
+        finalRecruitId: starterCharacterIds.includes(savedRecruitment.finalRecruitId as StarterCharacterId) ? savedRecruitment.finalRecruitId as StarterCharacterId : null,
+      };
+    } else {
+      const roster = rosterRuntime.snapshot();
+      const unlockedStarters = starterCharacterIds.filter(id => roster.unlockedCharacterIds.includes(id));
+      const leader = roster.leaderId as StarterCharacterId | null;
+      recruitmentFlow = {
+        starterId: leader && starterCharacterIds.includes(leader) ? leader : unlockedStarters[0] ?? null,
+        campRecruitId: unlockedStarters.find(id => id !== leader) ?? null,
+        hunterRecruited: roster.unlockedCharacterIds.includes('hunter-mara'),
+        finalRecruitId: unlockedStarters.length >= 3 ? unlockedStarters.find(id => id !== leader && id !== unlockedStarters.find(candidate => candidate !== leader)) ?? null : null,
+      };
+    }
     sessionPlaytimeSeconds = Math.max(0, Number(data.playtimeSeconds) || 0);
     refreshWalletStatus();
     renderPartyManagement();
@@ -2132,7 +2172,41 @@ function freshInitialCampaignData(): AstralSaveData {
   return JSON.parse(initialCampaignDataJson) as AstralSaveData;
 }
 
-function startNewCampaign(): void {
+function starterChoiceOptions(ids: readonly StarterCharacterId[]): CharacterChoiceOption[] {
+  return ids.flatMap(id => {
+    const definition = party.find(character => character.id === id);
+    if (!definition) return [];
+    const accent = id === 'vanguard' ? '#e14d40' : id === 'tempest' ? '#ba70ff' : '#51b8ff';
+    return [{
+      id,
+      name: definition.name,
+      role: definition.role,
+      hp: definition.maxHp,
+      damage: definition.attackDamage,
+      attack: definition.basicAttackName,
+      summary: definition.identitySummary,
+      color: accent,
+    }];
+  });
+}
+
+function applySingleStarterRoster(starterId: StarterCharacterId): void {
+  rosterRuntime.deserialize({
+    version: 1,
+    leaderId: starterId,
+    unlockedCharacterIds: [starterId],
+    activeCharacterIds: [starterId],
+  });
+  activeIndex = Math.max(0, party.findIndex(character => character.id === starterId));
+  active = party[activeIndex];
+  party.forEach(character => {
+    character.hp = hpMax(character);
+    character.shieldRemaining = 0;
+  });
+  playerBody.material = mat("player", active.color, 0.08);
+}
+
+function startNewCampaign(starterId: StarterCharacterId): void {
   if (!initialCampaignDataJson) {
     feed('New-game data is not ready. Please reload the game.', 'warning');
     return;
@@ -2141,13 +2215,92 @@ function startNewCampaign(): void {
   const started = applySaveData(freshInitialCampaignData());
   if (!started) return;
 
+  recruitmentFlow = {
+    starterId,
+    campRecruitId: null,
+    hunterRecruited: false,
+    finalRecruitId: null,
+  };
+  applySingleStarterRoster(starterId);
   checkpointRuntime.activate('checkpoint.entrance');
   sessionPlaytimeSeconds = 0;
   gameOver = false;
   previousWolfQuestState = questRuntime.state('quest.wolf-problem');
+  characterChoiceScreen?.close();
   gameShell?.close();
+  gameplayHud.setGameplayVisible(true);
   input.setContext('gameplay');
-  feed('New game started.', 'success');
+  refreshHud();
+  renderPartyManagement();
+  feed(`${active.name} begins the journey.`, 'success');
+}
+
+function beginNewCampaignSelection(): void {
+  gameShell?.close();
+  gameplayHud.setGameplayVisible(false);
+  input.setContext('settings');
+  characterChoiceScreen?.open({
+    title: 'Choose Your First Character',
+    subtitle: 'Your other companions will be recruited during the first level.',
+    confirmLabel: 'Begin Journey',
+    options: starterChoiceOptions(starterCharacterIds),
+    allowCancel: true,
+    onChoose: id => startNewCampaign(id as StarterCharacterId),
+    onCancel: () => {
+      gameShell?.showTitle();
+    },
+  });
+}
+
+function grantCampRecruit(characterId: StarterCharacterId): boolean {
+  if (!recruitmentFlow.starterId || recruitmentFlow.campRecruitId) return false;
+  if (characterId === recruitmentFlow.starterId || !starterCharacterIds.includes(characterId)) return false;
+  if (!rosterRuntime.unlock(characterId, true)) return false;
+  recruitmentFlow.campRecruitId = characterId;
+  refreshHud();
+  renderPartyManagement();
+  feed(`${party.find(character => character.id === characterId)?.name ?? characterId} joined the party at camp.`, 'success');
+  saveCampaign('autosave', true);
+  return true;
+}
+
+function offerCampRecruitChoice(): void {
+  if (!recruitmentFlow.starterId || recruitmentFlow.campRecruitId || characterChoiceScreen?.isOpen()) return;
+  const choices = starterCharacterIds.filter(id => id !== recruitmentFlow.starterId);
+  gameplayHud.setGameplayVisible(false);
+  input.setContext('settings');
+  characterChoiceScreen?.open({
+    title: 'Choose a Camp Companion',
+    subtitle: 'One of the remaining adventurers will join now. The other can be found later.',
+    confirmLabel: 'Recruit Companion',
+    options: starterChoiceOptions(choices),
+    onChoose: id => {
+      grantCampRecruit(id as StarterCharacterId);
+      gameplayHud.setGameplayVisible(true);
+      input.setContext('gameplay');
+    },
+  });
+}
+
+function recruitHunterFromQuest(): void {
+  recruitmentFlow.hunterRecruited = true;
+}
+
+function recruitFinalStarterFromBoss(): boolean {
+  if (!recruitmentFlow.starterId || recruitmentFlow.finalRecruitId) return false;
+  const finalId = starterCharacterIds.find(id => id !== recruitmentFlow.starterId && id !== recruitmentFlow.campRecruitId);
+  if (!finalId) return false;
+  const changed = rosterRuntime.unlock(finalId, true);
+  recruitmentFlow.finalRecruitId = finalId;
+  const recruit = party.find(character => character.id === finalId);
+  feed(
+    rosterRuntime.isActive(finalId)
+      ? `${recruit?.name ?? finalId} joined the active party after the boss victory.`
+      : `${recruit?.name ?? finalId} joined the roster and is waiting in reserve.`,
+    'success',
+  );
+  saveCampaign('autosave', true);
+  return changed;
 }
 
 function continueCampaign(): void {
@@ -2166,10 +2319,12 @@ function exitGame(): void {
   }, 50);
 }
 
+characterChoiceScreen = new CharacterChoiceScreen(ui.getLayer('menus'));
+
 gameShell = new GameShell(ui.getLayer('menus'), {
   summaries: () => saveRuntime.summaries(),
   onContinue: continueCampaign,
-  onNewGame: startNewCampaign,
+  onNewGame: beginNewCampaignSelection,
   onSave: slotId => saveCampaign(slotId),
   onLoad: slotId => loadCampaign(slotId),
   onRestart: () => {
@@ -2244,6 +2399,7 @@ questRuntime.subscribe(() => {
       sourceId: 'quest.wolf-problem',
       sourceType: 'quest',
     });
+    recruitHunterFromQuest();
     if (rosterRuntime.unlock('hunter-mara', true)) {
       const joinedActive = rosterRuntime.isActive('hunter-mara');
       feed(joinedActive ? 'Hunter Mara joined the active party.' : 'Hunter Mara joined the roster and is waiting in reserve.', 'success');
@@ -2504,7 +2660,12 @@ const runtimeDeveloperPanel = new RuntimeDeveloperPanel(
       document.body.classList.toggle('playtest-mode', enabled);
       if (enabled) developerHud.setOpen(false);
     },
-    resetSession: () => startNewCampaign(),
+    recruitment: () => ({ ...recruitmentFlow }),
+    chooseStarter: id => startNewCampaign(id as StarterCharacterId),
+    chooseCampRecruit: id => grantCampRecruit(id as StarterCharacterId),
+    grantHunter: () => { recruitHunterFromQuest(); rosterRuntime.unlock('hunter-mara', true); refreshHud(); renderPartyManagement(); },
+    grantFinalRecruit: () => { recruitFinalStarterFromBoss(); },
+    resetSession: () => startNewCampaign(recruitmentFlow.starterId ?? 'vanguard'),
     refresh: () => {
       refreshHud();
       questTracker.render();
@@ -4864,6 +5025,7 @@ function killEnemy(enemy: Enemy): void {
     sourceType: 'enemy',
   });
   generateLoot(enemy);
+  if (enemy.definition.role === 'boss') recruitFinalStarterFromBoss();
   vfxRing(enemy.mesh.position, enemy.elite ? new Color3(1,.35,.7) : new Color3(.5,1,.5), enemy.elite ? 4 : 2, .35);
   enemies = enemies.filter(e => e !== enemy);
   enemyRuntimeWatchdog.remove(enemy.entityId);
