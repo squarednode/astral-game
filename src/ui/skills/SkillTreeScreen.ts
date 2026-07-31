@@ -53,6 +53,7 @@ export class SkillTreeScreen {
   private selectedSlot: SkillSlot = 1;
   private pendingUnlockNodeId: string | null = null;
   private hoverNodeId: string | null = null;
+  private openSlotPicker: SkillSlot | null = null;
 
   constructor(private readonly host: HTMLDivElement, private readonly actions: SkillTreeScreenActions) {
     host.classList.add('skill-tree-host', 'hidden');
@@ -70,6 +71,7 @@ export class SkillTreeScreen {
       this.selectedNodeId = null;
       this.pendingUnlockNodeId = null;
       this.hoverNodeId = null;
+      this.openSlotPicker = null;
     }
   }
 
@@ -158,6 +160,7 @@ export class SkillTreeScreen {
         <div class="skill-loadout-slots" aria-label="Equipped skill slots">
           ${slots.map(slot => this.loadoutSlot(character, slot)).join('')}
         </div>
+        ${this.openSlotPicker ? this.skillSlotPicker(character, this.openSlotPicker) : ''}
       </section>
       <section class="skill-constellation-workspace">
         <div class="skill-path-key">
@@ -179,9 +182,31 @@ export class SkillTreeScreen {
     return `<button type="button" class="skill-loadout-slot ${slot === this.selectedSlot ? 'selected' : ''} ${node?.isUltimate ? 'ultimate' : ''}" data-action="select-slot" data-slot="${slot}">
       <span class="skill-slot-number">${slot}</span>
       <span class="skill-slot-icon ${node ? `branch-${node.branch}` : ''}">${node ? this.nodeGlyph(node) : '+'}</span>
-      <span class="skill-slot-copy"><small>${node?.isUltimate ? 'Ultimate' : `Skill ${slot}`}</small><strong>${this.escape(node?.name ?? 'Empty Slot')}</strong></span>
-      ${node ? '<i>Equipped</i>' : '<i>Select a learned skill</i>'}
+      <span class="skill-slot-copy"><small>${node?.isUltimate ? 'Ultimate' : `Skill ${slot}`}</small><strong>${this.escape(node ? this.skillDisplayName(character, node) : 'Empty Slot')}</strong></span>
+      ${node ? '<i>Click to change ▾</i>' : '<i>Select a learned skill ▾</i>'}
     </button>`;
+  }
+
+  private skillSlotPicker(character: SkillTreeCharacterView, slot: SkillSlot): string {
+    const activeNodes = this.unlockedActiveNodes(character);
+    const currentNodeId = character.state.skillSlotNodeIds?.[slot];
+    const anotherUltimateEquipped = slots.some(candidate => {
+      if (candidate === slot) return false;
+      const nodeId = character.state.skillSlotNodeIds?.[candidate];
+      return character.tree.nodes.find(node => node.id === nodeId)?.isUltimate;
+    });
+    return `<div class="skill-slot-picker" role="dialog" aria-label="Choose skill for slot ${slot}">
+      <header><div><span>Skill Slot ${slot}</span><strong>Choose an unlocked skill</strong></div><button type="button" data-action="close-picker" aria-label="Close skill picker">×</button></header>
+      <div class="skill-slot-picker-list">
+        ${activeNodes.length ? activeNodes.map(node => {
+          const disabled = Boolean(node.isUltimate && anotherUltimateEquipped && node.id !== currentNodeId);
+          return `<button type="button" class="skill-picker-option branch-${node.branch} ${node.id === currentNodeId ? 'equipped' : ''}" data-action="pick-skill" data-node-id="${this.escape(node.id)}" data-slot="${slot}" ${disabled ? 'disabled title="Only one ultimate may be equipped"' : ''}>
+            <span>${this.nodeGlyph(node)}</span><div><strong>${this.escape(this.skillDisplayName(character, node))}</strong><small>${this.escape(this.roleLabel(node))} · Ring ${node.ring ?? node.tier}</small></div>${node.id === currentNodeId ? '<b>Equipped</b>' : '<i>Equip</i>'}
+          </button>`;
+        }).join('') : '<p>No active skills unlocked yet.</p>'}
+      </div>
+      <footer><button type="button" data-action="clear-selected-slot" data-slot="${slot}" ${currentNodeId ? '' : 'disabled'}>Unequip slot</button></footer>
+    </div>`;
   }
 
   private constellation(character: SkillTreeCharacterView): string {
@@ -253,6 +278,7 @@ export class SkillTreeScreen {
       <strong>${this.escape(character.tree.combatStyle)}</strong>
       <ul>${character.tree.strengths.map(strength => `<li>${this.escape(strength)}</li>`).join('')}</ul>
       <small>Hover over a node for a quick preview. Click a node to pin its full details.</small>
+      ${this.unlockedSkillLibrary(character)}
     </div>`;
   }
 
@@ -277,6 +303,7 @@ export class SkillTreeScreen {
       <div class="skill-requirements"><strong>Requirements</strong>${this.requirementLines(character, node, reason).map(line => `<span>${this.escape(line)}</span>`).join('')}</div>
       <div class="skill-node-status status-${state}">${this.escape(reason)}</div>
       ${this.inspectorActions(character, node, equippedSlot)}
+      ${this.unlockedSkillLibrary(character)}
     </div>`;
   }
 
@@ -288,6 +315,47 @@ export class SkillTreeScreen {
     }
     if (node.kind !== 'active' || !node.abilityId) return '<div class="skill-learned-label">✓ Passive effect active</div>';
     return `<div class="skill-equip-actions"><span>${equippedSlot ? `Equipped in slot ${equippedSlot}` : `Equip to selected slot ${this.selectedSlot}`}</span><div>${slots.map(slot => `<button type="button" class="${slot === equippedSlot ? 'equipped' : ''}" data-action="equip-node" data-node-id="${this.escape(node.id)}" data-slot="${slot}">${slot}</button>`).join('')}</div>${equippedSlot ? `<button type="button" class="skill-clear-action" data-action="clear-slot" data-slot="${equippedSlot}">Unequip</button>` : ''}</div>`;
+  }
+
+  private unlockedSkillLibrary(character: SkillTreeCharacterView): string {
+    const activeNodes = this.unlockedActiveNodes(character);
+    return `<section class="skill-unlocked-library">
+      <header><div><span>Unlocked Skills</span><strong>${activeNodes.length} of 9 learned</strong></div><small>Selected slot ${this.selectedSlot}</small></header>
+      <div>${activeNodes.length ? activeNodes.map(node => {
+        const equippedSlot = slots.find(slot => character.state.skillSlotNodeIds?.[slot] === node.id);
+        return `<button type="button" class="skill-library-item branch-${node.branch} ${equippedSlot ? 'equipped' : ''}" data-action="equip-node" data-node-id="${this.escape(node.id)}" data-slot="${this.selectedSlot}">
+          <span>${this.nodeGlyph(node)}</span><div><strong>${this.escape(this.skillDisplayName(character, node))}</strong><small>${this.escape(this.roleLabel(node))}</small></div>${equippedSlot ? `<b>Slot ${equippedSlot}</b>` : '<i>Equip</i>'}
+        </button>`;
+      }).join('') : '<p>Unlock a Ring 1 active skill to begin building the loadout.</p>'}</div>
+    </section>`;
+  }
+
+  private unlockedActiveNodes(character: SkillTreeCharacterView): SkillNodeDefinition[] {
+    return character.tree.nodes
+      .filter(node => node.kind === 'active' && Boolean(node.abilityId) && character.state.unlockedNodeIds.includes(node.id))
+      .sort((a, b) => (a.ring ?? a.tier) - (b.ring ?? b.tier) || (a.sector ?? 0) - (b.sector ?? 0));
+  }
+
+  private skillDisplayName(character: SkillTreeCharacterView, node: SkillNodeDefinition): string {
+    const upgrades = this.upgradeCountForActive(character, node);
+    return `${node.name}${upgrades > 0 ? ` ${'★'.repeat(Math.min(3, upgrades))}` : ''}`;
+  }
+
+  private upgradeCountForActive(character: SkillTreeCharacterView, activeNode: SkillNodeDefinition): number {
+    if (activeNode.kind !== 'active') return 0;
+    const unlocked = new Set(character.state.unlockedNodeIds);
+    const nodes = new Map(character.tree.nodes.map(node => [node.id, node]));
+    const reachesActive = (node: SkillNodeDefinition, visited = new Set<string>()): boolean => {
+      if (visited.has(node.id)) return false;
+      visited.add(node.id);
+      for (const prerequisiteId of node.prerequisiteNodeIds) {
+        if (prerequisiteId === activeNode.id) return true;
+        const prerequisite = nodes.get(prerequisiteId);
+        if (prerequisite && reachesActive(prerequisite, visited)) return true;
+      }
+      return false;
+    };
+    return character.tree.nodes.filter(node => node.kind === 'upgrade' && unlocked.has(node.id) && reachesActive(node)).length;
   }
 
   private unlockConfirmation(character: SkillTreeCharacterView, nodeId: string): string {
@@ -315,7 +383,8 @@ export class SkillTreeScreen {
   }
 
   private requirementLines(character: SkillTreeCharacterView, node: SkillNodeDefinition, reason: string): string[] {
-    const result = [`Level ${node.minimumLevel}`];
+    const result: string[] = [];
+    if (node.minimumLevel > 1) result.push(`Level ${node.minimumLevel}`);
     if (node.pathPointsRequired) {
       const current = node.pathId ? character.state.pathPoints[node.pathId] ?? 0 : 0;
       result.push(`${current}/${node.pathPointsRequired} points invested in this path`);
@@ -384,12 +453,28 @@ export class SkillTreeScreen {
       this.selectedCharacterId = target.dataset.characterId;
       this.selectedNodeId = null;
       this.pendingUnlockNodeId = null;
+      this.openSlotPicker = null;
       this.actions.selectCharacter?.(this.selectedCharacterId);
       this.draw();
     }
     if (action === 'select-slot' && target.dataset.slot) {
-      this.selectedSlot = Number(target.dataset.slot) as SkillSlot;
+      const slot = Number(target.dataset.slot) as SkillSlot;
+      this.selectedSlot = slot;
+      this.openSlotPicker = this.openSlotPicker === slot ? null : slot;
       this.draw();
+    }
+    if (action === 'close-picker') {
+      this.openSlotPicker = null;
+      this.draw();
+    }
+    if (action === 'pick-skill' && target.dataset.nodeId && target.dataset.slot && this.selectedCharacterId) {
+      this.selectedSlot = Number(target.dataset.slot) as SkillSlot;
+      this.openSlotPicker = null;
+      this.actions.assign(this.selectedCharacterId, this.selectedSlot, target.dataset.nodeId);
+    }
+    if (action === 'clear-selected-slot' && target.dataset.slot && this.selectedCharacterId) {
+      this.openSlotPicker = null;
+      this.actions.assign(this.selectedCharacterId, Number(target.dataset.slot) as SkillSlot, null);
     }
     if (action === 'inspect-core') {
       this.selectedNodeId = null;
@@ -472,7 +557,10 @@ export class SkillTreeScreen {
       return;
     }
     if (event.key === 'Escape') {
-      if (this.pendingUnlockNodeId) {
+      if (this.openSlotPicker) {
+        this.openSlotPicker = null;
+        this.draw();
+      } else if (this.pendingUnlockNodeId) {
         this.pendingUnlockNodeId = null;
         this.draw();
       } else if (this.selectedNodeId) {
