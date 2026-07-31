@@ -49,6 +49,11 @@ export class ProgressionDeveloperPanel {
               .filter(([, value]) => Number(value) !== 0)
               .map(([key, value]) => `${key}: ${Number(value).toFixed(2)}`)
               .join('<br>') || 'none';
+            const pathRows = Object.entries(skills?.pathPoints ?? {})
+              .map(([pathId, points]) => `${pathId}: ${points}`)
+              .join('<br>') || 'none';
+            const availableNodes = skills?.availableNodeIds.length ?? 0;
+            const disconnected = skills?.disconnectedUnlockedNodeIds.length ?? 0;
             return `
             <article class="progression-dev-card">
               <strong>${this.options.characterName(snapshot.characterId)}</strong>
@@ -61,6 +66,10 @@ export class ProgressionDeveloperPanel {
                 <dt>Attack growth</dt><dd>+${snapshot.growth.attack}</dd>
                 <dt>Armor growth</dt><dd>+${snapshot.growth.armor.toFixed(1)}</dd>
                 <dt>Passives</dt><dd>${passiveRows}</dd>
+                <dt>Path spend</dt><dd>${pathRows}</dd>
+                <dt>Connected choices</dt><dd>${availableNodes}</dd>
+                <dt>Equipped ultimate</dt><dd>${skills?.equippedUltimateNodeId ?? 'none'}</dd>
+                <dt>Disconnected legacy</dt><dd>${disconnected}</dd>
               </dl>
               <div class="progression-dev-projections">
                 ${projections.map(item => `<div><b>Lv ${item.level}</b><span>${item.totalXp} total XP</span><span>${item.health.toFixed(1)} HP · ${item.attack.toFixed(2)} ATK · ${item.speed.toFixed(2)} SPD</span></div>`).join('')}

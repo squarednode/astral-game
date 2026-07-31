@@ -2065,7 +2065,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.8.3',
+    buildVersion: '0.6.8.4',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2081,7 +2081,7 @@ function createSaveData(): AstralSaveData {
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.8.3',
+      buildVersion: '0.6.8.4',
     },
   };
 }
@@ -3116,7 +3116,7 @@ function renderSkillTree(preferredCharacterId?: string): void {
     party.filter(character => rosterRuntime.isUnlocked(character.id)).flatMap(character => {
       const tree = skillTreeRuntime.definition(character.id);
       const state = skillTreeRuntime.snapshot(character.id);
-      return tree && state ? [{ id: character.id, name: character.name, role: character.role, rosterStatus: rosterRuntime.isActive(character.id) ? 'active' as const : 'reserve' as const, tree, state, abilities: state.unlockedAbilityIds.map(abilityId => ({ id: abilityId, name: definitions.get<AbilityDefinition>(abilityId)?.name ?? abilityId })) }] : [];
+      return tree && state ? [{ id: character.id, name: character.name, role: character.role, rosterStatus: rosterRuntime.isActive(character.id) ? 'active' as const : 'reserve' as const, tree, state, abilities: tree.nodes.filter(node => state.unlockedNodeIds.includes(node.id) && node.kind === 'active' && node.abilityId).map(node => ({ id: node.id, abilityId: node.abilityId!, name: node.name, ultimate: Boolean(node.isUltimate) })) }] : [];
     }),
     preferredCharacterId,
   );

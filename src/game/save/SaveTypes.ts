@@ -12,7 +12,7 @@ export interface SaveSummary {
 
 export interface AstralSaveData {
   schemaVersion: 1;
-  buildVersion: '0.6.7.6' | '0.6.7.7a' | '0.6.7.8' | '0.6.7.9' | '0.6.8.0' | '0.6.8.1' | '0.6.8.2' | '0.6.8.3';
+  buildVersion: '0.6.7.6' | '0.6.7.7a' | '0.6.7.8' | '0.6.7.9' | '0.6.8.0' | '0.6.8.1' | '0.6.8.2' | '0.6.8.3' | '0.6.8.4';
   savedAt: number;
   playtimeSeconds: number;
   checkpoint: unknown;

@@ -5849,6 +5849,42 @@ Ultimates are marked with an 18-point path-investment requirement for the radial
 
 The current linear skill UI can still display and unlock the catalog using the existing prerequisite fields. New graph metadata includes ring, sector, path, node role, connected nodes, path-point requirements, and ultimate status. The radial availability logic and one-ultimate equipment restriction are reserved for 0.6.8.4.
 
+# Astral Shift 0.6.8.4 - Radial Constellation Runtime
+
+This build adds the graph and progression rules that will power the radial constellation UI in 0.6.8.5.
+
+## Runtime rules
+
+- Ring 1 nodes are available from the center when level and point requirements are met.
+- Every later node must touch at least one unlocked connected node.
+- Explicit prerequisites are enforced in addition to visual adjacency.
+- Points spent are tracked independently for each character path.
+- Ring costs remain definition-driven.
+- Ultimates require both connected Ring 3 prerequisites, the configured path investment, the minimum level, and the purchase cost.
+- Only one ultimate may be equipped at a time.
+
+## Ultimate investment
+
+The first three rings of a complete path total 15 points. The current 18-point ultimate requirement therefore requires at least one major Ring 4 support purchase before the ultimate becomes available.
+
+## Save migration
+
+- Existing valid node unlocks are retained.
+- Historical unlocks that no longer connect to the current graph are reported as disconnected legacy nodes rather than deleted.
+- All new purchases must follow the current constellation graph.
+- Older ability-only loadouts are migrated to node-aware loadouts.
+- Duplicate ultimates in older saves are reduced to one equipped ultimate.
+
+## Developer inspection
+
+The Progression developer page now reports:
+
+- Points spent by path
+- Number of currently connected choices
+- Equipped ultimate node
+- Disconnected legacy unlock count
+
+The temporary rectangular skill screen also displays current path spending and accurate lock reasons. The circular constellation renderer remains scheduled for 0.6.8.5.
 
 ### Validate
 ```bash

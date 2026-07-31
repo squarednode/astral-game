@@ -59,11 +59,22 @@ export interface CharacterSkillTreeDefinition {
 export interface CharacterSkillState {
   unlockedNodeIds: string[];
   skillSlots: Partial<Record<1 | 2 | 3 | 4, AbilityId>>;
+  skillSlotNodeIds?: Partial<Record<1 | 2 | 3 | 4, string>>;
 }
 
 export interface SkillTreeSerializedState {
   version: 1;
   characters: Record<string, CharacterSkillState>;
+}
+
+export interface SkillNodeEligibility {
+  nodeId: string;
+  canUnlock: boolean;
+  reason: string;
+  connected: boolean;
+  prerequisitesMet: boolean;
+  pathPoints: number;
+  pathPointsRequired: number;
 }
 
 export interface CharacterSkillSnapshot extends CharacterSkillState {
@@ -74,4 +85,10 @@ export interface CharacterSkillSnapshot extends CharacterSkillState {
   availableSkillPoints: number;
   unlockedAbilityIds: readonly AbilityId[];
   passiveModifiers: Readonly<SkillPassiveModifier>;
+  pathPoints: Readonly<Record<SkillPathId, number>>;
+  availableNodeIds: readonly string[];
+  blockedNodeReasons: Readonly<Record<string, string>>;
+  disconnectedUnlockedNodeIds: readonly string[];
+  equippedUltimateAbilityId: AbilityId | null;
+  equippedUltimateNodeId: string | null;
 }

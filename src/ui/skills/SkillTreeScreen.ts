@@ -1,6 +1,6 @@
 import type { CharacterSkillSnapshot, CharacterSkillTreeDefinition } from '../../game/skills';
 
-export interface SkillTreeAbilityView { id: string; name: string; }
+export interface SkillTreeAbilityView { id: string; abilityId: string; name: string; ultimate?: boolean; }
 
 export interface SkillTreeCharacterView {
   id: string;
@@ -72,22 +72,27 @@ export class SkillTreeScreen {
         <ul>${tree.strengths.map(strength => `<li>${strength}</li>`).join('')}</ul>
       </section>
       <section class="skill-loadout-panel">
-        <div><span>Combat Loadout</span><h2>Equipped Skills</h2><p>Assign unlocked active abilities to slots 1–4.</p></div>
+        <div><span>Combat Loadout</span><h2>Equipped Skills</h2><p>Assign unlocked active abilities to slots 1–4. Only one ultimate can be equipped at a time.</p></div>
         <div class="skill-loadout-slots">
           ${([1, 2, 3, 4] as const).map(slot => {
-            const assigned = state.skillSlots[slot] ?? '';
-            return `<label><span>Slot ${slot}</span><select data-action="assign" data-character-id="${character.id}" data-slot="${slot}"><option value="">Unassigned</option>${character.abilities.map(ability => `<option value="${ability.id}" ${assigned === ability.id ? 'selected' : ''}>${ability.name}</option>`).join('')}</select></label>`;
+            const assigned = state.skillSlotNodeIds?.[slot] ?? '';
+            return `<label><span>Slot ${slot}</span><select data-action="assign" data-character-id="${character.id}" data-slot="${slot}"><option value="">Unassigned</option>${character.abilities.map(ability => `<option value="${ability.id}" ${assigned === ability.id ? 'selected' : ''}>${ability.name}${ability.ultimate ? ' · Ultimate' : ''}</option>`).join('')}</select></label>`;
           }).join('')}
         </div>
       </section>
+      <section class="skill-path-summary">
+        ${(tree.paths ?? []).map(path => `<article class="branch-${path.branch}"><strong>${path.name}</strong><span>${state.pathPoints[path.id] ?? 0} points spent</span><small>${path.summary}</small></article>`).join('')}
+      </section>
+      ${state.disconnectedUnlockedNodeIds.length ? `<div class="skill-tree-warning">Legacy migration: ${state.disconnectedUnlockedNodeIds.length} unlocked node${state.disconnectedUnlockedNodeIds.length === 1 ? '' : 's'} no longer connect to the current constellation. They remain learned, but new unlocks must follow the graph.</div>` : ''}
       <section class="skill-node-grid">
         ${tree.nodes.map(node => {
           const unlocked = state.unlockedNodeIds.includes(node.id);
-          const prerequisitesMet = node.prerequisiteNodeIds.every(id => state.unlockedNodeIds.includes(id));
-          const available = !unlocked && state.level >= node.minimumLevel && state.availableSkillPoints >= node.cost && prerequisitesMet;
+          const available = state.availableNodeIds.includes(node.id);
           const status = unlocked ? 'unlocked' : available ? 'available' : 'locked';
-          const requirement = unlocked ? 'Unlocked' : state.level < node.minimumLevel ? `Requires level ${node.minimumLevel}` : !prerequisitesMet ? 'Requires prior node' : state.availableSkillPoints < node.cost ? `Requires ${node.cost} point` : 'Available';
-          return `<article class="skill-node ${status} branch-${node.branch}"><div class="skill-node-tier">Tier ${node.tier} · ${node.branch} · ${node.kind}</div><h3>${node.name}</h3><p>${node.description}</p><small>${requirement}</small>${unlocked ? '<b>✓ Learned</b>' : `<button type="button" data-action="unlock" data-character-id="${character.id}" data-node-id="${node.id}" ${available ? '' : 'disabled'}>Unlock · ${node.cost}</button>`}</article>`;
+          const requirement = unlocked ? 'Unlocked' : state.blockedNodeReasons[node.id] ?? 'Available';
+          const pathPoints = node.pathId ? state.pathPoints[node.pathId] ?? 0 : 0;
+          const role = node.isUltimate ? 'ultimate' : node.role ?? node.kind;
+          return `<article class="skill-node ${status} branch-${node.branch} role-${role}"><div class="skill-node-tier">Ring ${node.ring ?? node.tier} · ${role} · ${node.cost} point${node.cost === 1 ? '' : 's'}</div><h3>${node.name}</h3><p>${node.description}</p>${node.pathPointsRequired ? `<small>${pathPoints}/${node.pathPointsRequired} path points</small>` : ''}<small>${requirement}</small>${unlocked ? '<b>✓ Learned</b>' : `<button type="button" data-action="unlock" data-character-id="${character.id}" data-node-id="${node.id}" ${available ? '' : 'disabled'}>Unlock · ${node.cost}</button>`}</article>`;
         }).join('')}
       </section>
     </main>`;
