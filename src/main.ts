@@ -2065,7 +2065,7 @@ function createSaveData(): AstralSaveData {
   const savedAt = Date.now();
   return {
     schemaVersion: 1,
-    buildVersion: '0.6.8.2',
+    buildVersion: '0.6.8.3',
     savedAt,
     playtimeSeconds: Math.floor(sessionPlaytimeSeconds),
     checkpoint: checkpointRuntime.serialize(),
@@ -2081,7 +2081,7 @@ function createSaveData(): AstralSaveData {
       checkpointName,
       leaderName: leader?.name ?? 'Unknown',
       partyLevels: activeLevels,
-      buildVersion: '0.6.8.2',
+      buildVersion: '0.6.8.3',
     },
   };
 }

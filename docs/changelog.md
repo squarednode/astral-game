@@ -5814,6 +5814,41 @@ Runtime Tools includes controls to restart with any starter and grant each recru
 ## Developer tools
 The Progression page now shows level 1, level 5, and level 10 projections for total XP, health, attack, and movement speed.
 
+# Astral Shift 0.6.8.3 - Four-Ring Skill Catalog
+
+This build replaces the temporary six-node skill trees with graph-ready four-ring catalogs for Warrior, Rogue, Hunter, and Mage.
+
+## Catalog structure per character
+
+- Center identity core remains implicit and always available.
+- Ring 1: 3 standard active skills, one per path.
+- Ring 2: 6 support nodes, two per path.
+- Ring 3: 3 advanced active skills and 6 support nodes.
+- Ring 4: 3 ultimates and 9 major support nodes.
+- Total: 30 selectable nodes, 9 active skills, and 21 passive/upgrade nodes.
+
+## Point costs
+
+- Ring 1 standard skill: 1 point.
+- Ring 2 support: 2 points.
+- Ring 3 support: 3 points.
+- Ring 3 advanced skill: 4 points.
+- Ring 4 support: 4 points.
+- Ring 4 ultimate: 6 points.
+
+Ultimates are marked with an 18-point path-investment requirement for the radial runtime planned in 0.6.8.4.
+
+## Character paths
+
+- Warrior: Power, Guard, Momentum.
+- Rogue: Precision, Mobility, Trickery.
+- Hunter: Marksmanship, Traps, Survival.
+- Mage: Destruction, Control, Protection.
+
+## Runtime compatibility
+
+The current linear skill UI can still display and unlock the catalog using the existing prerequisite fields. New graph metadata includes ring, sector, path, node role, connected nodes, path-point requirements, and ultimate status. The radial availability logic and one-ultimate equipment restriction are reserved for 0.6.8.4.
+
 
 ### Validate
 ```bash

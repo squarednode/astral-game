@@ -1,5 +1,7 @@
 export type AbilityId = string;
 export type SkillNodeKind = 'active' | 'passive' | 'upgrade';
+export type SkillNodeRole = 'standard-skill' | 'advanced-skill' | 'ultimate' | 'support';
+export type SkillPathId = string;
 
 export interface SkillPassiveModifier {
   maximumHealth?: number;
@@ -21,13 +23,27 @@ export interface SkillNodeDefinition {
   name: string;
   description: string;
   kind: SkillNodeKind;
+  role?: SkillNodeRole;
   abilityId?: AbilityId;
   passiveModifier?: SkillPassiveModifier;
   cost: number;
   minimumLevel: number;
   prerequisiteNodeIds: readonly string[];
+  connectedNodeIds?: readonly string[];
+  pathId?: SkillPathId;
+  pathPointsRequired?: number;
+  isUltimate?: boolean;
   branch: 'assault' | 'control' | 'survival';
   tier: number;
+  ring?: 1 | 2 | 3 | 4;
+  sector?: number;
+}
+
+export interface SkillPathDefinition {
+  id: SkillPathId;
+  name: string;
+  summary: string;
+  branch: SkillNodeDefinition['branch'];
 }
 
 export interface CharacterSkillTreeDefinition {
@@ -36,6 +52,7 @@ export interface CharacterSkillTreeDefinition {
   identitySummary: string;
   combatStyle: string;
   strengths: readonly string[];
+  paths?: readonly SkillPathDefinition[];
   nodes: readonly SkillNodeDefinition[];
 }
 
