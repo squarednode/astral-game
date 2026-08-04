@@ -468,18 +468,19 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   collisionDebugMaterial.alpha = 0.22;
   collisionDebugMaterial.wireframe = true;
   colliders.forEach((collider, index) => {
+    const clearanceHeight = collider.clearanceHeight ?? 0.65;
     const debug = collider.kind === 'box'
       ? MeshBuilder.CreateBox('level1-collision-debug-' + index, {
           width: collider.halfWidth * 2,
           depth: collider.halfDepth * 2,
-          height: Math.max(0.35, collider.clearanceHeight),
+          height: Math.max(0.35, clearanceHeight),
         }, scene)
       : MeshBuilder.CreateCylinder('level1-collision-debug-' + index, {
           diameter: collider.radius * 2,
-          height: Math.max(0.35, collider.clearanceHeight),
+          height: Math.max(0.35, clearanceHeight),
           tessellation: 24,
         }, scene);
-    debug.position.set(collider.centerX, Math.max(0.2, collider.clearanceHeight / 2), collider.centerZ);
+    debug.position.set(collider.centerX, Math.max(0.2, clearanceHeight / 2), collider.centerZ);
     debug.material = collisionDebugMaterial;
     debug.visibility = 0;
     debug.isPickable = false;
