@@ -225,18 +225,17 @@ export class SkillTreeRuntime {
       const validNodeSlots: Partial<Record<1 | 2 | 3 | 4, string>> = {};
       let restoredUltimate = false;
       for (const slot of slots) {
-        const abilityId = saved.skillSlots[slot];
-        if (!abilityId || !unlockedAbilities.has(abilityId)) continue;
+        const savedAbilityId = saved.skillSlots[slot];
         const savedNodeId = saved.skillSlotNodeIds?.[slot];
-        const selectedNode = tree.nodes.find(node => node.id === savedNodeId && unlockedNodes.has(node.id) && node.abilityId === abilityId)
-          ?? tree.nodes.find(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId === abilityId && !node.isUltimate)
-          ?? tree.nodes.find(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId === abilityId);
-        if (!selectedNode) continue;
+        const selectedNode = tree.nodes.find(node => node.id === savedNodeId && unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId)
+          ?? (savedAbilityId ? tree.nodes.find(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId === savedAbilityId && !node.isUltimate) : undefined)
+          ?? (savedAbilityId ? tree.nodes.find(node => unlockedNodes.has(node.id) && node.kind === 'active' && node.abilityId === savedAbilityId) : undefined);
+        if (!selectedNode?.abilityId || !unlockedAbilities.has(selectedNode.abilityId)) continue;
         if (selectedNode.isUltimate) {
           if (restoredUltimate) continue;
           restoredUltimate = true;
         }
-        validSlots[slot] = abilityId;
+        validSlots[slot] = selectedNode.abilityId;
         validNodeSlots[slot] = selectedNode.id;
       }
       this.unlocked.set(characterId, unlockedNodes);

@@ -319,12 +319,15 @@ export class SkillTreeScreen {
 
   private unlockedSkillLibrary(character: SkillTreeCharacterView): string {
     const activeNodes = this.unlockedActiveNodes(character);
-    return `<section class="skill-unlocked-library">
+    const selectedSlotOccupied = Boolean(character.state.skillSlotNodeIds?.[this.selectedSlot]);
+    return `<section class="skill-unlocked-library ${selectedSlotOccupied ? 'slot-occupied' : ''}">
       <header><div><span>Unlocked Skills</span><strong>${activeNodes.length} of 9 learned</strong></div><small>Selected slot ${this.selectedSlot}</small></header>
+      ${selectedSlotOccupied ? `<p class="skill-library-guidance">Slot ${this.selectedSlot} is occupied. Use its top-row picker to replace that skill.</p>` : '<p class="skill-library-guidance">Choose a skill below to fill the empty selected slot.</p>'}
       <div>${activeNodes.length ? activeNodes.map(node => {
         const equippedSlot = slots.find(slot => character.state.skillSlotNodeIds?.[slot] === node.id);
-        return `<button type="button" class="skill-library-item branch-${node.branch} ${equippedSlot ? 'equipped' : ''}" data-action="equip-node" data-node-id="${this.escape(node.id)}" data-slot="${this.selectedSlot}">
-          <span>${this.nodeGlyph(node)}</span><div><strong>${this.escape(this.skillDisplayName(character, node))}</strong><small>${this.escape(this.roleLabel(node))}</small></div>${equippedSlot ? `<b>Slot ${equippedSlot}</b>` : '<i>Equip</i>'}
+        const disabled = selectedSlotOccupied || Boolean(equippedSlot);
+        return `<button type="button" class="skill-library-item branch-${node.branch} ${equippedSlot ? 'equipped' : ''}" data-action="library-equip-node" data-node-id="${this.escape(node.id)}" data-slot="${this.selectedSlot}" ${disabled ? 'disabled' : ''}>
+          <span>${this.nodeGlyph(node)}</span><div><strong>${this.escape(this.skillDisplayName(character, node))}</strong><small>${this.escape(this.roleLabel(node))}</small></div>${equippedSlot ? `<b>Slot ${equippedSlot}</b>` : selectedSlotOccupied ? '<i>Use top row</i>' : '<i>Equip</i>'}
         </button>`;
       }).join('') : '<p>Unlock a Ring 1 active skill to begin building the loadout.</p>'}</div>
     </section>`;
@@ -505,6 +508,13 @@ export class SkillTreeScreen {
     if (action === 'equip-node' && target.dataset.nodeId && target.dataset.slot && this.selectedCharacterId) {
       this.selectedSlot = Number(target.dataset.slot) as SkillSlot;
       this.actions.assign(this.selectedCharacterId, this.selectedSlot, target.dataset.nodeId);
+    }
+    if (action === 'library-equip-node' && target.dataset.nodeId && target.dataset.slot && this.selectedCharacterId) {
+      const slot = Number(target.dataset.slot) as SkillSlot;
+      const character = this.selectedCharacter();
+      if (!character || character.state.skillSlotNodeIds?.[slot]) return;
+      this.selectedSlot = slot;
+      this.actions.assign(this.selectedCharacterId, slot, target.dataset.nodeId);
     }
     if (action === 'clear-slot' && target.dataset.slot && this.selectedCharacterId) {
       this.actions.assign(this.selectedCharacterId, Number(target.dataset.slot) as SkillSlot, null);

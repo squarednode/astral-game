@@ -5916,6 +5916,22 @@ This release replaces the temporary skill-node list with the first complete radi
 
 No save schema change is required for this UI-only release.
 
+# Astral Shift 0.6.8.5b — Skill Identity and Safe Loadout Hotfix
+
+## Skill runtime identity
+
+Every selectable active constellation node now owns a unique ability definition ID. The new definitions inherit the current working executor behavior while preserving the catalog skill's own name and description throughout the player HUD, cooldown display, save data, and loadout runtime.
+
+This prevents catalog skills such as Snare Trap from appearing as Frost Nova merely because they temporarily share an underlying executor implementation.
+
+## Safe unlocked-skill library
+
+The lower-right Unlocked Skills library now fills only an empty selected slot.
+
+- If the selected slot is empty, an unequipped unlocked skill can be assigned from the library.
+- If the selected slot is occupied, the library becomes read-only and directs the player to the top-row slot picker.
+- Skills already equipped in another slot cannot be reassigned from the lower library.
+- Replacing or clearing an occupied slot remains an explicit top-row action.
 
 ### Validate
 ```bash

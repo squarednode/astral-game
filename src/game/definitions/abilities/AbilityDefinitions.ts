@@ -86,7 +86,7 @@ const base = {
   interruptPriority: 10,
 };
 
-export const abilityDefinitions: readonly AbilityDefinition[] = [
+const baseAbilityDefinitions: readonly AbilityDefinition[] = [
   {
     ...base, id: 'ability.fireball', name: 'Fireball', description: 'Launch a fiery projectile toward the aim point.', family: 'projectile',
     executorId: 'fireball', runtimeReady: true, targeting: 'directional', castStyle: 'cast-time', element: 'fire',
@@ -240,4 +240,69 @@ export const abilityDefinitions: readonly AbilityDefinition[] = [
     abilityTags: ['defensive', 'heal', 'buff', 'status'], cooldown: 10, castTime: 0.65, range: 0, power: 5, duration: 6,
     statusEffectIds: ['status.regeneration'], damageProfileId: 'damage.healing', canMoveWhileCasting: true, commitThreshold: 0.65,
   },
+];
+
+
+interface SkillAbilityAliasSpec {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly prototypeId: string;
+}
+
+const skillAbilityAliasSpecs: readonly SkillAbilityAliasSpec[] = [
+  { id: 'ability.skill.vanguard.cleave', name: 'Cleave', description: 'A broad forward swing that hits multiple enemies.', prototypeId: 'ability.melee-cleave' },
+  { id: 'ability.skill.vanguard.ground-breaker', name: 'Ground Breaker', description: 'Slam the ground to damage and stagger enemies around the impact.', prototypeId: 'ability.heavy-slam' },
+  { id: 'ability.skill.vanguard.overpower', name: 'Overpower', description: 'Deliver a devastating committed strike with extreme stagger.', prototypeId: 'ability.spin-attack' },
+  { id: 'ability.skill.vanguard.brace', name: 'Brace', description: 'Brace against incoming damage and resist interruption.', prototypeId: 'ability.barrier' },
+  { id: 'ability.skill.vanguard.guardian-roar', name: 'Guardian Roar', description: 'Challenge nearby enemies and gain temporary protection.', prototypeId: 'ability.shield' },
+  { id: 'ability.skill.vanguard.living-bulwark', name: 'Living Bulwark', description: 'Create a powerful defensive aura that protects nearby allies.', prototypeId: 'ability.barrier' },
+  { id: 'ability.skill.vanguard.vanguard-charge', name: 'Vanguard Charge', description: 'Rush forward and impact enemies in the destination lane.', prototypeId: 'ability.charge' },
+  { id: 'ability.skill.vanguard.warpath', name: 'Warpath', description: 'Enter a short aggressive surge of speed and attack tempo.', prototypeId: 'ability.dash' },
+  { id: 'ability.skill.vanguard.juggernaut', name: 'Juggernaut', description: 'Become an unstoppable advancing force while continuously attacking.', prototypeId: 'ability.leap' },
+  { id: 'ability.skill.tempest.lunging-strike', name: 'Lunging Strike', description: 'Lunge forward with a precise extended stab.', prototypeId: 'ability.melee-strike' },
+  { id: 'ability.skill.tempest.twin-fang', name: 'Twin Fang', description: 'Deliver two rapid focused strikes.', prototypeId: 'ability.melee-cleave' },
+  { id: 'ability.skill.tempest.assassinate', name: 'Assassinate', description: 'A devastating strike against isolated or weakened enemies.', prototypeId: 'ability.heavy-slam' },
+  { id: 'ability.skill.tempest.dash-strike', name: 'Dash Strike', description: 'Dash through a target and attack from the opposite side.', prototypeId: 'ability.dash' },
+  { id: 'ability.skill.tempest.backstep-slash', name: 'Backstep Slash', description: 'Strike while retreating out of melee range.', prototypeId: 'ability.retreat' },
+  { id: 'ability.skill.tempest.phantom-rhythm', name: 'Phantom Rhythm', description: 'Chain rapid phasing attacks through nearby targets.', prototypeId: 'ability.blink' },
+  { id: 'ability.skill.tempest.poison-blade', name: 'Poison Blade', description: 'Coat the next attacks with a lingering poison effect.', prototypeId: 'ability.poison-cloud' },
+  { id: 'ability.skill.tempest.smoke-bomb', name: 'Smoke Bomb', description: 'Create a cloud that disrupts enemy targeting and enables escape.', prototypeId: 'ability.ground-fire' },
+  { id: 'ability.skill.tempest.master-of-deception', name: 'Master of Deception', description: 'Vanish and return with a massively empowered opening attack.', prototypeId: 'ability.blink' },
+  { id: 'ability.skill.hunter-mara.power-shot', name: 'Power Shot', description: 'Fire a slower, stronger projectile through the target lane.', prototypeId: 'ability.piercing-shot' },
+  { id: 'ability.skill.hunter-mara.marked-target', name: 'Marked Target', description: 'Mark a priority target to amplify Hunter damage against it.', prototypeId: 'ability.magic-missile' },
+  { id: 'ability.skill.hunter-mara.deadeye', name: 'Deadeye', description: 'Enter a precision state and unleash lethal long-range shots.', prototypeId: 'ability.spread-shot' },
+  { id: 'ability.skill.hunter-mara.snare-trap', name: 'Snare Trap', description: 'Place a trap that roots or heavily slows the first enemy.', prototypeId: 'ability.frost-nova' },
+  { id: 'ability.skill.hunter-mara.blast-trap', name: 'Blast Trap', description: 'Place an explosive trap that damages nearby enemies.', prototypeId: 'ability.ground-fire' },
+  { id: 'ability.skill.hunter-mara.master-trapper', name: 'Master Trapper', description: 'Deploy a coordinated trap field that controls a large area.', prototypeId: 'ability.poison-cloud' },
+  { id: 'ability.skill.hunter-mara.retreating-shot', name: 'Retreating Shot', description: 'Leap backward while firing at the nearest threat.', prototypeId: 'ability.retreat' },
+  { id: 'ability.skill.hunter-mara.camouflage', name: 'Camouflage', description: 'Reduce enemy awareness and empower the next ranged attack.', prototypeId: 'ability.blink' },
+  { id: 'ability.skill.hunter-mara.apex-survivor', name: 'Apex Survivor', description: 'Enter a heightened survival state with speed and recovery.', prototypeId: 'ability.regeneration' },
+  { id: 'ability.skill.warden.fire-bolt', name: 'Fire Bolt', description: 'Launch a compact fire projectile that can ignite an enemy.', prototypeId: 'ability.fire-bolt' },
+  { id: 'ability.skill.warden.chain-lightning', name: 'Chain Lightning', description: 'Launch lightning that leaps between nearby enemies.', prototypeId: 'ability.magic-missile' },
+  { id: 'ability.skill.warden.arcane-cataclysm', name: 'Arcane Cataclysm', description: 'Trigger a devastating elemental detonation around affected enemies.', prototypeId: 'ability.shock-burst' },
+  { id: 'ability.skill.warden.frost-nova', name: 'Frost Nova', description: 'Release a frost burst that damages and slows nearby enemies.', prototypeId: 'ability.frost-nova' },
+  { id: 'ability.skill.warden.gravity-well', name: 'Gravity Well', description: 'Create a field that draws enemies toward its center.', prototypeId: 'ability.poison-cloud' },
+  { id: 'ability.skill.warden.absolute-control', name: 'Absolute Control', description: 'Lock a large area in suspended time and frost.', prototypeId: 'ability.ice-spear' },
+  { id: 'ability.skill.warden.magic-barrier', name: 'Magic Barrier', description: 'Create a temporary personal magical shield.', prototypeId: 'ability.shield' },
+  { id: 'ability.skill.warden.protective-field', name: 'Protective Field', description: 'Create an area that reduces damage to allies inside it.', prototypeId: 'ability.barrier' },
+  { id: 'ability.skill.warden.archmages-refuge', name: "Archmage's Refuge", description: 'Create a powerful sanctuary that shields and restores the party.', prototypeId: 'ability.heal' },
+];
+
+const baseAbilityById = new Map(baseAbilityDefinitions.map(definition => [definition.id, definition]));
+const skillAbilityDefinitions: readonly AbilityDefinition[] = skillAbilityAliasSpecs.map(spec => {
+  const prototype = baseAbilityById.get(spec.prototypeId);
+  if (!prototype) throw new Error(`Missing skill ability prototype: ${spec.prototypeId}`);
+  return {
+    ...prototype,
+    id: spec.id,
+    name: spec.name,
+    description: spec.description,
+    metadata: { ...prototype.metadata, contentVersion: '0.6.8.5c', tags: [...(prototype.metadata.tags ?? []), 'skill-catalog'] },
+  };
+});
+
+export const abilityDefinitions: readonly AbilityDefinition[] = [
+  ...baseAbilityDefinitions,
+  ...skillAbilityDefinitions,
 ];
