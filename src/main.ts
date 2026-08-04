@@ -4518,22 +4518,31 @@ function damageEnemy(
   hitPos = enemy.mesh.position,
   sourcePosition = playerRoot.position,
   weight: HitWeight = 'light',
+  abilityId?: string,
 ): void {
   const equipmentCombat = equipmentCombatStatsFor(active);
   const markMultiplier = active.id === 'hunter-mara' && (hunterMarkedTargets.get(enemy.entityId) ?? 0) > combatNow() ? 1.25 : 1;
+  const skillProfile = abilityId ? skillTreeRuntime.abilityModifierProfile(active.id, abilityId) : null;
+  const passive = passiveFor(active);
+  const controlledMultiplier = statusRuntime.has(enemy.statusComponent, 'status.vulnerable') ? 1.15 : 1;
   const initialBreakdown = combatResolver.resolve({
     sourceId: active.id,
     targetId: enemy.entityId,
-    kind: weight === 'reaction' ? 'reaction' : 'skill',
+    abilityId,
+    kind: weight === 'reaction' ? 'reaction' : abilityId ? 'skill' : 'basic',
     element,
     baseDamage: amount * markMultiplier,
     attackPowerMultiplier: powerFor() / 100,
     weaponPower: equipmentCombat.weaponPower,
     weaponCoefficient: 0.01,
+    damageMultiplier: skillProfile?.damageMultiplier ?? 1,
     elementalMultiplier: elementalDamageMultiplierFor(active, element),
-    criticalChance: equipmentCombat.criticalChance,
-    criticalMultiplier: 1.5 + equipmentCombat.criticalDamage,
+    conditionalMultiplier: controlledMultiplier,
+    criticalChance: equipmentCombat.criticalChance + Math.max(0, passive.criticalChance ?? 0),
+    criticalMultiplier: 1.5 + equipmentCombat.criticalDamage + Math.max(0, passive.criticalDamage ?? 0),
     targetArmor: enemyArmorFor(enemy),
+    armorPenetration: skillProfile?.armorPenetration ?? Math.max(0, passive.armorPenetration ?? 0),
+    stagger: (passive.staggerPower ?? 0) * (skillProfile?.staggerMultiplier ?? 1),
     weight,
   });
   let final = initialBreakdown.finalDamage;
@@ -4753,7 +4762,7 @@ function executeWarriorOrRogueSkill(
   const now = combatNow();
   const buff = combatBuffFor(caster);
   const hit = (enemy: Enemy, amount = damage, weight: HitWeight = 'light') =>
-    damageEnemy(enemy, amount, definition.element as Element, enemy.mesh.position, request.casterPosition, weight);
+    damageEnemy(enemy, amount, definition.element as Element, enemy.mesh.position, request.casterPosition, weight, definition.id);
 
   if (id === 'skill-vanguard-cleave') {
     const center = request.casterPosition.add(direction.scale(1.5));
@@ -4922,14 +4931,18 @@ function spawnSkillProjectile(
   });
 }
 
-function applyEnemyStatus(enemy: Enemy, statusId: string, duration?: number): void {
+function applyEnemyStatus(enemy: Enemy, statusId: string, duration?: number, abilityId?: string): void {
   const status = statusDefinitionMap.get(statusId);
   if (!status) return;
+  const profile = abilityId ? skillTreeRuntime.abilityModifierProfile(active.id, abilityId) : null;
+  const equipmentCombat = equipmentCombatStatsFor(active);
+  const potency = (1 + equipmentCombat.statusPotencyMultiplier) * (profile?.statusPotencyMultiplier ?? 1);
   statusRuntime.apply(enemy.statusComponent, {
     definition: status,
     ownerEntityId: enemy.entityId,
     sourceEntityId: active.id,
-    durationSeconds: duration ?? status.duration,
+    durationSeconds: (duration ?? status.duration) * (profile?.statusDurationMultiplier ?? 1),
+    magnitude: potency,
   });
 }
 
@@ -4944,7 +4957,7 @@ function executeHunterOrMageSkill(
   const now = combatNow();
   const buff = combatBuffFor(caster);
   const hit = (enemy: Enemy, amount = damage, weight: HitWeight = 'light') =>
-    damageEnemy(enemy, amount, definition.element as Element, enemy.mesh.position, request.casterPosition, weight);
+    damageEnemy(enemy, amount, definition.element as Element, enemy.mesh.position, request.casterPosition, weight, definition.id);
 
   if (id === 'skill-hunter-power-shot') {
     spawnSkillProjectile(definition, request, caster, direction, damage, { pierce: 2, speedMultiplier: 0.9 });
@@ -4956,7 +4969,7 @@ function executeHunterOrMageSkill(
       .sort((a, b) => Vector3.Distance(a.mesh.position, request.casterPosition) - Vector3.Distance(b.mesh.position, request.casterPosition))[0];
     if (target) {
       hunterMarkedTargets.set(target.entityId, now + (definition.duration ?? 8));
-      applyEnemyStatus(target, 'status.vulnerable', definition.duration ?? 8);
+      applyEnemyStatus(target, 'status.vulnerable', definition.duration ?? 8, definition.id);
       vfxRing(target.mesh.position, new Color3(1, 0.75, 0.18), 2.1, 0.35);
       feed('Target marked.');
     }
@@ -4980,7 +4993,7 @@ function executeHunterOrMageSkill(
     enemiesInRadius(center, definition.radius ?? 2.5).forEach(enemy => {
       hit(enemy, damage, 'light');
       applyEnemyStatus(enemy, 'status.stun', Math.min(1.5, definition.duration ?? 4));
-      applyEnemyStatus(enemy, 'status.frost', definition.duration ?? 4);
+      applyEnemyStatus(enemy, 'status.frost', definition.duration ?? 4, definition.id);
     });
     return true;
   }
@@ -4999,8 +5012,8 @@ function executeHunterOrMageSkill(
     [0.45, 0.75, 1].forEach(scale => vfxRing(center, new Color3(0.95, 0.62, 0.15), (definition.radius ?? 6) * scale, 0.55));
     enemiesInRadius(center, definition.radius ?? 6).forEach(enemy => {
       hit(enemy, damage, 'heavy');
-      applyEnemyStatus(enemy, 'status.stun', 1.25);
-      applyEnemyStatus(enemy, 'status.vulnerable', definition.duration ?? 7);
+      applyEnemyStatus(enemy, 'status.stun', 1.25, definition.id);
+      applyEnemyStatus(enemy, 'status.vulnerable', definition.duration ?? 7, definition.id);
     });
     return true;
   }
@@ -5039,7 +5052,7 @@ function executeHunterOrMageSkill(
       .sort((a, b) => Vector3.Distance(a.mesh.position, request.casterPosition) - Vector3.Distance(b.mesh.position, request.casterPosition))[0];
     if (first) {
       const chain = [first, ...enemies.filter(e => e !== first).sort((a, b) => Vector3.Distance(a.mesh.position, first.mesh.position) - Vector3.Distance(b.mesh.position, first.mesh.position)).slice(0, 3)];
-      chain.forEach((enemy, index) => { hit(enemy, damage * Math.pow(0.78, index), 'light'); applyEnemyStatus(enemy, 'status.shock', 4); vfxRing(enemy.mesh.position, new Color3(0.72, 0.42, 1), 1.3, 0.2); });
+      chain.forEach((enemy, index) => { hit(enemy, damage * Math.pow(0.78, index), 'light'); applyEnemyStatus(enemy, 'status.shock', 4, definition.id); vfxRing(enemy.mesh.position, new Color3(0.72, 0.42, 1), 1.3, 0.2); });
     }
     return true;
   }
@@ -5049,14 +5062,14 @@ function executeHunterOrMageSkill(
     enemiesInRadius(center, definition.radius ?? 6.5).forEach(enemy => {
       const statusCount = ['status.burn','status.chill','status.freeze','status.shock','status.poison'].filter(status => statusRuntime.has(enemy.statusComponent, status)).length;
       hit(enemy, damage * (1 + statusCount * 0.25), 'heavy');
-      applyEnemyStatus(enemy, 'status.vulnerable', 5);
+      applyEnemyStatus(enemy, 'status.vulnerable', 5, definition.id);
     });
     return true;
   }
   if (id === 'skill-warden-frost-nova') {
     const center = request.casterPosition;
     vfxRing(center, new Color3(0.35, 0.82, 1), definition.radius ?? 4.2, 0.55);
-    enemiesInRadius(center, definition.radius ?? 4.2).forEach(enemy => { hit(enemy, damage, 'light'); applyEnemyStatus(enemy, 'status.chill', definition.duration ?? 4); });
+    enemiesInRadius(center, definition.radius ?? 4.2).forEach(enemy => { hit(enemy, damage, 'light'); applyEnemyStatus(enemy, 'status.chill', definition.duration ?? 4, definition.id); });
     return true;
   }
   if (id === 'skill-warden-gravity-well') {
@@ -5066,14 +5079,14 @@ function executeHunterOrMageSkill(
       hit(enemy, damage, 'light');
       const toward = center.subtract(enemy.mesh.position); toward.y = 0;
       if (toward.lengthSquared() > 0.01) enemy.knockbackVelocity.addInPlace(toward.normalize().scale(5));
-      applyEnemyStatus(enemy, 'status.chill', definition.duration ?? 4);
+      applyEnemyStatus(enemy, 'status.chill', definition.duration ?? 4, definition.id);
     });
     return true;
   }
   if (id === 'skill-warden-absolute-control') {
     const center = request.aimPosition;
     vfxRing(center, new Color3(0.55, 0.85, 1), definition.radius ?? 7, 0.85);
-    enemiesInRadius(center, definition.radius ?? 7).forEach(enemy => { hit(enemy, damage, 'heavy'); applyEnemyStatus(enemy, 'status.freeze', 2.5); applyEnemyStatus(enemy, 'status.vulnerable', definition.duration ?? 6); });
+    enemiesInRadius(center, definition.radius ?? 7).forEach(enemy => { hit(enemy, damage, 'heavy'); applyEnemyStatus(enemy, 'status.freeze', 2.5, definition.id); applyEnemyStatus(enemy, 'status.vulnerable', definition.duration ?? 6, definition.id); });
     return true;
   }
   if (id === 'skill-warden-magic-barrier') {
@@ -5111,6 +5124,13 @@ function executeAbility(context: AbilityExecutionContext): void {
   direction.y = 0;
   if (direction.lengthSquared() > 0.0001) direction.normalize();
   const passive = passiveFor(caster);
+  const skillProfile = skillTreeRuntime.abilityModifierProfile(caster.id, definition.id);
+  const adjustedDefinition: Readonly<AbilityDefinition> = {
+    ...definition,
+    range: definition.range * skillProfile.rangeMultiplier,
+    radius: definition.radius === undefined ? undefined : definition.radius * skillProfile.radiusMultiplier,
+    duration: definition.duration === undefined ? undefined : definition.duration * skillProfile.durationMultiplier,
+  };
   const damageMultiplier = definition.family === 'projectile'
     ? 1 + (passive.projectileDamagePercent ?? 0)
     : definition.family === 'melee' || definition.family === 'area'
@@ -5118,41 +5138,41 @@ function executeAbility(context: AbilityExecutionContext): void {
       : 1;
   const damage = (definition.damage ?? definition.power ?? 0) * damageMultiplier;
 
-  if (executeWarriorOrRogueSkill(definition, request, caster, direction, damage)) return;
-  if (executeHunterOrMageSkill(definition, request, caster, direction, damage)) return;
+  if (executeWarriorOrRogueSkill(adjustedDefinition, request, caster, direction, damage)) return;
+  if (executeHunterOrMageSkill(adjustedDefinition, request, caster, direction, damage)) return;
 
   const projectileExecutors = new Set([
     'fireball', 'ice-spear', 'arrow-shot', 'fire-bolt', 'ice-bolt',
     'magic-missile', 'piercing-shot', 'spread-shot',
   ]);
-  if (projectileExecutors.has(definition.executorId)) {
-    const baseDirections = definition.executorId === 'spread-shot'
+  if (projectileExecutors.has(adjustedDefinition.executorId)) {
+    const baseDirections = adjustedDefinition.executorId === 'spread-shot'
       ? [-0.24, -0.12, 0, 0.12, 0.24].map(offset => new Vector3(
           direction.x * Math.cos(offset) - direction.z * Math.sin(offset),
           0,
           direction.x * Math.sin(offset) + direction.z * Math.cos(offset),
         ).normalize())
       : equipmentProjectileDirections(direction, caster);
-    const speed = Math.max(8, definition.speed ?? 15) * equipmentEffectsFor(caster).projectileSpeedMultiplier;
-    const color = definition.element === 'fire' ? new Color3(1, 0.32, 0.08)
-      : definition.element === 'frost' ? new Color3(0.35, 0.82, 1)
-      : definition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
+    const speed = Math.max(8, adjustedDefinition.speed ?? 15) * equipmentEffectsFor(caster).projectileSpeedMultiplier;
+    const color = adjustedDefinition.element === 'fire' ? new Color3(1, 0.32, 0.08)
+      : adjustedDefinition.element === 'frost' ? new Color3(0.35, 0.82, 1)
+      : adjustedDefinition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
       : caster.color;
     for (const [index, projectileDirection] of baseDirections.entries()) {
-      const projectile = MeshBuilder.CreateSphere(`ability-projectile-${definition.executorId}-${index}`, {
-        diameter: Math.max(0.28, (definition.radius ?? 0.18) * 2) * combatSandboxTuning.get().projectileVisualScale,
+      const projectile = MeshBuilder.CreateSphere(`ability-projectile-${adjustedDefinition.executorId}-${index}`, {
+        diameter: Math.max(0.28, (adjustedDefinition.radius ?? 0.18) * 2) * combatSandboxTuning.get().projectileVisualScale,
       }, scene);
       projectile.position = request.casterPosition.add(new Vector3(0, 0.8, 0)).add(projectileDirection.scale(0.9));
-      projectile.material = mat(`ability-${definition.executorId}`, color, 0.8);
+      projectile.material = mat(`ability-${adjustedDefinition.executorId}`, color, 0.8);
       projectiles.push({
         mesh: projectile,
         vel: projectileDirection.scale(speed),
-        ttl: Math.max(0.5, definition.range / speed),
+        ttl: Math.max(0.5, adjustedDefinition.range / speed),
         damage,
-        element: definition.element as Element,
-        pierce: definition.executorId === 'piercing-shot' ? 3 : definition.executorId === 'ice-spear' ? 1 : 0,
+        element: adjustedDefinition.element as Element,
+        pierce: adjustedDefinition.executorId === 'piercing-shot' ? 3 : adjustedDefinition.executorId === 'ice-spear' ? 1 : 0,
         owner: 'player',
-        collisionRadius: Math.max(0.14, definition.radius ?? 0.18) * combatSandboxTuning.get().projectileCollisionScale,
+        collisionRadius: Math.max(0.14, adjustedDefinition.radius ?? 0.18) * combatSandboxTuning.get().projectileCollisionScale,
       });
     }
     vfxRing(request.casterPosition, color, 1.8, 0.18);
@@ -5160,51 +5180,51 @@ function executeAbility(context: AbilityExecutionContext): void {
   }
 
   const areaExecutors = new Set(['melee-cleave', 'heavy-slam', 'spin-attack', 'frost-nova', 'shock-burst', 'poison-cloud', 'ground-fire']);
-  if (areaExecutors.has(definition.executorId)) {
-    const centeredOnCaster = definition.targeting === 'self' || definition.executorId === 'melee-cleave';
+  if (areaExecutors.has(adjustedDefinition.executorId)) {
+    const centeredOnCaster = adjustedDefinition.targeting === 'self' || adjustedDefinition.executorId === 'melee-cleave';
     const center = centeredOnCaster
-      ? request.casterPosition.add(direction.scale(definition.executorId === 'melee-cleave' ? 1.3 : 0))
+      ? request.casterPosition.add(direction.scale(adjustedDefinition.executorId === 'melee-cleave' ? 1.3 : 0))
       : request.aimPosition;
-    const radius = Math.max(2.2, definition.radius ?? definition.range ?? 3);
-    const color = definition.element === 'frost' ? new Color3(0.35, 0.82, 1)
-      : definition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
-      : definition.executorId === 'poison-cloud' ? new Color3(0.35, 0.8, 0.28)
+    const radius = Math.max(2.2, adjustedDefinition.radius ?? adjustedDefinition.range ?? 3);
+    const color = adjustedDefinition.element === 'frost' ? new Color3(0.35, 0.82, 1)
+      : adjustedDefinition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
+      : adjustedDefinition.executorId === 'poison-cloud' ? new Color3(0.35, 0.8, 0.28)
       : caster.color;
     vfxRing(center, color, radius, 0.35);
     enemies.filter(enemy => Vector3.Distance(enemy.mesh.position, center) <= radius)
-      .forEach(enemy => damageEnemy(enemy, damage, definition.element as Element, center));
+      .forEach(enemy => damageEnemy(enemy, damage, adjustedDefinition.element as Element, center));
     return;
   }
 
-  if (definition.executorId === 'blink' || definition.executorId === 'dash' || definition.executorId === 'charge' || definition.executorId === 'retreat') {
-    const destination = definition.executorId === 'retreat'
-      ? request.casterPosition.subtract(direction.scale(definition.range))
-      : request.casterPosition.add(direction.scale(definition.range));
-    performBlink(definition.executorId === 'blink' ? request.aimPosition : destination, definition.range);
-    if (definition.executorId === 'dash' || definition.executorId === 'charge') {
-      const radius = definition.executorId === 'charge' ? 2.4 : 1.8;
+  if (adjustedDefinition.executorId === 'blink' || adjustedDefinition.executorId === 'dash' || adjustedDefinition.executorId === 'charge' || adjustedDefinition.executorId === 'retreat') {
+    const destination = adjustedDefinition.executorId === 'retreat'
+      ? request.casterPosition.subtract(direction.scale(adjustedDefinition.range))
+      : request.casterPosition.add(direction.scale(adjustedDefinition.range));
+    performBlink(adjustedDefinition.executorId === 'blink' ? request.aimPosition : destination, adjustedDefinition.range);
+    if (adjustedDefinition.executorId === 'dash' || adjustedDefinition.executorId === 'charge') {
+      const radius = adjustedDefinition.executorId === 'charge' ? 2.4 : 1.8;
       enemies.filter(enemy => Vector3.Distance(enemy.mesh.position, playerRoot.position) <= radius)
-        .forEach(enemy => damageEnemy(enemy, damage, definition.element as Element));
+        .forEach(enemy => damageEnemy(enemy, damage, adjustedDefinition.element as Element));
       vfxRing(playerRoot.position, caster.color, radius, 0.2);
     }
     return;
   }
 
-  if (definition.executorId === 'shield' || definition.executorId === 'barrier') {
+  if (adjustedDefinition.executorId === 'shield' || adjustedDefinition.executorId === 'barrier') {
     caster.shieldRemaining = Math.max(
       caster.shieldRemaining,
-      (definition.duration ?? 4) * equipmentEffectsFor(caster).shieldDurationMultiplier,
+      (adjustedDefinition.duration ?? 4) * equipmentEffectsFor(caster).shieldDurationMultiplier,
     );
-    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 20));
+    caster.hp = Math.min(hpMax(caster), caster.hp + (adjustedDefinition.power ?? 20));
     vfxRing(playerRoot.position, new Color3(0.55, 0.75, 1), 4.2, 0.5);
-    feed(`${definition.name} active.`);
+    feed(`${adjustedDefinition.name} active.`);
     return;
   }
 
-  if (definition.executorId === 'heal' || definition.executorId === 'regeneration') {
-    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 30));
+  if (adjustedDefinition.executorId === 'heal' || adjustedDefinition.executorId === 'regeneration') {
+    caster.hp = Math.min(hpMax(caster), caster.hp + (adjustedDefinition.power ?? 30));
     vfxRing(playerRoot.position, new Color3(0.35, 1, 0.55), 3.2, 0.35);
-    feed(`${definition.name} restored health.`);
+    feed(`${adjustedDefinition.name} restored health.`);
   }
 }
 

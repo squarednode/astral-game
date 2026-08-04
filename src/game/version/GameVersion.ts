@@ -1,5 +1,5 @@
 /** Display/build identifier. Change this file for ordinary release version bumps. */
-export const BUILD_VERSION = '0.6.8.6c';
+export const BUILD_VERSION = '0.6.8.6d';
 
 /**
  * Save-format compatibility version. Increment only when the persisted structure

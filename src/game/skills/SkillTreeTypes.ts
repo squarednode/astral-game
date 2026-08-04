@@ -15,6 +15,30 @@ export interface SkillPassiveModifier {
   cooldownRatePercent?: number;
   staggerPower?: number;
   staggerResistance?: number;
+  abilityDamagePercent?: number;
+  statusDurationPercent?: number;
+  statusPotencyPercent?: number;
+  shieldPowerPercent?: number;
+  healingPowerPercent?: number;
+  armorPenetration?: number;
+  criticalChance?: number;
+  criticalDamage?: number;
+}
+
+export interface SkillAbilityModifierProfile {
+  damageMultiplier: number;
+  rangeMultiplier: number;
+  radiusMultiplier: number;
+  durationMultiplier: number;
+  staggerMultiplier: number;
+  statusDurationMultiplier: number;
+  statusPotencyMultiplier: number;
+  shieldMultiplier: number;
+  healingMultiplier: number;
+  armorPenetration: number;
+  additionalPierce: number;
+  additionalTargets: number;
+  upgradeNodeIds: readonly string[];
 }
 
 export interface SkillNodeDefinition {

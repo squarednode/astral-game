@@ -5,12 +5,16 @@ import type {
   SkillNodeEligibility,
   SkillPassiveModifier,
   SkillTreeSerializedState,
+  SkillAbilityModifierProfile,
 } from './SkillTreeTypes';
 
 const passiveKeys: readonly (keyof SkillPassiveModifier)[] = [
   'maximumHealth', 'attack', 'armor', 'movementSpeed', 'attackSpeedPercent',
   'dodgeCooldownPercent', 'projectileDamagePercent', 'meleeDamagePercent',
   'cooldownRatePercent', 'staggerPower', 'staggerResistance',
+  'abilityDamagePercent', 'statusDurationPercent', 'statusPotencyPercent',
+  'shieldPowerPercent', 'healingPowerPercent', 'armorPenetration',
+  'criticalChance', 'criticalDamage',
 ];
 
 const slots = [1, 2, 3, 4] as const;
@@ -102,6 +106,57 @@ export class SkillTreeRuntime {
       };
     }
     return this.eligibilityFor(tree, node, state.level, state.availableSkillPoints, new Set(state.unlockedNodeIds), state.pathPoints);
+  }
+
+
+  hasNode(characterId: string, nodeId: string): boolean {
+    const normalized = nodeId.includes('.') ? nodeId : `${characterId}.${nodeId}`;
+    return this.unlocked.get(characterId)?.has(normalized) ?? false;
+  }
+
+  abilityModifierProfile(characterId: string, abilityId: string): SkillAbilityModifierProfile {
+    const tree = this.trees.get(characterId);
+    const unlocked = this.unlocked.get(characterId) ?? new Set<string>();
+    const activeNode = tree?.nodes.find(node => node.abilityId === abilityId);
+    const upgrades = tree?.nodes.filter(node =>
+      unlocked.has(node.id) && node.kind === 'upgrade' && activeNode?.pathId === node.pathId
+    ) ?? [];
+    let damageMultiplier = 1;
+    let rangeMultiplier = 1;
+    let radiusMultiplier = 1;
+    let durationMultiplier = 1;
+    let staggerMultiplier = 1;
+    let statusDurationMultiplier = 1;
+    let statusPotencyMultiplier = 1;
+    let shieldMultiplier = 1;
+    let healingMultiplier = 1;
+    let armorPenetration = 0;
+    let additionalPierce = 0;
+    let additionalTargets = 0;
+    for (const upgrade of upgrades) {
+      const key = upgrade.id.split('.').pop() ?? '';
+      damageMultiplier *= 1.08;
+      if (/heavy-hand|piercing-lunge|charged-power-shot|explosive-fire-bolt/.test(key)) damageMultiplier *= 1.12;
+      if (/seismic-cleave|event-horizon|explosive-fire-bolt/.test(key)) radiusMultiplier *= 1.25;
+      if (/fortified-brace|burning-embers|lingering-venom|extended-control/.test(key)) durationMultiplier *= 1.3;
+      if (/burning-embers|lingering-venom|deep-freeze|shattering-frost/.test(key)) statusDurationMultiplier *= 1.25;
+      if (/barbed-snare|concussive-charge|shattering-frost/.test(key)) statusPotencyMultiplier *= 1.2;
+      if (/relentless-charge|piercing-lunge|charged-power-shot/.test(key)) additionalPierce += 1;
+      if (/double-dash|trap-network|rearming-mechanism/.test(key)) additionalTargets += 1;
+      if (/barrier-pulse|fortified-brace|evasive-shot/.test(key)) shieldMultiplier *= 1.2;
+      if (/evasive-shot|field-dressing/.test(key)) healingMultiplier *= 1.15;
+      if (/heavy-hand|crushing-impact|concussive-charge/.test(key)) staggerMultiplier *= 1.25;
+      if (/spell-penetration/.test(key)) armorPenetration += 1.5;
+      if (/range|charged-power-shot|piercing-lunge/.test(key)) rangeMultiplier *= 1.15;
+    }
+    const passive = this.snapshot(characterId)?.passiveModifiers ?? {};
+    damageMultiplier *= 1 + Math.max(0, passive.abilityDamagePercent ?? 0);
+    statusDurationMultiplier *= 1 + Math.max(0, passive.statusDurationPercent ?? 0);
+    statusPotencyMultiplier *= 1 + Math.max(0, passive.statusPotencyPercent ?? 0);
+    shieldMultiplier *= 1 + Math.max(0, passive.shieldPowerPercent ?? 0);
+    healingMultiplier *= 1 + Math.max(0, passive.healingPowerPercent ?? 0);
+    armorPenetration += Math.max(0, passive.armorPenetration ?? 0);
+    return { damageMultiplier, rangeMultiplier, radiusMultiplier, durationMultiplier, staggerMultiplier, statusDurationMultiplier, statusPotencyMultiplier, shieldMultiplier, healingMultiplier, armorPenetration, additionalPierce, additionalTargets, upgradeNodeIds: upgrades.map(node => node.id) };
   }
 
   canUnlock(characterId: string, nodeId: string): boolean {
