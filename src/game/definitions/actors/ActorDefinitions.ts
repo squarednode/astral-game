@@ -3,6 +3,7 @@ import type {
   ActorVisualProfile,
   InteractionProfile,
 } from '../../actors';
+import { LEVEL_ONE_LAYOUT, levelPoint } from '../../world/LevelOneLayout';
 
 export const actorVisualProfiles: readonly ActorVisualProfile[] = [
   {
@@ -77,7 +78,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     id: 'actor.hunter-mara',
     displayName: 'Hunter Mara',
     roleTags: ['quest-giver', 'hunter', 'story'],
-    position: { x: -14, y: 0, z: 7 },
+    position: levelPoint(LEVEL_ONE_LAYOUT.actors.hunterMara),
     visualProfileId: 'actor.human.hunter',
     interactionProfileId: 'interaction.talk',
     persistentId: 'npc.hunter-mara',
@@ -93,7 +94,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     id: 'actor.camp-merchant',
     displayName: 'Camp Merchant',
     roleTags: ['merchant', 'supplies'],
-    position: { x: -4, y: 0, z: 11 },
+    position: levelPoint(LEVEL_ONE_LAYOUT.actors.campMerchant),
     visualProfileId: 'actor.human.merchant',
     interactionProfileId: 'interaction.trade',
     persistentId: 'npc.camp-merchant',
@@ -109,7 +110,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     id: 'actor.ferry-captain',
     displayName: 'Ferry Captain',
     roleTags: ['transport', 'story'],
-    position: { x: 19, y: 0, z: 5 },
+    position: levelPoint(LEVEL_ONE_LAYOUT.actors.ferryCaptain),
     visualProfileId: 'actor.human.captain',
     interactionProfileId: 'interaction.travel',
     persistentId: 'npc.ferry-captain',
@@ -125,7 +126,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     id: 'actor.village-elder',
     displayName: 'Village Elder',
     roleTags: ['story', 'quest-giver'],
-    position: { x: 212, y: 0, z: -3 },
+    position: levelPoint(LEVEL_ONE_LAYOUT.actors.villageElder),
     visualProfileId: 'actor.human.elder',
     interactionProfileId: 'interaction.talk',
     persistentId: 'npc.village-elder',
@@ -140,7 +141,7 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     id: 'actor.blacksmith',
     displayName: 'Blacksmith Orin',
     roleTags: ['merchant', 'blacksmith', 'crafting-future'],
-    position: { x: 228, y: 0, z: -3 },
+    position: levelPoint(LEVEL_ONE_LAYOUT.actors.blacksmith),
     visualProfileId: 'actor.human.blacksmith',
     interactionProfileId: 'interaction.trade',
     persistentId: 'npc.blacksmith-orin',

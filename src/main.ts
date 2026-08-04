@@ -187,6 +187,7 @@ import { developerState } from './devtools/DeveloperState';
 import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildLevelOneZone } from './game/world/LevelOneZoneBuilder';
+import { LEVEL_ONE_LAYOUT } from './game/world/LevelOneLayout';
 import { LevelRegistry, LevelRuntime } from './game/world/levels';
 import { firstLevelDefinition, firstWorldDefinition } from './game/definitions/worlds';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
@@ -955,7 +956,11 @@ function logAbilityEvent(message: string): void {
 }
 
 const playerRoot = new TransformNode('playerRoot', scene);
-playerRoot.position.set(0, 0, -37);
+playerRoot.position.set(
+  LEVEL_ONE_LAYOUT.points.playerSpawn.x,
+  LEVEL_ONE_LAYOUT.points.playerSpawn.y,
+  LEVEL_ONE_LAYOUT.points.playerSpawn.z,
+);
 const playerBody = MeshBuilder.CreateCapsule('player', { height: 2.0, radius: 0.55 }, scene);
 playerBody.parent = playerRoot;
 playerBody.position.y = 1;
@@ -5751,7 +5756,11 @@ function respawnAfterDefeat(): void {
   const checkpoint = checkpointRuntime.active() ?? checkpointRuntime.get('checkpoint.entrance');
   const respawnPosition = checkpoint
     ? new Vector3(checkpoint.position.x, checkpoint.position.y, checkpoint.position.z)
-    : new Vector3(0, 0, -22);
+    : new Vector3(
+        LEVEL_ONE_LAYOUT.points.playerSpawn.x,
+        LEVEL_ONE_LAYOUT.points.playerSpawn.y,
+        LEVEL_ONE_LAYOUT.points.playerSpawn.z,
+      );
   traversalSurfaces.reset();
   worldVolumes.reset();
   playerRoot.position.copyFrom(respawnPosition);

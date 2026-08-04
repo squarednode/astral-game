@@ -18,6 +18,7 @@ import type {
 } from './WorldTypes';
 import type { WorldVolume } from './WorldVolumeTypes';
 import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
+import { LEVEL_ONE_LAYOUT } from './LevelOneLayout';
 
 /**
  * 0.6.9.1 authored blockout for Level 1.
@@ -106,6 +107,10 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     addCircleCollider(name, x, z, 0.55 * scale);
   };
 
+  const addBoundaryCollider = (name: string, x: number, z: number, width: number, depth: number): void => {
+    addBoxCollider(name, x, z, width, depth);
+  };
+
   const addWall = (name: string, x: number, z: number, width: number, depth: number, height = 4): void => {
     const wall = MeshBuilder.CreateBox(name, { width, depth, height }, scene);
     wall.position.set(x, height / 2 - 0.04, z);
@@ -160,18 +165,22 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   // Zone 1: beach tutorial, river, camp, forest and wolf den.
   // ---------------------------------------------------------------------
   // Broad, non-overlapping terrain plates prevent z-fighting and read as one authored landmass.
-  addGroundPatch('beach-sand', 8, -29, 112, 34, new Color3(0.72, 0.58, 0.4), 0.22);
-  addGroundPatch('forest-floor', 8, 14, 112, 48, new Color3(0.15, 0.25, 0.13), 0.24);
+  const beach = LEVEL_ONE_LAYOUT.terrain.beach;
+  const forest = LEVEL_ONE_LAYOUT.terrain.forest;
+  addGroundPatch('beach-sand', beach.x, beach.z, beach.width, beach.depth, new Color3(0.72, 0.58, 0.4), LEVEL_ONE_LAYOUT.elevation.landTop);
+  addGroundPatch('forest-floor', forest.x, forest.z, forest.width, forest.depth, new Color3(0.15, 0.25, 0.13), LEVEL_ONE_LAYOUT.elevation.landTop);
 
   // Ocean sits below the beach shelf. The south collision boundary keeps the player on land.
-  const ocean = MeshBuilder.CreateGround('level-one-ocean', { width: 128, height: 22, subdivisions: 1 }, scene);
-  ocean.position.set(8, 0.015, -55);
+  const oceanLayout = LEVEL_ONE_LAYOUT.terrain.ocean;
+  const ocean = MeshBuilder.CreateGround('level-one-ocean', { width: oceanLayout.width, height: oceanLayout.depth, subdivisions: 1 }, scene);
+  ocean.position.set(oceanLayout.x, LEVEL_ONE_LAYOUT.elevation.ocean, oceanLayout.z);
   ocean.material = material('level-one-water', new Color3(0.05, 0.34, 0.58), 0.08);
   ocean.visibility = 0.92;
   ocean.receiveShadows = true;
 
   // Sand pit teaches movement reduction and disables dodge.
-  addGroundPatch('sand-pit', 4, -18, 13, 12, new Color3(0.68, 0.48, 0.32));
+  const sandPit = LEVEL_ONE_LAYOUT.terrain.sandPit;
+  addGroundPatch('sand-pit', sandPit.x, sandPit.z, sandPit.width, sandPit.depth, new Color3(0.68, 0.48, 0.32));
   worldVolumes.push({
     id: 'level-one-sand-pit', label: 'Sand Pit', kind: 'modifier',
     footprint: { shape: 'box', centerX: 4, centerZ: -18, halfWidth: 6, halfDepth: 6 },
@@ -191,17 +200,8 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   traversalHighlights.push(tutorialLog);
 
   // One continuous ribbon replaces overlapping water plates, eliminating seams and flicker.
-  const riverCenters = [
-    new Vector3(-50, 0.31, -8),
-    new Vector3(-34, 0.31, -5),
-    new Vector3(-18, 0.31, -2),
-    new Vector3(0, 0.31, -1),
-    new Vector3(18, 0.31, 2),
-    new Vector3(32, 0.31, 9),
-    new Vector3(43, 0.31, 20),
-    new Vector3(52, 0.31, 34),
-  ];
-  const riverHalfWidth = 4.7;
+  const riverCenters = LEVEL_ONE_LAYOUT.river.centers.map(point => new Vector3(point.x, point.y, point.z));
+  const riverHalfWidth = LEVEL_ONE_LAYOUT.river.halfWidth;
   const leftBank: Vector3[] = [];
   const rightBank: Vector3[] = [];
   riverCenters.forEach((point, index) => {
@@ -233,11 +233,13 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     },
   );
 
-  addBridge('crossable-river-bridge', -24, -5, 5, 12);
-  addLandmark('bridge', 'Crossable Bridge', -24, -5);
+  const bridgeLayout = LEVEL_ONE_LAYOUT.bridge;
+  addBridge('crossable-river-bridge', bridgeLayout.x, bridgeLayout.z, bridgeLayout.width, bridgeLayout.depth);
+  addLandmark('bridge', 'Crossable Bridge', bridgeLayout.x, bridgeLayout.z);
 
   // Camp blockout and NPC stations.
-  addGroundPatch('small-camp', -9, 11, 22, 16, new Color3(0.42, 0.25, 0.1), 0.08);
+  const camp = LEVEL_ONE_LAYOUT.terrain.camp;
+  addGroundPatch('small-camp', camp.x, camp.z, camp.width, camp.depth, new Color3(0.42, 0.25, 0.1), 0.08);
   const tent = MeshBuilder.CreateCylinder('camp-tent', { diameter: 6, height: 3.5, tessellation: 4 }, scene);
   tent.position.set(-12, 1.75, 12);
   tent.rotation.y = Math.PI / 4;
@@ -268,9 +270,10 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   }
 
   // Tall rock wall forces the intended river/boat route.
-  addWall('tall-rock-barrier-a', 29, -8.5, 42, 3.5, 5.5);
-  addWall('tall-rock-barrier-b', 55, -8.5, 12, 3.5, 5.5);
-  addCliffDress('beach-route-barrier', 31, -8.5, 12, 'x');
+  LEVEL_ONE_LAYOUT.routeBarrier.segments.forEach((segment, index) => {
+    addWall('tall-rock-barrier-' + index, segment.x, segment.z, segment.width, segment.depth, 5.5);
+  });
+  addCliffDress('beach-route-barrier', 31, LEVEL_ONE_LAYOUT.routeBarrier.segments[0].z, 12, 'x');
 
   // Forest collision dressing and clear pockets for authored wolf groups.
   const trees: Array<[number, number, number]> = [
@@ -297,22 +300,22 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   });
   addLandmark('wolf-den', 'Wolf Den', 55, 33);
 
-  // Zone 1 outer boundaries.
-  addWall('zone-one-west-wall', -48, 7, 4, 82, 5);
-  addWall('zone-one-east-wall', 65, 7, 4, 82, 5);
-  addWall('zone-one-south-wall-a', -28, -49, 42, 4, 5);
-  addWall('zone-one-south-wall-b', 35, -49, 56, 4, 5);
-  addCliffDress('zone-one-south-cliff-a', -28, -49, 10, 'x');
-  addCliffDress('zone-one-south-cliff-b', 35, -49, 13, 'x');
-  addWall('zone-one-north-wall', 8, 43, 112, 4, 5);
-  addCliffDress('zone-one-west-cliff', -48, 7, 18, 'z');
-  addCliffDress('zone-one-east-cliff', 65, 7, 18, 'z');
-  addCliffDress('zone-one-north-cliff', 8, 43, 26, 'x');
+  // Zone 1 outer boundaries use invisible colliders. Visible cliff dressing sits
+  // just inside them, preventing black wall seams from crossing the terrain.
+  const bounds = LEVEL_ONE_LAYOUT.boundaries;
+  Object.entries(bounds).forEach(([id, boundary]) => {
+    addBoundaryCollider('zone-one-boundary-' + id, boundary.x, boundary.z, boundary.width, boundary.depth);
+  });
+  addCliffDress('zone-one-south-cliff-a', bounds.southA.x, bounds.southA.z, 10, 'x');
+  addCliffDress('zone-one-south-cliff-b', bounds.southB.x, bounds.southB.z, 13, 'x');
+  addCliffDress('zone-one-west-cliff', bounds.west.x, bounds.west.z, 18, 'z');
+  addCliffDress('zone-one-east-cliff', bounds.east.x, bounds.east.z, 18, 'z');
+  addCliffDress('zone-one-north-cliff', bounds.north.x, bounds.north.z, 26, 'x');
 
   // ---------------------------------------------------------------------
   // Zone 2: quarry boss arena, isolated far north in the same scene.
   // ---------------------------------------------------------------------
-  const bossCenterZ = 105;
+  const bossCenterZ = LEVEL_ONE_LAYOUT.points.bossCenter.z;
   addGroundPatch('quarry-floor', 0, bossCenterZ, 82, 52, new Color3(0.63, 0.43, 0.3));
   addWall('quarry-west-wall', -43, bossCenterZ, 4, 58, 7);
   addWall('quarry-east-wall', 43, bossCenterZ, 4, 58, 7);
@@ -360,8 +363,8 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   // objects can remain available without appearing in normal gameplay.
   // This area is reachable only through developer teleport controls.
   // ---------------------------------------------------------------------
-  const developerCenterX = 220;
-  const developerCenterZ = 0;
+  const developerCenterX = LEVEL_ONE_LAYOUT.points.developerGrounds.x;
+  const developerCenterZ = LEVEL_ONE_LAYOUT.points.developerGrounds.z;
   addGroundPatch(
     'developer-testing-ground',
     developerCenterX,
