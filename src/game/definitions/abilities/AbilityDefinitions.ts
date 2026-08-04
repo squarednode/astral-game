@@ -11,7 +11,7 @@ export type AbilityTag =
   | 'projectile' | 'melee' | 'area' | 'movement' | 'mobility'
   | 'fire' | 'ice' | 'lightning' | 'poison' | 'physical'
   | 'defensive' | 'damage' | 'buff' | 'status' | 'crowd-control'
-  | 'summon' | 'heal' | 'interruptible' | 'channeled' | 'boss';
+  | 'summon' | 'heal' | 'ultimate' | 'interruptible' | 'channeled' | 'boss';
 
 export interface AbilityDefinition extends DefinitionBase {
   readonly kind: 'ability';
@@ -289,6 +289,29 @@ const skillAbilityAliasSpecs: readonly SkillAbilityAliasSpec[] = [
   { id: 'ability.skill.warden.archmages-refuge', name: "Archmage's Refuge", description: 'Create a powerful sanctuary that shields and restores the party.', prototypeId: 'ability.heal' },
 ];
 
+
+
+const skillAbilityOverrides: Readonly<Record<string, Partial<AbilityDefinition>>> = {
+  'ability.skill.vanguard.cleave': { executorId: 'skill-vanguard-cleave', runtimeReady: true, family: 'melee', targeting: 'directional', castStyle: 'cast-time', element: 'physical', cooldown: 4, castTime: 0.22, range: 3.4, radius: 2.2, power: 15, damage: 15, abilityTags: ['melee', 'area', 'physical', 'damage'] },
+  'ability.skill.vanguard.ground-breaker': { executorId: 'skill-vanguard-ground-breaker', runtimeReady: true, family: 'area', targeting: 'ground', castStyle: 'cast-time', element: 'physical', cooldown: 8, castTime: 0.55, range: 4.5, radius: 3.2, power: 24, damage: 24, abilityTags: ['area', 'physical', 'damage', 'crowd-control'] },
+  'ability.skill.vanguard.overpower': { executorId: 'skill-vanguard-overpower', runtimeReady: true, family: 'melee', targeting: 'directional', castStyle: 'charged', element: 'physical', cooldown: 16, castTime: 0.9, range: 4.2, radius: 1.5, power: 44, damage: 44, abilityTags: ['melee', 'physical', 'damage', 'ultimate', 'crowd-control'] },
+  'ability.skill.vanguard.brace': { executorId: 'skill-vanguard-brace', runtimeReady: true, family: 'defense', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 8, castTime: 0, duration: 4, power: 12, abilityTags: ['defensive', 'buff'] },
+  'ability.skill.vanguard.guardian-roar': { executorId: 'skill-vanguard-guardian-roar', runtimeReady: true, family: 'control', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 11, castTime: 0, radius: 6, duration: 5, power: 18, abilityTags: ['area', 'defensive', 'buff', 'crowd-control'] },
+  'ability.skill.vanguard.living-bulwark': { executorId: 'skill-vanguard-living-bulwark', runtimeReady: true, family: 'defense', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 24, castTime: 0, radius: 7, duration: 8, power: 40, abilityTags: ['defensive', 'buff', 'ultimate', 'area'] },
+  'ability.skill.vanguard.vanguard-charge': { executorId: 'skill-vanguard-charge', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 6, castTime: 0, range: 7.5, radius: 2.2, power: 19, damage: 19, abilityTags: ['movement', 'mobility', 'melee', 'physical', 'damage', 'crowd-control'] },
+  'ability.skill.vanguard.warpath': { executorId: 'skill-vanguard-warpath', runtimeReady: true, family: 'utility', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 12, castTime: 0, duration: 6, power: 0, abilityTags: ['buff', 'movement'] },
+  'ability.skill.vanguard.juggernaut': { executorId: 'skill-vanguard-juggernaut', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 22, castTime: 0, range: 9, radius: 3, duration: 8, power: 32, damage: 32, abilityTags: ['movement', 'melee', 'physical', 'damage', 'buff', 'ultimate'] },
+  'ability.skill.tempest.lunging-strike': { executorId: 'skill-tempest-lunging-strike', runtimeReady: true, family: 'melee', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 4, castTime: 0, range: 4.5, radius: 1.2, power: 18, damage: 18, abilityTags: ['movement', 'melee', 'physical', 'damage'] },
+  'ability.skill.tempest.twin-fang': { executorId: 'skill-tempest-twin-fang', runtimeReady: true, family: 'melee', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 7, castTime: 0, range: 3, radius: 1.1, power: 13, damage: 13, abilityTags: ['melee', 'physical', 'damage'] },
+  'ability.skill.tempest.assassinate': { executorId: 'skill-tempest-assassinate', runtimeReady: true, family: 'melee', targeting: 'target', castStyle: 'instant', element: 'physical', cooldown: 18, castTime: 0, range: 5, radius: 1.3, power: 36, damage: 36, abilityTags: ['movement', 'melee', 'physical', 'damage', 'ultimate'] },
+  'ability.skill.tempest.dash-strike': { executorId: 'skill-tempest-dash-strike', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 5, castTime: 0, range: 6.5, radius: 1.6, power: 16, damage: 16, abilityTags: ['movement', 'mobility', 'melee', 'physical', 'damage'] },
+  'ability.skill.tempest.backstep-slash': { executorId: 'skill-tempest-backstep-slash', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 7, castTime: 0, range: 5.5, radius: 2, power: 17, damage: 17, abilityTags: ['movement', 'mobility', 'melee', 'physical', 'damage'] },
+  'ability.skill.tempest.phantom-rhythm': { executorId: 'skill-tempest-phantom-rhythm', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 20, castTime: 0, range: 8, radius: 4.5, power: 12, damage: 12, abilityTags: ['movement', 'melee', 'physical', 'damage', 'ultimate', 'area'] },
+  'ability.skill.tempest.poison-blade': { executorId: 'skill-tempest-poison-blade', runtimeReady: true, family: 'utility', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 10, castTime: 0, duration: 7, power: 0, abilityTags: ['buff', 'poison', 'status'] },
+  'ability.skill.tempest.smoke-bomb': { executorId: 'skill-tempest-smoke-bomb', runtimeReady: true, family: 'control', targeting: 'ground', castStyle: 'instant', element: 'physical', cooldown: 12, castTime: 0, radius: 4.5, duration: 5, power: 8, abilityTags: ['area', 'crowd-control', 'status'] },
+  'ability.skill.tempest.master-of-deception': { executorId: 'skill-tempest-master-of-deception', runtimeReady: true, family: 'movement', targeting: 'ground', castStyle: 'instant', element: 'physical', cooldown: 24, castTime: 0, range: 9, duration: 8, power: 0, abilityTags: ['movement', 'buff', 'ultimate'] },
+};
+
 const baseAbilityById = new Map(baseAbilityDefinitions.map(definition => [definition.id, definition]));
 const skillAbilityDefinitions: readonly AbilityDefinition[] = skillAbilityAliasSpecs.map(spec => {
   const prototype = baseAbilityById.get(spec.prototypeId);
@@ -298,7 +321,8 @@ const skillAbilityDefinitions: readonly AbilityDefinition[] = skillAbilityAliasS
     id: spec.id,
     name: spec.name,
     description: spec.description,
-    metadata: { ...prototype.metadata, contentVersion: '0.6.8.5c', tags: [...(prototype.metadata.tags ?? []), 'skill-catalog'] },
+    ...(skillAbilityOverrides[spec.id] ?? {}),
+    metadata: { ...prototype.metadata, contentVersion: '0.6.8.6b', tags: [...(prototype.metadata.tags ?? []), 'skill-catalog'] },
   };
 });
 

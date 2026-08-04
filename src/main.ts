@@ -90,6 +90,7 @@ import type {
   EliteModifierId,
 } from './game/definitions';
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
+import type { AbilityCastRequest } from './game/abilities';
 import { EnemyRuntimeWatchdog, EnemyTacticalController } from './game/enemies/runtime';
 import type { EnemyRuntimeActor } from './game/enemies/runtime';
 import {
@@ -868,6 +869,31 @@ let activeIndex = Math.max(0, party.findIndex(character => character.id === rost
 let active = party[activeIndex];
 const playerStatusComponent = statusRuntime.createComponent();
 const abilityComponents = new Map<string, AbilityComponent>();
+interface CharacterCombatBuffState {
+  attackSpeedUntil: number;
+  damageReductionUntil: number;
+  damageReduction: number;
+  poisonBladeUntil: number;
+  empoweredStrikeUntil: number;
+  empoweredStrikeMultiplier: number;
+}
+const characterCombatBuffs = new Map<string, CharacterCombatBuffState>();
+function combatBuffFor(character: CharacterState): CharacterCombatBuffState {
+  let state = characterCombatBuffs.get(character.id);
+  if (!state) {
+    state = {
+      attackSpeedUntil: 0,
+      damageReductionUntil: 0,
+      damageReduction: 0,
+      poisonBladeUntil: 0,
+      empoweredStrikeUntil: 0,
+      empoweredStrikeMultiplier: 1,
+    };
+    characterCombatBuffs.set(character.id, state);
+  }
+  return state;
+}
+function combatNow(): number { return performance.now() / 1000; }
 const abilityEventLog: string[] = [];
 let freezeAbilityCastTimers = false;
 function logAbilityEvent(message: string): void {
@@ -3193,7 +3219,9 @@ function passiveFor(c: CharacterState) {
 }
 
 function attackCooldownFor(c = active): number {
-  const speedBonus = Math.max(0, passiveFor(c).attackSpeedPercent ?? 0);
+  const buff = combatBuffFor(c);
+  const temporarySpeed = buff.attackSpeedUntil > combatNow() ? 0.4 : 0;
+  const speedBonus = Math.max(0, passiveFor(c).attackSpeedPercent ?? 0) + temporarySpeed;
   return Math.max(0.12, c.attackCooldown / (1 + speedBonus));
 }
 
@@ -4566,6 +4594,18 @@ function damageEnemy(
       });
     }
   }
+  const activeBuff = combatBuffFor(active);
+  if (activeBuff.poisonBladeUntil > combatNow()) {
+    const poison = statusDefinitionMap.get('status.poison');
+    if (poison) {
+      statusRuntime.apply(enemy.statusComponent, {
+        definition: poison,
+        ownerEntityId: enemy.entityId,
+        sourceEntityId: active.id,
+        durationSeconds: poison.duration,
+      });
+    }
+  }
   combat.applyEnemyHit({ target: enemy, damage: final, element, worldPosition: hitPos, sourcePosition, weight: resolvedWeight });
 }
 function basicAttack(): void {
@@ -4581,7 +4621,13 @@ function basicAttack(): void {
   const basicDamageMultiplier = active.basicAttackStyle === 'projectile'
     ? 1 + (passive.projectileDamagePercent ?? 0)
     : 1 + (passive.meleeDamagePercent ?? 0);
-  const basicDamage = attackFor() * basicDamageMultiplier;
+  const attackBuff = combatBuffFor(active);
+  const empowered = attackBuff.empoweredStrikeUntil > combatNow() ? attackBuff.empoweredStrikeMultiplier : 1;
+  const basicDamage = attackFor() * basicDamageMultiplier * empowered;
+  if (empowered > 1) {
+    attackBuff.empoweredStrikeUntil = 0;
+    attackBuff.empoweredStrikeMultiplier = 1;
+  }
   if (active.basicAttackStyle !== 'projectile') {
     const center = playerRoot.position.add(dir.scale(active.basicAttackStyle === 'rapid-melee' ? 1.0 : 1.3));
     const radius = active.attackRange * (active.basicAttackStyle === 'rapid-melee' ? 0.9 : 1.15);
@@ -4674,6 +4720,169 @@ function equipmentProjectileDirections(
   });
 }
 
+
+function enemiesInRadius(center: Vector3, radius: number): Enemy[] {
+  return enemies.filter(enemy => Vector3.Distance(enemy.mesh.position, center) <= radius);
+}
+
+function enemiesInLane(origin: Vector3, direction: Vector3, length: number, halfWidth: number): Enemy[] {
+  return enemies.filter(enemy => {
+    const offset = enemy.mesh.position.subtract(origin);
+    offset.y = 0;
+    const forward = Vector3.Dot(offset, direction);
+    if (forward < 0 || forward > length) return false;
+    return offset.subtract(direction.scale(forward)).length() <= halfWidth + enemy.targetRadius * 0.35;
+  });
+}
+
+function executeWarriorOrRogueSkill(
+  definition: Readonly<AbilityDefinition>,
+  request: AbilityCastRequest,
+  caster: CharacterState,
+  direction: Vector3,
+  damage: number,
+): boolean {
+  const id = definition.executorId;
+  const now = combatNow();
+  const buff = combatBuffFor(caster);
+  const hit = (enemy: Enemy, amount = damage, weight: HitWeight = 'light') =>
+    damageEnemy(enemy, amount, definition.element as Element, enemy.mesh.position, request.casterPosition, weight);
+
+  if (id === 'skill-vanguard-cleave') {
+    const center = request.casterPosition.add(direction.scale(1.5));
+    vfxRing(center, caster.color, 2.5, 0.25);
+    enemiesInLane(request.casterPosition, direction, definition.range, 1.9).forEach(enemy => hit(enemy, damage, 'light'));
+    return true;
+  }
+  if (id === 'skill-vanguard-ground-breaker') {
+    const center = request.aimPosition;
+    vfxRing(center, caster.color, definition.radius ?? 3.2, 0.45);
+    enemiesInRadius(center, definition.radius ?? 3.2).forEach(enemy => {
+      hit(enemy, damage, 'heavy');
+      enemy.knockbackVelocity.addInPlace(enemy.mesh.position.subtract(center).normalize().scale(3.5));
+    });
+    return true;
+  }
+  if (id === 'skill-vanguard-overpower') {
+    vfxRing(request.casterPosition.add(direction.scale(2)), caster.color, 3.2, 0.5);
+    enemiesInLane(request.casterPosition, direction, definition.range, 1.35).forEach(enemy => hit(enemy, damage, 'heavy'));
+    return true;
+  }
+  if (id === 'skill-vanguard-brace') {
+    buff.damageReductionUntil = now + (definition.duration ?? 4);
+    buff.damageReduction = 0.55;
+    caster.shieldRemaining = Math.max(caster.shieldRemaining, definition.duration ?? 4);
+    vfxRing(request.casterPosition, new Color3(0.5, 0.75, 1), 2.6, 0.35);
+    feed('Brace: damage and interruption resistance increased.');
+    return true;
+  }
+  if (id === 'skill-vanguard-guardian-roar') {
+    buff.damageReductionUntil = now + (definition.duration ?? 5);
+    buff.damageReduction = 0.3;
+    caster.shieldRemaining = Math.max(caster.shieldRemaining, 3);
+    enemiesInRadius(request.casterPosition, definition.radius ?? 6).forEach(enemy => {
+      enemy.stateMachine.blackboard.set('targetId', caster.id);
+      enemy.attackCd = Math.max(enemy.attackCd, 0.8);
+    });
+    vfxRing(request.casterPosition, new Color3(0.35, 0.65, 1), definition.radius ?? 6, 0.55);
+    feed('Guardian Roar challenged nearby enemies.');
+    return true;
+  }
+  if (id === 'skill-vanguard-living-bulwark') {
+    buff.damageReductionUntil = now + (definition.duration ?? 8);
+    buff.damageReduction = 0.65;
+    caster.shieldRemaining = Math.max(caster.shieldRemaining, definition.duration ?? 8);
+    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 40) * 0.15);
+    vfxRing(request.casterPosition, new Color3(0.65, 0.85, 1), definition.radius ?? 7, 0.8);
+    feed('Living Bulwark active.');
+    return true;
+  }
+  if (id === 'skill-vanguard-charge' || id === 'skill-vanguard-juggernaut') {
+    const destination = request.casterPosition.add(direction.scale(definition.range));
+    performBlink(destination, definition.range);
+    enemiesInRadius(playerRoot.position, definition.radius ?? 2.2).forEach(enemy => hit(enemy, damage, 'heavy'));
+    if (id === 'skill-vanguard-juggernaut') {
+      buff.attackSpeedUntil = now + (definition.duration ?? 8);
+      buff.damageReductionUntil = now + (definition.duration ?? 8);
+      buff.damageReduction = 0.4;
+    }
+    vfxRing(playerRoot.position, caster.color, definition.radius ?? 2.2, 0.35);
+    return true;
+  }
+  if (id === 'skill-vanguard-warpath') {
+    buff.attackSpeedUntil = now + (definition.duration ?? 6);
+    buff.empoweredStrikeUntil = now + (definition.duration ?? 6);
+    buff.empoweredStrikeMultiplier = 1.25;
+    vfxRing(request.casterPosition, caster.color, 3.2, 0.4);
+    feed('Warpath increased attack tempo.');
+    return true;
+  }
+  if (id === 'skill-tempest-lunging-strike' || id === 'skill-tempest-dash-strike') {
+    const origin = request.casterPosition.clone();
+    performBlink(origin.add(direction.scale(definition.range)), definition.range);
+    enemiesInLane(origin, direction, definition.range, id === 'skill-tempest-dash-strike' ? 1.4 : 0.8)
+      .forEach(enemy => hit(enemy, damage, 'light'));
+    return true;
+  }
+  if (id === 'skill-tempest-twin-fang') {
+    const targets = enemiesInLane(request.casterPosition, direction, definition.range, 0.9);
+    targets.forEach(enemy => { hit(enemy, damage, 'light'); hit(enemy, damage * 0.85, 'light'); });
+    vfxRing(request.casterPosition.add(direction.scale(1.5)), caster.color, 1.8, 0.22);
+    return true;
+  }
+  if (id === 'skill-tempest-assassinate') {
+    const target = enemiesInLane(request.casterPosition, direction, definition.range, 1.1)
+      .sort((a, b) => Vector3.Distance(a.mesh.position, request.casterPosition) - Vector3.Distance(b.mesh.position, request.casterPosition))[0];
+    if (target) {
+      performBlink(target.mesh.position.subtract(direction.scale(0.8)), definition.range);
+      const executeMultiplier = target.hp / target.maxHp <= 0.35 ? 2 : 1;
+      hit(target, damage * executeMultiplier, 'heavy');
+    }
+    return true;
+  }
+  if (id === 'skill-tempest-backstep-slash') {
+    enemiesInLane(request.casterPosition, direction, 2.8, 1.5).forEach(enemy => hit(enemy, damage, 'light'));
+    performBlink(request.casterPosition.subtract(direction.scale(definition.range)), definition.range);
+    return true;
+  }
+  if (id === 'skill-tempest-phantom-rhythm') {
+    const targets = enemiesInRadius(request.casterPosition, definition.radius ?? 4.5).slice(0, 5);
+    targets.forEach((enemy, index) => hit(enemy, damage * (index === targets.length - 1 ? 1.5 : 1), 'light'));
+    if (targets.length) performBlink(targets[targets.length - 1].mesh.position.subtract(direction.scale(1)), definition.range);
+    vfxRing(request.casterPosition, caster.color, definition.radius ?? 4.5, 0.55);
+    return true;
+  }
+  if (id === 'skill-tempest-poison-blade') {
+    buff.poisonBladeUntil = now + (definition.duration ?? 7);
+    buff.attackSpeedUntil = now + (definition.duration ?? 7);
+    vfxRing(request.casterPosition, new Color3(0.35, 0.9, 0.3), 2.2, 0.3);
+    feed('Poison Blade coated your attacks.');
+    return true;
+  }
+  if (id === 'skill-tempest-smoke-bomb') {
+    const center = request.aimPosition;
+    enemiesInRadius(center, definition.radius ?? 4.5).forEach(enemy => {
+      enemy.attackCd = Math.max(enemy.attackCd, definition.duration ?? 5);
+      enemy.stateMachine.request('reposition', 'smoke-bomb');
+    });
+    buff.damageReductionUntil = now + (definition.duration ?? 5);
+    buff.damageReduction = 0.35;
+    vfxRing(center, new Color3(0.45, 0.45, 0.55), definition.radius ?? 4.5, 0.65);
+    return true;
+  }
+  if (id === 'skill-tempest-master-of-deception') {
+    performBlink(request.aimPosition, definition.range);
+    buff.damageReductionUntil = now + 2;
+    buff.damageReduction = 0.8;
+    buff.empoweredStrikeUntil = now + (definition.duration ?? 8);
+    buff.empoweredStrikeMultiplier = 2.25;
+    vfxRing(playerRoot.position, new Color3(0.55, 0.35, 0.75), 3, 0.45);
+    feed('Master of Deception empowered the next attack.');
+    return true;
+  }
+  return false;
+}
+
 function executeAbility(context: AbilityExecutionContext): void {
   const { definition, request } = context;
   const caster = party.find(character => character.id === request.casterId) ?? active;
@@ -4687,6 +4896,8 @@ function executeAbility(context: AbilityExecutionContext): void {
       ? 1 + (passive.meleeDamagePercent ?? 0)
       : 1;
   const damage = (definition.damage ?? definition.power ?? 0) * damageMultiplier;
+
+  if (executeWarriorOrRogueSkill(definition, request, caster, direction, damage)) return;
 
   const projectileExecutors = new Set([
     'fireball', 'ice-spear', 'arrow-shot', 'fire-bolt', 'ice-bolt',
@@ -5132,7 +5343,10 @@ function hurtActive(
   if (developerState.godMode) return;
   if (!bypassHitProtection && movement.isInvulnerable()) return;
   if (!bypassHitProtection && !combat.registerPlayerHit()) return;
-  const resolvedAmount = active.shieldRemaining > 0 ? amount * 0.5 : amount;
+  const buff = combatBuffFor(active);
+  const reduction = buff.damageReductionUntil > combatNow() ? buff.damageReduction : 0;
+  const afterBuff = amount * Math.max(0.1, 1 - reduction);
+  const resolvedAmount = active.shieldRemaining > 0 ? afterBuff * 0.5 : afterBuff;
   active.hp -= resolvedAmount;
   vfxRing(playerRoot.position, new Color3(1,.12,.12), 1.5, .16);
   if (active.hp <= 0) {
