@@ -5,6 +5,7 @@ import {
   Scene,
   ShadowGenerator,
   StandardMaterial,
+  TransformNode,
   Vector3,
 } from '@babylonjs/core';
 import { StateMachine } from '../../engine/state';
@@ -33,6 +34,26 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   const dynamicColliders: DynamicBoxCollider[] = [];
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
+  const collisionDebugMeshes: Mesh[] = [];
+
+  const mainRoot = new TransformNode('level1-active-main-root', scene);
+  const bossRoot = new TransformNode('level1-active-boss-root', scene);
+  const testingRoot = new TransformNode('level1-active-testing-root', scene);
+  let activeSpace: 'main' | 'boss' | 'testing' = 'main';
+
+  const parentMeshesCreatedSince = (startIndex: number, root: TransformNode): void => {
+    scene.meshes.slice(startIndex).forEach(mesh => {
+      if (!mesh.parent) mesh.parent = root;
+      mesh.metadata = { ...(mesh.metadata ?? {}), levelOneSpace: activeSpace };
+    });
+  };
+
+  const setActiveSpace = (space: 'main' | 'boss' | 'testing'): void => {
+    activeSpace = space;
+    mainRoot.setEnabled(space === 'main');
+    bossRoot.setEnabled(space === 'boss');
+    testingRoot.setEnabled(space === 'testing');
+  };
 
   const addBoxCollider = (
     label: string,
@@ -155,9 +176,12 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     shadows.addShadowCaster(ring);
   };
 
-  // Shared floor is intentionally large enough for both isolated spaces.
-  const ground = MeshBuilder.CreateGround('level-one-ground', { width: 150, height: 260, subdivisions: 6 }, scene);
-  ground.position.set(0, -0.42, 40);
+  // Each play space owns its own root and backing floor. This prevents the
+  // boss quarry and developer grounds from rendering underneath Level 1.
+  activeSpace = 'main';
+  const mainMeshStart = scene.meshes.length;
+  const ground = MeshBuilder.CreateGround('level1-active-main-backing-ground', { width: 124, height: 100, subdivisions: 2 }, scene);
+  ground.position.set(8, -0.32, -3);
   ground.material = material('level-one-ground', new Color3(0.16, 0.22, 0.15));
   ground.receiveShadows = true;
 
@@ -167,8 +191,8 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   // Broad, non-overlapping terrain plates prevent z-fighting and read as one authored landmass.
   const beach = LEVEL_ONE_LAYOUT.terrain.beach;
   const forest = LEVEL_ONE_LAYOUT.terrain.forest;
-  addGroundPatch('beach-sand', beach.x, beach.z, beach.width, beach.depth, new Color3(0.72, 0.58, 0.4), LEVEL_ONE_LAYOUT.elevation.landTop);
-  addGroundPatch('forest-floor', forest.x, forest.z, forest.width, forest.depth, new Color3(0.15, 0.25, 0.13), LEVEL_ONE_LAYOUT.elevation.landTop);
+  void beach;
+  void forest;
 
   // Ocean sits below the beach shelf. The south collision boundary keeps the player on land.
   const oceanLayout = LEVEL_ONE_LAYOUT.terrain.ocean;
@@ -215,6 +239,26 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     leftBank.push(new Vector3(point.x + nx * riverHalfWidth, point.y, point.z + nz * riverHalfWidth));
     rightBank.push(new Vector3(point.x - nx * riverHalfWidth, point.y, point.z - nz * riverHalfWidth));
   });
+  const northOuter = leftBank.map(point => new Vector3(point.x, LEVEL_ONE_LAYOUT.elevation.landTop, 42));
+  const southOuter = rightBank.map(point => new Vector3(point.x, LEVEL_ONE_LAYOUT.elevation.landTop, -44));
+  const northBankLand = leftBank.map(point => new Vector3(point.x, LEVEL_ONE_LAYOUT.elevation.landTop, point.z));
+  const southBankLand = rightBank.map(point => new Vector3(point.x, LEVEL_ONE_LAYOUT.elevation.landTop, point.z));
+  const northLand = MeshBuilder.CreateRibbon('level1-active-main-north-land', {
+    pathArray: [northOuter, northBankLand], sideOrientation: Mesh.DOUBLESIDE,
+  }, scene);
+  northLand.material = material('forest-floor', new Color3(0.15, 0.25, 0.13));
+  northLand.receiveShadows = true;
+  const southLand = MeshBuilder.CreateRibbon('level1-active-main-south-land', {
+    pathArray: [southBankLand, southOuter], sideOrientation: Mesh.DOUBLESIDE,
+  }, scene);
+  southLand.material = material('beach-sand', new Color3(0.72, 0.58, 0.4));
+  southLand.receiveShadows = true;
+
+  const westLandCap = addGroundPatch('level1-active-main-west-cap', -54, -2, 12, 88, new Color3(0.36, 0.39, 0.24), LEVEL_ONE_LAYOUT.elevation.landTop);
+  const eastLandCap = addGroundPatch('level1-active-main-east-cap', 59, 1, 14, 82, new Color3(0.19, 0.28, 0.15), LEVEL_ONE_LAYOUT.elevation.landTop);
+  void westLandCap;
+  void eastLandCap;
+
   const river = MeshBuilder.CreateRibbon('level-one-river', { pathArray: [leftBank, rightBank], sideOrientation: Mesh.DOUBLESIDE }, scene);
   river.material = material('level-one-water', new Color3(0.08, 0.39, 0.62), 0.12);
   river.visibility = 0.9;
@@ -251,6 +295,12 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   // Boat crossings and toll markers. Actual copper transaction is handled by
   // interaction logic in a later content pass; geometry and trigger IDs are live.
   for (const [index, x, z] of [[1, 22, 5], [2, 36, 10]] as const) {
+    const dockZ = index === 1 ? z + 4.2 : z - 4.2;
+    const dock = MeshBuilder.CreateBox('toll-dock-' + index, { width: 5.2, depth: 3.2, height: 0.18 }, scene);
+    dock.position.set(x, LEVEL_ONE_LAYOUT.elevation.landTop + 0.09, dockZ);
+    dock.material = material('toll-dock', new Color3(0.38, 0.23, 0.1));
+    shadows.addShadowCaster(dock);
+    addBoxCollider('toll-dock-' + index, x, dockZ, 5.2, 3.2, 'traversable', LEVEL_ONE_LAYOUT.elevation.landTop + 0.18);
     const boat = MeshBuilder.CreateCapsule('toll-boat-' + index, { height: 4, radius: 1.1 }, scene);
     boat.position.set(x, 0.45, z);
     boat.rotation.z = Math.PI / 2;
@@ -264,14 +314,14 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     });
     worldVolumes.push({
       id: 'toll-boat-trigger-' + index, label: 'Boat Toll ' + index, kind: 'trigger',
-      footprint: { shape: 'box', centerX: x - 3, centerZ: z, halfWidth: 1.7, halfDepth: 1.7 },
+      footprint: { shape: 'box', centerX: x, centerZ: dockZ, halfWidth: 2.2, halfDepth: 1.8 },
       eventId: 'level-one.boat-toll-' + index, once: false,
     });
   }
 
   // Tall rock wall forces the intended river/boat route.
   LEVEL_ONE_LAYOUT.routeBarrier.segments.forEach((segment, index) => {
-    addWall('tall-rock-barrier-' + index, segment.x, segment.z, segment.width, segment.depth, 5.5);
+    addBoundaryCollider('tall-rock-barrier-' + index, segment.x, segment.z, segment.width, segment.depth);
   });
   addCliffDress('beach-route-barrier', 31, LEVEL_ONE_LAYOUT.routeBarrier.segments[0].z, 12, 'x');
 
@@ -312,10 +362,18 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   addCliffDress('zone-one-east-cliff', bounds.east.x, bounds.east.z, 18, 'z');
   addCliffDress('zone-one-north-cliff', bounds.north.x, bounds.north.z, 26, 'x');
 
+  parentMeshesCreatedSince(mainMeshStart, mainRoot);
+
   // ---------------------------------------------------------------------
-  // Zone 2: quarry boss arena, isolated far north in the same scene.
+  // Zone 2: quarry boss arena. It is disabled while the main map is active.
   // ---------------------------------------------------------------------
+  activeSpace = 'boss';
+  const bossMeshStart = scene.meshes.length;
   const bossCenterZ = LEVEL_ONE_LAYOUT.points.bossCenter.z;
+  const bossBacking = MeshBuilder.CreateGround('level1-active-boss-backing-ground', { width: 92, height: 66, subdivisions: 1 }, scene);
+  bossBacking.position.set(0, -0.28, bossCenterZ);
+  bossBacking.material = material('quarry-backing', new Color3(0.18, 0.15, 0.14));
+  bossBacking.receiveShadows = true;
   addGroundPatch('quarry-floor', 0, bossCenterZ, 82, 52, new Color3(0.63, 0.43, 0.3));
   addWall('quarry-west-wall', -43, bossCenterZ, 4, 58, 7);
   addWall('quarry-east-wall', 43, bossCenterZ, 4, 58, 7);
@@ -357,12 +415,16 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   addLandmark('exit', 'Boss Portal', 55, 28);
 
 
+  parentMeshesCreatedSince(bossMeshStart, bossRoot);
+
   // ---------------------------------------------------------------------
   // Developer-only testing grounds.
   // Kept far outside the authored Level 1 play spaces so legacy validation
   // objects can remain available without appearing in normal gameplay.
   // This area is reachable only through developer teleport controls.
   // ---------------------------------------------------------------------
+  activeSpace = 'testing';
+  const testingMeshStart = scene.meshes.length;
   const developerCenterX = LEVEL_ONE_LAYOUT.points.developerGrounds.x;
   const developerCenterZ = LEVEL_ONE_LAYOUT.points.developerGrounds.z;
   addGroundPatch(
@@ -398,6 +460,40 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   // Compatibility alias for older actor travel and developer commands.
   addLandmark('movement-course', 'Developer Testing Grounds', developerCenterX, developerCenterZ - 16);
 
+  parentMeshesCreatedSince(testingMeshStart, testingRoot);
+
+  // Optional collision audit overlay. These meshes are hidden by default and
+  // share the same roots as their corresponding play spaces.
+  const collisionDebugMaterial = material('level-one-collision-debug', new Color3(1, 0.15, 0.15), 0.55);
+  collisionDebugMaterial.alpha = 0.22;
+  collisionDebugMaterial.wireframe = true;
+  colliders.forEach((collider, index) => {
+    const debug = collider.kind === 'box'
+      ? MeshBuilder.CreateBox('level1-collision-debug-' + index, {
+          width: collider.halfWidth * 2,
+          depth: collider.halfDepth * 2,
+          height: Math.max(0.35, collider.clearanceHeight),
+        }, scene)
+      : MeshBuilder.CreateCylinder('level1-collision-debug-' + index, {
+          diameter: collider.radius * 2,
+          height: Math.max(0.35, collider.clearanceHeight),
+          tessellation: 24,
+        }, scene);
+    debug.position.set(collider.centerX, Math.max(0.2, collider.clearanceHeight / 2), collider.centerZ);
+    debug.material = collisionDebugMaterial;
+    debug.visibility = 0;
+    debug.isPickable = false;
+    const targetRoot = collider.centerX > 150
+      ? testingRoot
+      : collider.centerZ > 60
+        ? bossRoot
+        : mainRoot;
+    debug.parent = targetRoot;
+    collisionDebugMeshes.push(debug);
+  });
+
+  setActiveSpace('main');
+
   // A static compatibility machine keeps existing developer diagnostics valid.
   const elevatorStateMachine = new StateMachine<Record<string, never>, ElevatorStateId>(
     'level-one-static-elevator', {},
@@ -420,6 +516,25 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
           ? new Color3(0.2, 0.65, 0.9)
           : Color3.Black();
       });
+    },
+    setActiveSpace,
+    getActiveSpace: () => activeSpace,
+    setCollisionDebugVisible: visible => {
+      collisionDebugMeshes.forEach(mesh => { mesh.visibility = visible ? 0.8 : 0; });
+    },
+    getSceneAuditSnapshot: () => {
+      const roots = { main: mainRoot, boss: bossRoot, testing: testingRoot } as const;
+      const rootMeshCounts = {
+        main: mainRoot.getChildMeshes(false).length,
+        boss: bossRoot.getChildMeshes(false).length,
+        testing: testingRoot.getChildMeshes(false).length,
+      };
+      const visibleRootMeshCounts = {
+        main: roots.main.getChildMeshes(false).filter(mesh => mesh.isEnabled() && mesh.isVisible).length,
+        boss: roots.boss.getChildMeshes(false).filter(mesh => mesh.isEnabled() && mesh.isVisible).length,
+        testing: roots.testing.getChildMeshes(false).filter(mesh => mesh.isEnabled() && mesh.isVisible).length,
+      };
+      return { activeSpace, rootMeshCounts, visibleRootMeshCounts };
     },
   };
 }

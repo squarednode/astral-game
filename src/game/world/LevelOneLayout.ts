@@ -38,7 +38,7 @@ export const LEVEL_ONE_LAYOUT = {
   actors: {
     hunterMara: { x: -14, y: 0, z: 7 },
     campMerchant: { x: -4, y: 0, z: 11 },
-    ferryCaptain: { x: 19, y: 0, z: 5 },
+    ferryCaptain: { x: 22, y: 0, z: 9.2 },
     villageElder: { x: 212, y: 0, z: -3 },
     blacksmith: { x: 228, y: 0, z: -3 },
   },

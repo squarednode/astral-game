@@ -147,4 +147,12 @@ export interface OutdoorZone {
   update(dt: number): void;
   getElevatorStateSnapshot(): StateMachineSnapshot<ElevatorStateId>;
   setTraversalHighlightVisible(visible: boolean): void;
+  setActiveSpace?(space: 'main' | 'boss' | 'testing'): void;
+  getActiveSpace?(): 'main' | 'boss' | 'testing';
+  setCollisionDebugVisible?(visible: boolean): void;
+  getSceneAuditSnapshot?(): {
+    activeSpace: 'main' | 'boss' | 'testing';
+    rootMeshCounts: Readonly<Record<'main' | 'boss' | 'testing', number>>;
+    visibleRootMeshCounts: Readonly<Record<'main' | 'boss' | 'testing', number>>;
+  };
 }

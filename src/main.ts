@@ -545,6 +545,52 @@ const outdoorZone = buildLevelOneZone({
   },
 });
 const ground = scene.getMeshByName(outdoorZone.groundName)!;
+
+const levelSceneDebug = {
+  overviewEnabled: false,
+  previousCamera: null as null | { alpha: number; beta: number; radius: number; target: Vector3 },
+  setSpace(space: 'main' | 'boss' | 'testing'): void {
+    outdoorZone.setActiveSpace?.(space);
+  },
+  setCollisionOverlay(visible: boolean): void {
+    outdoorZone.setCollisionDebugVisible?.(visible);
+  },
+  toggleTopDown(): boolean {
+    if (!this.overviewEnabled) {
+      this.previousCamera = {
+        alpha: camera.alpha,
+        beta: camera.beta,
+        radius: camera.radius,
+        target: camera.getTarget().clone(),
+      };
+      const space = outdoorZone.getActiveSpace?.() ?? 'main';
+      const center = space === 'boss'
+        ? new Vector3(LEVEL_ONE_LAYOUT.points.bossCenter.x, 0, LEVEL_ONE_LAYOUT.points.bossCenter.z)
+        : space === 'testing'
+          ? new Vector3(LEVEL_ONE_LAYOUT.points.developerGrounds.x, 0, LEVEL_ONE_LAYOUT.points.developerGrounds.z)
+          : new Vector3(8, 0, -3);
+      camera.alpha = -Math.PI / 2;
+      camera.beta = 0.08;
+      camera.radius = space === 'main' ? 105 : 72;
+      camera.setTarget(center);
+      this.overviewEnabled = true;
+      return true;
+    }
+    const previous = this.previousCamera;
+    if (previous) {
+      camera.alpha = previous.alpha;
+      camera.beta = previous.beta;
+      camera.radius = previous.radius;
+      camera.setTarget(previous.target);
+    }
+    this.previousCamera = null;
+    this.overviewEnabled = false;
+    return false;
+  },
+  snapshot: () => outdoorZone.getSceneAuditSnapshot?.(),
+};
+(globalThis as typeof globalThis & { __astralLevelScene?: typeof levelSceneDebug }).__astralLevelScene = levelSceneDebug;
+
 const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
 const dynamicCollision = new DynamicCollisionSystem(outdoorZone.dynamicColliders);
 const traversalSurfaces = new TraversalSurfaceSystem(
@@ -1780,6 +1826,12 @@ function teleportPlayerToLandmark(
     return false;
   }
 
+  const targetSpace: 'main' | 'boss' | 'testing' = landmark.id === 'boss-arena'
+    ? 'boss'
+    : landmark.id === 'developer-testing-grounds' || landmark.id === 'movement-course'
+      ? 'testing'
+      : 'main';
+  outdoorZone.setActiveSpace?.(targetSpace);
   traversalSurfaces.reset();
   worldVolumes.reset();
   playerRoot.position.copyFrom(landmark.position);
