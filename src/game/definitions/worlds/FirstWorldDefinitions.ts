@@ -19,13 +19,13 @@ export const firstLevelDefinition: LevelDefinition = {
   builderId: 'level-one.blockout.v1',
   defaultSpawnId: 'spawn.beach',
   spawns: [
-    { id: 'spawn.beach', displayName: 'Beach Arrival', position: { x: 0, y: 0, z: -37 }, facing: 0 },
+    { id: 'spawn.beach', displayName: 'Beach Arrival', position: { x: 38, y: 0.25, z: -33 }, facing: Math.PI },
     { id: 'spawn.camp', displayName: 'Small Camp', position: { x: -8, y: 0, z: 10 }, facing: 0 },
     { id: 'spawn.wolf-den', displayName: 'Wolf Den', position: { x: 51, y: 0, z: 27 }, facing: Math.PI / 2 },
     { id: 'spawn.boss-arena', displayName: 'Wolf Keeper Quarry', position: { x: 0, y: 0, z: 82 }, facing: 0 },
   ],
   zones: [
-    { id: 'zone.beach-arrival', displayName: 'Beach Arrival', role: 'arrival', shape: { type: 'box', center: { x: 0, y: 0, z: -36 }, halfWidth: 20, halfDepth: 8 }, checkpointId: 'checkpoint.entrance', tags: ['intro', 'starter'] },
+    { id: 'zone.beach-arrival', displayName: 'Beach Arrival', role: 'arrival', shape: { type: 'box', center: { x: 35, y: 0, z: -33 }, halfWidth: 22, halfDepth: 10 }, checkpointId: 'checkpoint.entrance', tags: ['intro', 'starter'] },
     { id: 'zone.movement-tutorial', displayName: 'Movement Tutorial', role: 'travel', shape: { type: 'circle', center: { x: 4, y: 0, z: -18 }, radius: 9 }, tags: ['sand', 'jump', 'dodge-disabled'] },
     { id: 'zone.crab-beach', displayName: 'Crab Beach', role: 'encounter', shape: { type: 'box', center: { x: -21, y: 0, z: -24 }, halfWidth: 14, halfDepth: 9 }, tags: ['crab', 'nonaggressive'] },
     { id: 'zone.river-crossing', displayName: 'River Crossing', role: 'travel', shape: { type: 'box', center: { x: -2, y: 0, z: -3 }, halfWidth: 42, halfDepth: 8 }, checkpointId: 'checkpoint.bridge', tags: ['shallow-water', 'deep-water', 'bridge'] },

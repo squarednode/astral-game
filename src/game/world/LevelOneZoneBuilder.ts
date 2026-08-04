@@ -71,10 +71,10 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     width: number,
     depth: number,
     color: Color3,
-    height = 0.04,
+    height = 0.22,
   ): Mesh => {
     const mesh = MeshBuilder.CreateBox(name, { width, depth, height }, scene);
-    mesh.position.set(x, height / 2, z);
+    mesh.position.set(x, height / 2 + 0.01, z);
     mesh.material = material(name, color);
     mesh.receiveShadows = true;
     return mesh;
@@ -115,6 +115,18 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     addBoxCollider(name, x, z, width, depth);
   };
 
+  const addCliffDress = (name: string, x: number, z: number, count: number, axis: 'x' | 'z'): void => {
+    for (let index = 0; index < count; index += 1) {
+      const offset = (index - (count - 1) / 2) * 4.2;
+      const rock = MeshBuilder.CreateIcoSphere(name + '-rock-' + index, { radius: 2.5 + (index % 3) * 0.35, subdivisions: 1 }, scene);
+      rock.position.set(axis === 'x' ? x + offset : x, 1.5 + (index % 2) * 0.25, axis === 'z' ? z + offset : z);
+      rock.scaling.set(1.35, 0.85, 1.1);
+      rock.rotation.y = index * 0.73;
+      rock.material = material('level-one-cliff-rock', new Color3(0.26, 0.28, 0.27));
+      shadows.addShadowCaster(rock);
+    }
+  };
+
   const addBridge = (name: string, x: number, z: number, width: number, depth: number): void => {
     const bridge = MeshBuilder.CreateBox(name, { width, depth, height: 0.24 }, scene);
     bridge.position.set(x, 0.12, z);
@@ -140,16 +152,23 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
 
   // Shared floor is intentionally large enough for both isolated spaces.
   const ground = MeshBuilder.CreateGround('level-one-ground', { width: 150, height: 260, subdivisions: 6 }, scene);
-  ground.position.z = 40;
+  ground.position.set(0, -0.42, 40);
   ground.material = material('level-one-ground', new Color3(0.16, 0.22, 0.15));
   ground.receiveShadows = true;
 
   // ---------------------------------------------------------------------
   // Zone 1: beach tutorial, river, camp, forest and wolf den.
   // ---------------------------------------------------------------------
-  addGroundPatch('beach-sand', 0, -28, 70, 34, new Color3(0.72, 0.58, 0.4));
-  addGroundPatch('forest-floor', -8, 10, 88, 52, new Color3(0.15, 0.25, 0.13));
-  addGroundPatch('east-bank', 32, 12, 25, 48, new Color3(0.2, 0.29, 0.16));
+  // Broad, non-overlapping terrain plates prevent z-fighting and read as one authored landmass.
+  addGroundPatch('beach-sand', 8, -29, 112, 34, new Color3(0.72, 0.58, 0.4), 0.22);
+  addGroundPatch('forest-floor', 8, 14, 112, 48, new Color3(0.15, 0.25, 0.13), 0.24);
+
+  // Ocean sits below the beach shelf. The south collision boundary keeps the player on land.
+  const ocean = MeshBuilder.CreateGround('level-one-ocean', { width: 128, height: 22, subdivisions: 1 }, scene);
+  ocean.position.set(8, -0.14, -55);
+  ocean.material = material('level-one-water', new Color3(0.05, 0.34, 0.58), 0.08);
+  ocean.visibility = 0.92;
+  ocean.receiveShadows = true;
 
   // Sand pit teaches movement reduction and disables dodge.
   addGroundPatch('sand-pit', 4, -18, 13, 12, new Color3(0.68, 0.48, 0.32));
@@ -171,17 +190,35 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   });
   traversalHighlights.push(tutorialLog);
 
-  // River curves are approximated by three broad water sections.
-  const riverSegments: Array<[number, number, number, number, number]> = [
-    [-21, -7, 44, 8, -0.12], [5, -2, 36, 9, 0.08], [27, 8, 34, 9, -0.22],
+  // One continuous ribbon replaces overlapping water plates, eliminating seams and flicker.
+  const riverCenters = [
+    new Vector3(-50, 0.08, -8),
+    new Vector3(-34, 0.08, -5),
+    new Vector3(-18, 0.08, -2),
+    new Vector3(0, 0.08, -1),
+    new Vector3(18, 0.08, 2),
+    new Vector3(32, 0.08, 9),
+    new Vector3(43, 0.08, 20),
+    new Vector3(52, 0.08, 34),
   ];
-  riverSegments.forEach(([x, z, width, depth, rotation], index) => {
-    const water = MeshBuilder.CreateBox('river-water-' + index, { width, depth, height: 0.08 }, scene);
-    water.position.set(x, 0.03, z);
-    water.rotation.y = rotation;
-    water.material = material('level-one-water', new Color3(0.08, 0.39, 0.62), 0.12);
-    water.visibility = 0.88;
+  const riverHalfWidth = 4.7;
+  const leftBank: Vector3[] = [];
+  const rightBank: Vector3[] = [];
+  riverCenters.forEach((point, index) => {
+    const previous = riverCenters[Math.max(0, index - 1)];
+    const next = riverCenters[Math.min(riverCenters.length - 1, index + 1)];
+    const dx = next.x - previous.x;
+    const dz = next.z - previous.z;
+    const length = Math.max(0.001, Math.hypot(dx, dz));
+    const nx = -dz / length;
+    const nz = dx / length;
+    leftBank.push(new Vector3(point.x + nx * riverHalfWidth, point.y, point.z + nz * riverHalfWidth));
+    rightBank.push(new Vector3(point.x - nx * riverHalfWidth, point.y, point.z - nz * riverHalfWidth));
   });
+  const river = MeshBuilder.CreateRibbon('level-one-river', { pathArray: [leftBank, rightBank], sideOrientation: Mesh.DOUBLESIDE }, scene);
+  river.material = material('level-one-water', new Color3(0.08, 0.39, 0.62), 0.12);
+  river.visibility = 0.9;
+  river.receiveShadows = true;
   worldVolumes.push(
     {
       id: 'river-shallow', label: 'River Shallows', kind: 'modifier',
@@ -265,6 +302,9 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   addWall('zone-one-south-wall-a', -28, -46, 42, 4, 5);
   addWall('zone-one-south-wall-b', 35, -46, 56, 4, 5);
   addWall('zone-one-north-wall', 8, 43, 112, 4, 5);
+  addCliffDress('zone-one-west-cliff', -48, 7, 18, 'z');
+  addCliffDress('zone-one-east-cliff', 65, 7, 18, 'z');
+  addCliffDress('zone-one-north-cliff', 8, 43, 26, 'x');
 
   // ---------------------------------------------------------------------
   // Zone 2: quarry boss arena, isolated far north in the same scene.
@@ -303,7 +343,7 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
     eventId: 'level-one.portal-to-main', once: false,
   });
 
-  addLandmark('entrance', 'Beach Arrival', 0, -37);
+  addLandmark('entrance', 'Beach Arrival', 38, -33);
   addLandmark('movement-tutorial', 'Movement Tutorial', 4, -21);
   addLandmark('forest', 'Forest Area', -15, 18);
   addLandmark('wolf-grounds', 'Wolf Grounds', 34, 14);
