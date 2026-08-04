@@ -129,15 +129,15 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
 
   const addBridge = (name: string, x: number, z: number, width: number, depth: number): void => {
     const bridge = MeshBuilder.CreateBox(name, { width, depth, height: 0.24 }, scene);
-    bridge.position.set(x, 0.12, z);
+    bridge.position.set(x, 0.145, z);
     bridge.material = material('level-one-bridge', new Color3(0.38, 0.23, 0.1));
     shadows.addShadowCaster(bridge);
-    addBoxCollider(name, x, z, width, depth, 'traversable', 0.24);
+    addBoxCollider(name, x, z, width, depth, 'traversable', 0.29);
     traversalSurfaces.push({
       mode: 'free', shape: 'box', id: name + '-surface', label: name,
-      colliderLabel: name, center: new Vector3(x, 0.24, z),
+      colliderLabel: name, center: new Vector3(x, 0.29, z),
       halfWidth: width / 2, halfDepth: depth / 2,
-      surfaceHeight: 0.24, entryPadding: 0.3, exitDistance: 0.5,
+      surfaceHeight: 0.29, entryPadding: 0.75, exitDistance: 0.65,
     });
     traversalHighlights.push(bridge);
   };
@@ -165,7 +165,7 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
 
   // Ocean sits below the beach shelf. The south collision boundary keeps the player on land.
   const ocean = MeshBuilder.CreateGround('level-one-ocean', { width: 128, height: 22, subdivisions: 1 }, scene);
-  ocean.position.set(8, -0.14, -55);
+  ocean.position.set(8, 0.015, -55);
   ocean.material = material('level-one-water', new Color3(0.05, 0.34, 0.58), 0.08);
   ocean.visibility = 0.92;
   ocean.receiveShadows = true;
@@ -192,14 +192,14 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
 
   // One continuous ribbon replaces overlapping water plates, eliminating seams and flicker.
   const riverCenters = [
-    new Vector3(-50, 0.08, -8),
-    new Vector3(-34, 0.08, -5),
-    new Vector3(-18, 0.08, -2),
-    new Vector3(0, 0.08, -1),
-    new Vector3(18, 0.08, 2),
-    new Vector3(32, 0.08, 9),
-    new Vector3(43, 0.08, 20),
-    new Vector3(52, 0.08, 34),
+    new Vector3(-50, 0.31, -8),
+    new Vector3(-34, 0.31, -5),
+    new Vector3(-18, 0.31, -2),
+    new Vector3(0, 0.31, -1),
+    new Vector3(18, 0.31, 2),
+    new Vector3(32, 0.31, 9),
+    new Vector3(43, 0.31, 20),
+    new Vector3(52, 0.31, 34),
   ];
   const riverHalfWidth = 4.7;
   const leftBank: Vector3[] = [];
@@ -268,8 +268,9 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   }
 
   // Tall rock wall forces the intended river/boat route.
-  addWall('tall-rock-barrier-a', 22, 22, 36, 4, 6);
-  addWall('tall-rock-barrier-b', 48, 22, 18, 4, 6);
+  addWall('tall-rock-barrier-a', 29, -8.5, 42, 3.5, 5.5);
+  addWall('tall-rock-barrier-b', 55, -8.5, 12, 3.5, 5.5);
+  addCliffDress('beach-route-barrier', 31, -8.5, 12, 'x');
 
   // Forest collision dressing and clear pockets for authored wolf groups.
   const trees: Array<[number, number, number]> = [
@@ -299,8 +300,10 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   // Zone 1 outer boundaries.
   addWall('zone-one-west-wall', -48, 7, 4, 82, 5);
   addWall('zone-one-east-wall', 65, 7, 4, 82, 5);
-  addWall('zone-one-south-wall-a', -28, -46, 42, 4, 5);
-  addWall('zone-one-south-wall-b', 35, -46, 56, 4, 5);
+  addWall('zone-one-south-wall-a', -28, -49, 42, 4, 5);
+  addWall('zone-one-south-wall-b', 35, -49, 56, 4, 5);
+  addCliffDress('zone-one-south-cliff-a', -28, -49, 10, 'x');
+  addCliffDress('zone-one-south-cliff-b', 35, -49, 13, 'x');
   addWall('zone-one-north-wall', 8, 43, 112, 4, 5);
   addCliffDress('zone-one-west-cliff', -48, 7, 18, 'z');
   addCliffDress('zone-one-east-cliff', 65, 7, 18, 'z');
