@@ -1,7 +1,9 @@
 import type { QuestSnapshot } from '../../game/actors';
 import type { SaveSlotId, SaveSummary } from '../../game/save';
+import type { LevelRuntimeSnapshot } from '../../game/world/levels';
 
 export interface RuntimeDeveloperPanelOptions {
+  level(): LevelRuntimeSnapshot;
   quests(): readonly QuestSnapshot[];
   acceptQuest(id: string): boolean;
   advanceQuest(id: string, objectiveId: string, amount: number): void;
@@ -49,6 +51,7 @@ export class RuntimeDeveloperPanel {
     const slotMap = new Map(slots.map(slot => [slot.slotId, slot]));
     const merchants = this.options.merchantStock();
     const recruitment = this.options.recruitment();
+    const level = this.options.level();
     this.host.innerHTML = `
       <section class="runtime-dev-panel">
         <header class="runtime-dev-header">
@@ -56,6 +59,16 @@ export class RuntimeDeveloperPanel {
           <label class="runtime-dev-toggle"><input type="checkbox" data-action="playtest" ${this.options.playtestMode() ? 'checked' : ''}> Playtest mode</label>
         </header>
 
+        <details open>
+          <summary>WORLD & LEVEL <span>${level.currentZoneName ?? 'between zones'}</span></summary>
+          <div class="runtime-dev-list">
+            <div><span>World</span><b>${level.worldName}</b></div>
+            <div><span>Level</span><b>${level.levelName}</b></div>
+            <div><span>Zone</span><b>${level.currentZoneName ?? 'none'}</b></div>
+            <div><span>Zone role</span><b>${level.currentZoneRole ?? 'none'}</b></div>
+          </div>
+          <small>${level.currentZoneId ?? level.levelId}</small>
+        </details>
 
         <details open>
           <summary>RECRUITMENT FLOW <span>${recruitment.starterId ?? 'no starter'}</span></summary>

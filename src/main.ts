@@ -187,6 +187,8 @@ import { developerState } from './devtools/DeveloperState';
 import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildOutdoorZone } from './game/world/OutdoorZoneBuilder';
+import { LevelRegistry, LevelRuntime } from './game/world/levels';
+import { firstLevelDefinition, firstWorldDefinition } from './game/definitions/worlds';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
 import { DynamicCollisionSystem } from './game/world/DynamicCollisionSystem';
 import { TraversalSurfaceSystem } from './game/world/TraversalSurfaceSystem';
@@ -551,6 +553,44 @@ const worldVolumes = new WorldVolumeSystem(
   scene,
   outdoorZone.worldVolumes,
 );
+
+const levelRegistry = new LevelRegistry();
+levelRegistry.registerWorld(firstWorldDefinition);
+levelRegistry.registerLevel(firstLevelDefinition);
+const levelDefinitionIssues = levelRegistry.validate();
+if (levelDefinitionIssues.length > 0) {
+  throw new Error(`World definition validation failed:\n${levelDefinitionIssues.join('\n')}`);
+}
+const levelRuntime = new LevelRuntime(
+  firstWorldDefinition,
+  firstLevelDefinition,
+  {
+    onZoneEntered: zone => {
+      worldStateRuntime?.setValue?.('current-world', firstWorldDefinition.id);
+      worldStateRuntime?.setValue?.('current-level', firstLevelDefinition.id);
+      worldStateRuntime?.setValue?.('current-zone', zone.id);
+      events.emit('world.zoneEntered' as any, {
+        worldId: firstWorldDefinition.id,
+        levelId: firstLevelDefinition.id,
+        zoneId: zone.id,
+        role: zone.role,
+      } as any);
+      if (zone.role !== 'travel') feed(zone.displayName, 'neutral');
+    },
+    onZoneExited: zone => {
+      events.emit('world.zoneExited' as any, {
+        worldId: firstWorldDefinition.id,
+        levelId: firstLevelDefinition.id,
+        zoneId: zone.id,
+        role: zone.role,
+      } as any);
+    },
+  },
+);
+(globalThis as any).__astralLevel = {
+  snapshot: () => levelRuntime.snapshot(),
+  registry: levelRegistry,
+};
 
 const checkpointLandmarkIds = ['entrance', 'npc-camp', 'bridge', 'exit'] as const;
 const checkpointDefinitions: CheckpointDefinition[] = checkpointLandmarkIds
@@ -2663,6 +2703,7 @@ function refreshDeveloperMerchant(merchantId: string): void {
 const runtimeDeveloperPanel = new RuntimeDeveloperPanel(
   developerHud.getPageContent('runtime'),
   {
+    level: () => levelRuntime.snapshot(),
     quests: () => questRuntime.all(),
     acceptQuest: id => questRuntime.accept(id),
     advanceQuest: (id, objectiveId, amount) => questRuntime.advance(id, objectiveId, amount),
@@ -6102,6 +6143,10 @@ scene.onBeforeRenderObservable.add(() => {
   sessionPlaytimeSeconds += realDt;
   const dt = combat.update(realDt);
   updateActors(dt);
+  levelRuntime.update(
+    { x: playerRoot.position.x, y: playerRoot.position.y, z: playerRoot.position.z },
+    dt,
+  );
   updateCheckpointInteraction();
   encounterManager.update(
     dt,

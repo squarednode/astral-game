@@ -404,7 +404,7 @@ export class SkillTreeScreen {
     const lines: string[] = [];
     if (node.kind === 'active') lines.push(node.isUltimate ? 'Equippable ultimate skill' : 'Equippable active skill');
     if (node.kind === 'upgrade') lines.push('Modifies an existing combat action');
-    const modifierLabels: Readonly<Record<keyof SkillPassiveModifier, string>> = {
+    const modifierLabels: Readonly<Partial<Record<keyof SkillPassiveModifier, string>>> = {
       maximumHealth: 'Maximum health',
       attack: 'Attack power',
       armor: 'Armor',

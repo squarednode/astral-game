@@ -5975,6 +5975,37 @@ This build establishes the shared numerical pipeline that the 36 constellation s
 - The boss holds its encounter position instead of chasing fully to distant targets.
 - Blink, retreat, and ranged play therefore cause a real attack-mode change.
 
+# Astral Shift 0.6.9.0 - First World and Level Framework
+
+This release begins the 0.6.9.x world-building phase by turning the existing outdoor sandbox into a registered first-world shell.
+
+## First world
+
+- World: Verdant Reach
+- Level: The Verdant Path
+- Data-driven spawn, zone, checkpoint, encounter, and transition references
+- Existing outdoor geometry remains playable while future level passes replace sandbox content with authored world content
+
+## Level zones
+
+The first level is divided into authored gameplay zones:
+
+- South Road arrival
+- Fallen Timber Path
+- Stream Crossing
+- Wayfarer Camp
+- Old Bridge quest area
+- Wolf Grounds encounter area
+- Mother Wolf Hollow boss area
+- North Gate transition area
+
+## Runtime
+
+`LevelRegistry` validates world and level references at startup.
+
+`LevelRuntime` tracks the player's current zone and emits zone-entered and zone-exited events. The current snapshot is available through:
+
+
 ### Validate
 ```bash
 npm run build
