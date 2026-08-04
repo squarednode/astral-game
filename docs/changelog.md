@@ -6005,6 +6005,37 @@ The first level is divided into authored gameplay zones:
 
 `LevelRuntime` tracks the player's current zone and emits zone-entered and zone-exited events. The current snapshot is available through:
 
+# Astral Shift 0.6.9.1 — Level 1 Plan Blockout
+
+This release replaces the old outdoor test-ground route with the authored Level 1 plan.
+
+## Main route
+
+- Beach arrival and starter spawn
+- Sand movement tutorial with 50% movement and dodge disabled
+- Jump-log obstacle
+- Nonaggressive crab beach pocket
+- Shallow/deep river system
+- Crossable bridge
+- Small camp blockout with quest, merchant and recruitment markers
+- Western nonaggressive wolf forest
+- Eastern aggressive wolf grounds
+- Two 3-copper boat-toll locations prepared for interaction logic
+- Tall rock barrier directing route progression
+- Wolf den and quest-gated boss portal
+
+## Boss area
+
+- Separate quarry arena in the same scene
+- Return portal to Zone 1
+- Aggressive boss zone
+- Line-of-sight structures
+- Jumpable low platform
+- Space for Wolf Keeper plus two Mother Wolves
+
+## Current content boundary
+
+This is a navigation and spatial blockout. Enemy placement, exact NPC interactions, boat payment and authored quest progression are scheduled for the next 0.6.9 content passes.
 
 ### Validate
 ```bash

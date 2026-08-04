@@ -186,7 +186,7 @@ import { DeveloperConsole } from './devtools/DeveloperConsole';
 import { developerState } from './devtools/DeveloperState';
 import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
-import { buildOutdoorZone } from './game/world/OutdoorZoneBuilder';
+import { buildLevelOneZone } from './game/world/LevelOneZoneBuilder';
 import { LevelRegistry, LevelRuntime } from './game/world/levels';
 import { firstLevelDefinition, firstWorldDefinition } from './game/definitions/worlds';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
@@ -508,7 +508,7 @@ function mat(
 
 const events = new EventBus();
 
-const outdoorZone = buildOutdoorZone({
+const outdoorZone = buildLevelOneZone({
   scene,
   shadows,
   material: mat,
@@ -955,7 +955,7 @@ function logAbilityEvent(message: string): void {
 }
 
 const playerRoot = new TransformNode('playerRoot', scene);
-playerRoot.position.set(0, 0, -22);
+playerRoot.position.set(0, 0, -37);
 const playerBody = MeshBuilder.CreateCapsule('player', { height: 2.0, radius: 0.55 }, scene);
 playerBody.parent = playerRoot;
 playerBody.position.y = 1;
@@ -3572,7 +3572,24 @@ const eventUnsubscribers = [
     );
   }),
   events.subscribe('world.triggerActivated', event => {
-    feed(`Trigger volume: ${event.payload.triggerId}.`);
+    const triggerId = event.payload.triggerId;
+    if (triggerId === 'level-one.portal-to-boss') {
+      if (!worldStateRuntime.getFlag('quest.wolf-problem.completed')) {
+        feed('The portal remains sealed. Complete the wolf quest first.', 'warning');
+        return;
+      }
+      teleportPlayerToLandmark('boss-arena', 'Entered');
+      return;
+    }
+    if (triggerId === 'level-one.portal-to-main') {
+      teleportPlayerToLandmark('wolf-den', 'Returned to');
+      return;
+    }
+    if (triggerId === 'level-one.boat-toll-1' || triggerId === 'level-one.boat-toll-2') {
+      feed('Boat passage costs 3 copper. Toll interaction will be enabled in the camp/quest content pass.', 'neutral');
+      return;
+    }
+    feed(`Trigger volume: ${triggerId}.`);
   }),
   events.subscribe('ui.notification', event => {
     gameplayHud.notify(
