@@ -92,6 +92,7 @@ import type {
 import { AbilityComponent, AbilityRuntime } from './game/abilities';
 import type { AbilityCastRequest } from './game/abilities';
 import { EnemyRuntimeWatchdog, EnemyTacticalController } from './game/enemies/runtime';
+import { EnemyRespawnRuntime, type EnemyRespawnRecord } from './game/enemies/runtime/EnemyRespawnRuntime';
 import type { EnemyRuntimeActor } from './game/enemies/runtime';
 import {
   EnemyNavigationDebugOverlay,
@@ -343,6 +344,10 @@ interface Enemy {
   lastMovementResult: SharedMovementResult | null;
   stateMachine: StateMachine<EnemyStateContext, EnemyStateId, EnemyBlackboard>;
   encounterOwnership?: EncounterEnemyOwnership;
+  respawnPosition: Vector3;
+  respawnDefinitionId: string;
+  respawnVariantId: EnemyVariantId;
+  respawnModifierId: EliteModifierId;
 }
 
 type LootItem = GeneratedItemInstance;
@@ -467,6 +472,8 @@ if (combatLibraryValidation.errors.length > 0) {
 
 const enemyTactics = new EnemyTacticalController(definitions);
 const enemyRuntimeWatchdog = new EnemyRuntimeWatchdog();
+const enemyRespawns = new EnemyRespawnRuntime();
+(globalThis as typeof globalThis & { __astralEnemyRespawns?: EnemyRespawnRuntime }).__astralEnemyRespawns = enemyRespawns;
 
 function mat(
   name: string,
@@ -3573,6 +3580,29 @@ function enemyIsOutsideTerritory(enemy: Enemy): boolean {
   return Vector3.Distance(enemy.mesh.position, home) > effectiveLeashRange(enemy);
 }
 
+function enemyMeleeHitsPlayer(enemy: Enemy, range: number): boolean {
+  const offset = playerRoot.position.subtract(enemy.mesh.position);
+  offset.y = 0;
+  const distance = offset.length();
+  if (distance > range || distance <= 0.001) return false;
+  const forward = new Vector3(Math.sin(enemy.mesh.rotation.y), 0, Math.cos(enemy.mesh.rotation.y));
+  const direction = offset.scale(1 / distance);
+  const minimumFacing = enemy.definition.role === 'wolf' || enemy.definition.role === 'mother-wolf'
+    ? 0.72
+    : enemy.definition.role === 'boss'
+      ? 0.42
+      : 0.25;
+  return Vector3.Dot(forward, direction) >= minimumFacing;
+}
+
+function pointSegmentDistance(point: Vector3, start: Vector3, end: Vector3): number {
+  const segment = end.subtract(start);
+  const lengthSquared = segment.lengthSquared();
+  if (lengthSquared <= 0.000001) return Vector3.Distance(point, start);
+  const t = Math.max(0, Math.min(1, Vector3.Dot(point.subtract(start), segment) / lengthSquared));
+  return Vector3.Distance(point, start.add(segment.scale(t)));
+}
+
 function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): void {
   const ability = definitions.require<AbilityDefinition>(usage.abilityId);
   const distance = Vector3.Distance(enemy.mesh.position, playerRoot.position);
@@ -3667,7 +3697,9 @@ function executeEnemyAbility(enemy: Enemy, usage: AiAbilityUsageDefinition): voi
   const hitRange = Math.max(ability.range, usage.maximumRange) + 0.75;
   if (
     !ability.projectileId &&
+    enemy.definition.role !== 'crab' &&
     resolvedDistance <= hitRange &&
+    enemyMeleeHitsPlayer(enemy, hitRange) &&
     !ability.abilityTags.includes('defensive')
   ) {
     hurtActive(Math.max(enemy.damage * combatSandboxTuning.get().enemyDamageScale, power));
@@ -4473,6 +4505,10 @@ function spawnEnemy(
     movementRuntime: null as unknown as SharedGroundMovementRuntime,
     lastMovementResult: null,
     encounterOwnership,
+    respawnPosition: mesh.position.clone(),
+    respawnDefinitionId: definition.id,
+    respawnVariantId: variant.variantId,
+    respawnModifierId: modifier.modifierId,
   });
   enemy.movementRuntime = new SharedGroundMovementRuntime(
     mesh,
@@ -5514,6 +5550,23 @@ function killEnemy(enemy: Enemy): void {
   enemy.targetMesh.dispose();
   kills++;
   encounterManager?.recordEnemyDefeated(enemy.entityId);
+  const respawnClass = enemy.definition.spawnClass === 'boss'
+    ? 'boss'
+    : enemy.definition.spawnClass === 'leader' || Boolean(enemy.encounterOwnership)
+      ? 'quest'
+      : 'normal';
+  enemyRespawns.schedule({
+    id: enemy.entityId,
+    enemyDefinitionId: enemy.respawnDefinitionId,
+    variantId: enemy.respawnVariantId,
+    modifierId: enemy.respawnModifierId,
+    elite: enemy.elite,
+    respawnClass,
+    position: { x: enemy.respawnPosition.x, y: enemy.respawnPosition.y, z: enemy.respawnPosition.z },
+    encounterOwnership: enemy.encounterOwnership,
+    defeatedAtSeconds: performance.now() / 1000,
+    bossZoneRadius: 26,
+  });
   events.emit('combat.enemyKilled', {
     entityId: enemy.entityId,
     elite: enemy.elite,
@@ -5599,6 +5652,7 @@ function hurtActive(
 }
 
 function respawnAfterDefeat(): void {
+  enemyRespawns.clear();
   // Defeat must never change recruitment or party composition. Some encounter
   // reset callbacks can touch progression state, so preserve the exact roster
   // before resetting the world and reapply it afterward.
@@ -6399,7 +6453,20 @@ scene.onBeforeRenderObservable.add(() => {
     character.shieldRemaining = Math.max(0, character.shieldRemaining - dt);
   });
 
+  enemyRespawns.update(dt, playerRoot.position, (record: EnemyRespawnRecord) => {
+    const respawned = spawnEnemy(
+      record.elite,
+      new Vector3(record.position.x, record.position.y, record.position.z),
+      record.enemyDefinitionId,
+      record.variantId as EnemyVariantId | undefined,
+      record.modifierId as EliteModifierId | undefined,
+      record.encounterOwnership as EncounterEnemyOwnership | undefined,
+    );
+    return Boolean(respawned);
+  });
+
   for (const p of [...projectiles]) {
+    const projectilePreviousPosition = p.mesh.position.clone();
     p.mesh.position.addInPlace(p.vel.scale(dt));
     p.ttl -= dt;
 
@@ -6421,7 +6488,11 @@ scene.onBeforeRenderObservable.add(() => {
         if (p.pierce < 0) p.ttl = 0;
       }
     } else if (
-      Vector3.Distance(playerRoot.position.add(new Vector3(0, 0.7, 0)), p.mesh.position) < 0.68 + p.collisionRadius
+      pointSegmentDistance(
+        playerRoot.position.add(new Vector3(0, 0.7, 0)),
+        projectilePreviousPosition,
+        p.mesh.position,
+      ) < 0.68 + p.collisionRadius
     ) {
       hurtActive(p.damage);
       vfxRing(playerRoot.position, new Color3(1, 0.2, 0.12), 1.2, 0.15);

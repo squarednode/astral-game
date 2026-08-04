@@ -113,10 +113,17 @@ export class EnemyAbilityController {
             roleScore += 5;
           }
           break;
-        case 'boss':
+        case 'boss': {
+          const isProjectile = usage.abilityId === 'ability.magic-missile';
+          const isMelee = usage.abilityId === 'ability.heavy-slam' || usage.abilityId === 'ability.melee-strike';
+          if (distance <= 5 && isMelee) roleScore += 22;
+          if (distance > 6 && isProjectile) roleScore += 26;
+          if (distance > 6 && isMelee) roleScore -= 14;
+          if (distance <= 5 && isProjectile) roleScore -= 10;
           if (ready) roleScore += 5;
           if (inRange) roleScore += 4;
           break;
+        }
       }
 
       const readinessScore = ready ? 20 : Math.max(0, 5 - cooldown);

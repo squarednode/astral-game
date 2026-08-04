@@ -52,6 +52,13 @@ export class EnemyMovementController {
     }
 
     if (distance > advanceThreshold) {
+      if (actor.definition.movementStyle === 'boss') {
+        return {
+          intent: 'hold',
+          reason: 'boss: holding encounter position while selecting a ranged response',
+          canCast: false,
+        };
+      }
       return {
         intent: 'advance',
         reason: `${actor.definition.movementStyle}: closing to preferred range ${preferredRange.toFixed(1)}m`,

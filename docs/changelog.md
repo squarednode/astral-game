@@ -5952,6 +5952,29 @@ This build establishes the shared numerical pipeline that the 36 constellation s
 - baseline for skill values 
 - baseline for equipment values
 
+# Astral Shift 0.6.8.7 - Enemy Behavior and Respawn Tuning
+
+## Respawn rules
+
+- Normal enemies: 20 seconds after defeat.
+- Quest/leader/encounter-owned enemies: 60 seconds after defeat.
+- Bosses: never respawn while the player remains inside the boss zone. The 90-second timer requires the zone to remain empty and resets if the player re-enters.
+- Checkpoint defeat/reload clears pending timers so the checkpoint reconstruction remains authoritative.
+
+## Attack behavior
+
+- Crabs remain non-damaging environmental enemies.
+- Wolves use a narrow forward bite check rather than a radial area hit.
+- Mother Wolf retains bite, lunge, and howl behavior with a shorter territory leash.
+- Enemy projectiles now use swept collision between their previous and current positions, preventing fast ranged shots from passing through the player between frames.
+
+## First boss behavior
+
+- Close range prioritizes heavy melee.
+- Beyond melee distance, the boss prioritizes its projectile response.
+- The boss holds its encounter position instead of chasing fully to distant targets.
+- Blink, retreat, and ranged play therefore cause a real attack-mode change.
+
 ### Validate
 ```bash
 npm run build
