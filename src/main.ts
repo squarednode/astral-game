@@ -876,7 +876,10 @@ interface CharacterCombatBuffState {
   poisonBladeUntil: number;
   empoweredStrikeUntil: number;
   empoweredStrikeMultiplier: number;
+  deadeyeUntil: number;
+  apexSurvivorUntil: number;
 }
+
 const characterCombatBuffs = new Map<string, CharacterCombatBuffState>();
 function combatBuffFor(character: CharacterState): CharacterCombatBuffState {
   let state = characterCombatBuffs.get(character.id);
@@ -888,12 +891,15 @@ function combatBuffFor(character: CharacterState): CharacterCombatBuffState {
       poisonBladeUntil: 0,
       empoweredStrikeUntil: 0,
       empoweredStrikeMultiplier: 1,
+      deadeyeUntil: 0,
+      apexSurvivorUntil: 0,
     };
     characterCombatBuffs.set(character.id, state);
   }
   return state;
 }
 function combatNow(): number { return performance.now() / 1000; }
+const hunterMarkedTargets = new Map<string, number>();
 const abilityEventLog: string[] = [];
 let freezeAbilityCastTimers = false;
 function logAbilityEvent(message: string): void {
@@ -4514,12 +4520,13 @@ function damageEnemy(
   weight: HitWeight = 'light',
 ): void {
   const equipmentCombat = equipmentCombatStatsFor(active);
+  const markMultiplier = active.id === 'hunter-mara' && (hunterMarkedTargets.get(enemy.entityId) ?? 0) > combatNow() ? 1.25 : 1;
   const initialBreakdown = combatResolver.resolve({
     sourceId: active.id,
     targetId: enemy.entityId,
     kind: weight === 'reaction' ? 'reaction' : 'skill',
     element,
-    baseDamage: amount,
+    baseDamage: amount * markMultiplier,
     attackPowerMultiplier: powerFor() / 100,
     weaponPower: equipmentCombat.weaponPower,
     weaponCoefficient: 0.01,
@@ -4883,6 +4890,220 @@ function executeWarriorOrRogueSkill(
   return false;
 }
 
+
+function spawnSkillProjectile(
+  definition: Readonly<AbilityDefinition>,
+  request: AbilityCastRequest,
+  caster: CharacterState,
+  projectileDirection: Vector3,
+  damage: number,
+  options: { pierce?: number; speedMultiplier?: number; color?: Color3 } = {},
+): void {
+  const speed = Math.max(8, definition.speed ?? 15) * equipmentEffectsFor(caster).projectileSpeedMultiplier * (options.speedMultiplier ?? 1);
+  const color = options.color ?? (definition.element === 'fire' ? new Color3(1, 0.32, 0.08)
+    : definition.element === 'frost' ? new Color3(0.35, 0.82, 1)
+    : definition.element === 'lightning' ? new Color3(0.72, 0.42, 1)
+    : definition.element === 'arcane' ? new Color3(0.75, 0.42, 1)
+    : caster.color);
+  const projectile = MeshBuilder.CreateSphere(`skill-projectile-${definition.executorId}`, {
+    diameter: Math.max(0.3, (definition.radius ?? 0.18) * 2) * combatSandboxTuning.get().projectileVisualScale,
+  }, scene);
+  projectile.position = request.casterPosition.add(new Vector3(0, 0.8, 0)).add(projectileDirection.scale(0.9));
+  projectile.material = mat(`skill-${definition.executorId}`, color, 0.8);
+  projectiles.push({
+    mesh: projectile,
+    vel: projectileDirection.scale(speed),
+    ttl: Math.max(0.5, definition.range / speed),
+    damage,
+    element: definition.element as Element,
+    pierce: options.pierce ?? 0,
+    owner: 'player',
+    collisionRadius: Math.max(0.14, definition.radius ?? 0.18) * combatSandboxTuning.get().projectileCollisionScale,
+  });
+}
+
+function applyEnemyStatus(enemy: Enemy, statusId: string, duration?: number): void {
+  const status = statusDefinitionMap.get(statusId);
+  if (!status) return;
+  statusRuntime.apply(enemy.statusComponent, {
+    definition: status,
+    ownerEntityId: enemy.entityId,
+    sourceEntityId: active.id,
+    durationSeconds: duration ?? status.duration,
+  });
+}
+
+function executeHunterOrMageSkill(
+  definition: Readonly<AbilityDefinition>,
+  request: AbilityCastRequest,
+  caster: CharacterState,
+  direction: Vector3,
+  damage: number,
+): boolean {
+  const id = definition.executorId;
+  const now = combatNow();
+  const buff = combatBuffFor(caster);
+  const hit = (enemy: Enemy, amount = damage, weight: HitWeight = 'light') =>
+    damageEnemy(enemy, amount, definition.element as Element, enemy.mesh.position, request.casterPosition, weight);
+
+  if (id === 'skill-hunter-power-shot') {
+    spawnSkillProjectile(definition, request, caster, direction, damage, { pierce: 2, speedMultiplier: 0.9 });
+    vfxRing(request.casterPosition, caster.color, 1.8, 0.18);
+    return true;
+  }
+  if (id === 'skill-hunter-marked-target') {
+    const target = enemiesInLane(request.casterPosition, direction, definition.range, 1.4)
+      .sort((a, b) => Vector3.Distance(a.mesh.position, request.casterPosition) - Vector3.Distance(b.mesh.position, request.casterPosition))[0];
+    if (target) {
+      hunterMarkedTargets.set(target.entityId, now + (definition.duration ?? 8));
+      applyEnemyStatus(target, 'status.vulnerable', definition.duration ?? 8);
+      vfxRing(target.mesh.position, new Color3(1, 0.75, 0.18), 2.1, 0.35);
+      feed('Target marked.');
+    }
+    return true;
+  }
+  if (id === 'skill-hunter-deadeye') {
+    buff.deadeyeUntil = now + (definition.duration ?? 6);
+    const offsets = [-0.08, 0, 0.08];
+    offsets.forEach(offset => {
+      const c = Math.cos(offset), si = Math.sin(offset);
+      spawnSkillProjectile(definition, request, caster, new Vector3(direction.x * c - direction.z * si, 0, direction.x * si + direction.z * c).normalize(), damage, { pierce: 3, speedMultiplier: 1.25 });
+    });
+    buff.empoweredStrikeUntil = buff.deadeyeUntil;
+    buff.empoweredStrikeMultiplier = 1.45;
+    vfxRing(request.casterPosition, new Color3(1, 0.8, 0.25), 3.5, 0.45);
+    return true;
+  }
+  if (id === 'skill-hunter-snare-trap') {
+    const center = request.aimPosition;
+    vfxRing(center, new Color3(0.72, 0.56, 0.2), definition.radius ?? 2.5, 0.45);
+    enemiesInRadius(center, definition.radius ?? 2.5).forEach(enemy => {
+      hit(enemy, damage, 'light');
+      applyEnemyStatus(enemy, 'status.stun', Math.min(1.5, definition.duration ?? 4));
+      applyEnemyStatus(enemy, 'status.frost', definition.duration ?? 4);
+    });
+    return true;
+  }
+  if (id === 'skill-hunter-blast-trap') {
+    const center = request.aimPosition;
+    vfxRing(center, new Color3(1, 0.46, 0.12), definition.radius ?? 3.2, 0.55);
+    enemiesInRadius(center, definition.radius ?? 3.2).forEach(enemy => {
+      hit(enemy, damage, 'heavy');
+      const away = enemy.mesh.position.subtract(center); away.y = 0;
+      if (away.lengthSquared() > 0.01) enemy.knockbackVelocity.addInPlace(away.normalize().scale(4));
+    });
+    return true;
+  }
+  if (id === 'skill-hunter-master-trapper') {
+    const center = request.aimPosition;
+    [0.45, 0.75, 1].forEach(scale => vfxRing(center, new Color3(0.95, 0.62, 0.15), (definition.radius ?? 6) * scale, 0.55));
+    enemiesInRadius(center, definition.radius ?? 6).forEach(enemy => {
+      hit(enemy, damage, 'heavy');
+      applyEnemyStatus(enemy, 'status.stun', 1.25);
+      applyEnemyStatus(enemy, 'status.vulnerable', definition.duration ?? 7);
+    });
+    return true;
+  }
+  if (id === 'skill-hunter-retreating-shot') {
+    spawnSkillProjectile(definition, request, caster, direction, damage, { pierce: 0 });
+    performBlink(request.casterPosition.subtract(direction.scale(definition.range)), definition.range);
+    return true;
+  }
+  if (id === 'skill-hunter-camouflage') {
+    buff.damageReductionUntil = now + (definition.duration ?? 6);
+    buff.damageReduction = 0.55;
+    buff.empoweredStrikeUntil = now + (definition.duration ?? 6);
+    buff.empoweredStrikeMultiplier = 1.75;
+    enemiesInRadius(request.casterPosition, 7).forEach(enemy => enemy.stateMachine.request('reposition', 'camouflage'));
+    vfxRing(request.casterPosition, new Color3(0.35, 0.65, 0.35), 2.8, 0.35);
+    feed('Camouflage empowered the next attack.');
+    return true;
+  }
+  if (id === 'skill-hunter-apex-survivor') {
+    buff.apexSurvivorUntil = now + (definition.duration ?? 10);
+    buff.damageReductionUntil = buff.apexSurvivorUntil;
+    buff.damageReduction = 0.35;
+    buff.attackSpeedUntil = buff.apexSurvivorUntil;
+    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 18));
+    caster.shieldRemaining = Math.max(caster.shieldRemaining, 5);
+    vfxRing(request.casterPosition, new Color3(0.35, 1, 0.55), 4.5, 0.6);
+    return true;
+  }
+  if (id === 'skill-warden-fire-bolt') {
+    spawnSkillProjectile(definition, request, caster, direction, damage, { pierce: 0 });
+    vfxRing(request.casterPosition, new Color3(1, 0.3, 0.05), 1.8, 0.18);
+    return true;
+  }
+  if (id === 'skill-warden-chain-lightning') {
+    const first = enemiesInLane(request.casterPosition, direction, definition.range, 1.5)
+      .sort((a, b) => Vector3.Distance(a.mesh.position, request.casterPosition) - Vector3.Distance(b.mesh.position, request.casterPosition))[0];
+    if (first) {
+      const chain = [first, ...enemies.filter(e => e !== first).sort((a, b) => Vector3.Distance(a.mesh.position, first.mesh.position) - Vector3.Distance(b.mesh.position, first.mesh.position)).slice(0, 3)];
+      chain.forEach((enemy, index) => { hit(enemy, damage * Math.pow(0.78, index), 'light'); applyEnemyStatus(enemy, 'status.shock', 4); vfxRing(enemy.mesh.position, new Color3(0.72, 0.42, 1), 1.3, 0.2); });
+    }
+    return true;
+  }
+  if (id === 'skill-warden-arcane-cataclysm') {
+    const center = request.aimPosition;
+    vfxRing(center, new Color3(0.82, 0.35, 1), definition.radius ?? 6.5, 0.8);
+    enemiesInRadius(center, definition.radius ?? 6.5).forEach(enemy => {
+      const statusCount = ['status.burn','status.chill','status.freeze','status.shock','status.poison'].filter(status => statusRuntime.has(enemy.statusComponent, status)).length;
+      hit(enemy, damage * (1 + statusCount * 0.25), 'heavy');
+      applyEnemyStatus(enemy, 'status.vulnerable', 5);
+    });
+    return true;
+  }
+  if (id === 'skill-warden-frost-nova') {
+    const center = request.casterPosition;
+    vfxRing(center, new Color3(0.35, 0.82, 1), definition.radius ?? 4.2, 0.55);
+    enemiesInRadius(center, definition.radius ?? 4.2).forEach(enemy => { hit(enemy, damage, 'light'); applyEnemyStatus(enemy, 'status.chill', definition.duration ?? 4); });
+    return true;
+  }
+  if (id === 'skill-warden-gravity-well') {
+    const center = request.aimPosition;
+    vfxRing(center, new Color3(0.62, 0.32, 0.9), definition.radius ?? 5, 0.65);
+    enemiesInRadius(center, definition.radius ?? 5).forEach(enemy => {
+      hit(enemy, damage, 'light');
+      const toward = center.subtract(enemy.mesh.position); toward.y = 0;
+      if (toward.lengthSquared() > 0.01) enemy.knockbackVelocity.addInPlace(toward.normalize().scale(5));
+      applyEnemyStatus(enemy, 'status.chill', definition.duration ?? 4);
+    });
+    return true;
+  }
+  if (id === 'skill-warden-absolute-control') {
+    const center = request.aimPosition;
+    vfxRing(center, new Color3(0.55, 0.85, 1), definition.radius ?? 7, 0.85);
+    enemiesInRadius(center, definition.radius ?? 7).forEach(enemy => { hit(enemy, damage, 'heavy'); applyEnemyStatus(enemy, 'status.freeze', 2.5); applyEnemyStatus(enemy, 'status.vulnerable', definition.duration ?? 6); });
+    return true;
+  }
+  if (id === 'skill-warden-magic-barrier') {
+    caster.shieldRemaining = Math.max(caster.shieldRemaining, (definition.duration ?? 5) * equipmentEffectsFor(caster).shieldDurationMultiplier);
+    caster.hp = Math.min(hpMax(caster), caster.hp + (definition.power ?? 24) * 0.35);
+    vfxRing(request.casterPosition, new Color3(0.55, 0.75, 1), 3.4, 0.5);
+    return true;
+  }
+  if (id === 'skill-warden-protective-field') {
+    buff.damageReductionUntil = now + (definition.duration ?? 7);
+    buff.damageReduction = 0.45;
+    caster.shieldRemaining = Math.max(caster.shieldRemaining, 4);
+    vfxRing(request.aimPosition, new Color3(0.48, 0.7, 1), definition.radius ?? 5.5, 0.7);
+    feed('Protective Field reduced incoming damage.');
+    return true;
+  }
+  if (id === 'skill-warden-archmages-refuge') {
+    buff.damageReductionUntil = now + (definition.duration ?? 10);
+    buff.damageReduction = 0.55;
+    for (const member of party.filter(member => rosterRuntime.isActive(member.id))) {
+      member.hp = Math.min(hpMax(member), member.hp + (definition.power ?? 40));
+      member.shieldRemaining = Math.max(member.shieldRemaining, 8);
+    }
+    vfxRing(request.casterPosition, new Color3(0.55, 0.9, 1), definition.radius ?? 7, 0.9);
+    feed("Archmage's Refuge restored and shielded the party.");
+    return true;
+  }
+  return false;
+}
+
 function executeAbility(context: AbilityExecutionContext): void {
   const { definition, request } = context;
   const caster = party.find(character => character.id === request.casterId) ?? active;
@@ -4898,6 +5119,7 @@ function executeAbility(context: AbilityExecutionContext): void {
   const damage = (definition.damage ?? definition.power ?? 0) * damageMultiplier;
 
   if (executeWarriorOrRogueSkill(definition, request, caster, direction, damage)) return;
+  if (executeHunterOrMageSkill(definition, request, caster, direction, damage)) return;
 
   const projectileExecutors = new Set([
     'fireball', 'ice-spear', 'arrow-shot', 'fire-bolt', 'ice-bolt',

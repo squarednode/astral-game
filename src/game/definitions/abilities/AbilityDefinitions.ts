@@ -5,7 +5,7 @@ export type AbilityTargetingMode = 'directional' | 'ground' | 'self' | 'target';
 export type AbilityCastStyle = 'instant' | 'cast-time' | 'channel' | 'charged' | 'toggle' | 'passive';
 export type AbilityQueueBehavior = 'replace' | 'reject' | 'preserve';
 export type AbilityResourceType = 'cooldown-only' | 'charges' | 'mana' | 'stamina';
-export type AbilityFamily = 'melee' | 'projectile' | 'area' | 'movement' | 'defense' | 'control' | 'summon' | 'utility';
+export type AbilityFamily = 'melee' | 'projectile' | 'area' | 'movement' | 'defense' | 'control' | 'summon' | 'buff';
 
 export type AbilityTag =
   | 'projectile' | 'melee' | 'area' | 'movement' | 'mobility'
@@ -102,7 +102,7 @@ const baseAbilityDefinitions: readonly AbilityDefinition[] = [
   },
   {
     ...base, id: 'ability.shield', name: 'Astral Shield', description: 'Restore health and surround the caster with a timed defensive field.', family: 'defense',
-    executorId: 'shield', runtimeReady: true, targeting: 'self', castStyle: 'cast-time', element: 'arcane',
+    executorId: 'defensive', runtimeReady: true, targeting: 'self', castStyle: 'cast-time', element: 'arcane',
     abilityTags: ['defensive', 'buff'], cooldown: 12, castTime: 0.20, range: 0, power: 24, duration: 4,
     statusEffectIds: ['status.barrier'], damageProfileId: 'damage.barrier', canMoveWhileCasting: true, commitThreshold: 0.95,
     iconAssetId: 'icon:ability-shield',
@@ -299,7 +299,7 @@ const skillAbilityOverrides: Readonly<Record<string, Partial<AbilityDefinition>>
   'ability.skill.vanguard.guardian-roar': { executorId: 'skill-vanguard-guardian-roar', runtimeReady: true, family: 'control', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 11, castTime: 0, radius: 6, duration: 5, power: 18, abilityTags: ['area', 'defensive', 'buff', 'crowd-control'] },
   'ability.skill.vanguard.living-bulwark': { executorId: 'skill-vanguard-living-bulwark', runtimeReady: true, family: 'defense', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 24, castTime: 0, radius: 7, duration: 8, power: 40, abilityTags: ['defensive', 'buff', 'ultimate', 'area'] },
   'ability.skill.vanguard.vanguard-charge': { executorId: 'skill-vanguard-charge', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 6, castTime: 0, range: 7.5, radius: 2.2, power: 19, damage: 19, abilityTags: ['movement', 'mobility', 'melee', 'physical', 'damage', 'crowd-control'] },
-  'ability.skill.vanguard.warpath': { executorId: 'skill-vanguard-warpath', runtimeReady: true, family: 'utility', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 12, castTime: 0, duration: 6, power: 0, abilityTags: ['buff', 'movement'] },
+  'ability.skill.vanguard.warpath': { executorId: 'skill-vanguard-warpath', runtimeReady: true, family: 'buff', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 12, castTime: 0, duration: 6, power: 0, abilityTags: ['buff', 'movement'] },
   'ability.skill.vanguard.juggernaut': { executorId: 'skill-vanguard-juggernaut', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 22, castTime: 0, range: 9, radius: 3, duration: 8, power: 32, damage: 32, abilityTags: ['movement', 'melee', 'physical', 'damage', 'buff', 'ultimate'] },
   'ability.skill.tempest.lunging-strike': { executorId: 'skill-tempest-lunging-strike', runtimeReady: true, family: 'melee', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 4, castTime: 0, range: 4.5, radius: 1.2, power: 18, damage: 18, abilityTags: ['movement', 'melee', 'physical', 'damage'] },
   'ability.skill.tempest.twin-fang': { executorId: 'skill-tempest-twin-fang', runtimeReady: true, family: 'melee', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 7, castTime: 0, range: 3, radius: 1.1, power: 13, damage: 13, abilityTags: ['melee', 'physical', 'damage'] },
@@ -307,9 +307,27 @@ const skillAbilityOverrides: Readonly<Record<string, Partial<AbilityDefinition>>
   'ability.skill.tempest.dash-strike': { executorId: 'skill-tempest-dash-strike', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 5, castTime: 0, range: 6.5, radius: 1.6, power: 16, damage: 16, abilityTags: ['movement', 'mobility', 'melee', 'physical', 'damage'] },
   'ability.skill.tempest.backstep-slash': { executorId: 'skill-tempest-backstep-slash', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 7, castTime: 0, range: 5.5, radius: 2, power: 17, damage: 17, abilityTags: ['movement', 'mobility', 'melee', 'physical', 'damage'] },
   'ability.skill.tempest.phantom-rhythm': { executorId: 'skill-tempest-phantom-rhythm', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 20, castTime: 0, range: 8, radius: 4.5, power: 12, damage: 12, abilityTags: ['movement', 'melee', 'physical', 'damage', 'ultimate', 'area'] },
-  'ability.skill.tempest.poison-blade': { executorId: 'skill-tempest-poison-blade', runtimeReady: true, family: 'utility', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 10, castTime: 0, duration: 7, power: 0, abilityTags: ['buff', 'poison', 'status'] },
+  'ability.skill.tempest.poison-blade': { executorId: 'skill-tempest-poison-blade', runtimeReady: true, family: 'buff', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 10, castTime: 0, duration: 7, power: 0, abilityTags: ['buff', 'poison', 'status'] },
   'ability.skill.tempest.smoke-bomb': { executorId: 'skill-tempest-smoke-bomb', runtimeReady: true, family: 'control', targeting: 'ground', castStyle: 'instant', element: 'physical', cooldown: 12, castTime: 0, radius: 4.5, duration: 5, power: 8, abilityTags: ['area', 'crowd-control', 'status'] },
   'ability.skill.tempest.master-of-deception': { executorId: 'skill-tempest-master-of-deception', runtimeReady: true, family: 'movement', targeting: 'ground', castStyle: 'instant', element: 'physical', cooldown: 24, castTime: 0, range: 9, duration: 8, power: 0, abilityTags: ['movement', 'buff', 'ultimate'] },
+  'ability.skill.hunter-mara.power-shot': { executorId: 'skill-hunter-power-shot', runtimeReady: true, family: 'projectile', targeting: 'directional', castStyle: 'cast-time', element: 'physical', cooldown: 5, castTime: 0.35, range: 18, radius: 0.28, speed: 19, power: 24, damage: 24, abilityTags: ['projectile', 'physical', 'damage', 'damage'] },
+  'ability.skill.hunter-mara.marked-target': { executorId: 'skill-hunter-marked-target', runtimeReady: true, family: 'buff', targeting: 'target', castStyle: 'instant', element: 'physical', cooldown: 9, castTime: 0, range: 16, duration: 8, power: 0, abilityTags: ['status', 'status', 'buff'] },
+  'ability.skill.hunter-mara.deadeye': { executorId: 'skill-hunter-deadeye', runtimeReady: true, family: 'projectile', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 22, castTime: 0, range: 20, radius: 0.24, speed: 24, power: 22, damage: 22, duration: 6, abilityTags: ['projectile', 'physical', 'damage', 'ultimate', 'buff'] },
+  'ability.skill.hunter-mara.snare-trap': { executorId: 'skill-hunter-snare-trap', runtimeReady: true, family: 'control', targeting: 'ground', castStyle: 'instant', element: 'physical', cooldown: 7, castTime: 0, range: 10, radius: 2.5, duration: 4, power: 7, damage: 7, abilityTags: ['area', 'area', 'crowd-control', 'damage'] },
+  'ability.skill.hunter-mara.blast-trap': { executorId: 'skill-hunter-blast-trap', runtimeReady: true, family: 'area', targeting: 'ground', castStyle: 'cast-time', element: 'physical', cooldown: 10, castTime: 0.25, range: 11, radius: 3.2, power: 27, damage: 27, abilityTags: ['area', 'area', 'physical', 'damage', 'crowd-control'] },
+  'ability.skill.hunter-mara.master-trapper': { executorId: 'skill-hunter-master-trapper', runtimeReady: true, family: 'area', targeting: 'ground', castStyle: 'instant', element: 'physical', cooldown: 24, castTime: 0, range: 12, radius: 6, duration: 7, power: 20, damage: 20, abilityTags: ['area', 'area', 'physical', 'damage', 'ultimate', 'crowd-control'] },
+  'ability.skill.hunter-mara.retreating-shot': { executorId: 'skill-hunter-retreating-shot', runtimeReady: true, family: 'movement', targeting: 'directional', castStyle: 'instant', element: 'physical', cooldown: 6, castTime: 0, range: 5.5, radius: 0.2, speed: 18, power: 17, damage: 17, abilityTags: ['movement', 'projectile', 'physical', 'damage'] },
+  'ability.skill.hunter-mara.camouflage': { executorId: 'skill-hunter-camouflage', runtimeReady: true, family: 'buff', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 12, castTime: 0, duration: 6, power: 0, abilityTags: ['buff', 'buff', 'buff'] },
+  'ability.skill.hunter-mara.apex-survivor': { executorId: 'skill-hunter-apex-survivor', runtimeReady: true, family: 'buff', targeting: 'self', castStyle: 'instant', element: 'physical', cooldown: 24, castTime: 0, duration: 10, power: 18, abilityTags: ['buff', 'heal', 'ultimate', 'movement'] },
+  'ability.skill.warden.fire-bolt': { executorId: 'skill-warden-fire-bolt', runtimeReady: true, family: 'projectile', targeting: 'directional', castStyle: 'cast-time', element: 'fire', cooldown: 4, castTime: 0.25, range: 16, radius: 0.26, speed: 17, power: 20, damage: 20, abilityTags: ['projectile', 'fire', 'damage', 'status'] },
+  'ability.skill.warden.chain-lightning': { executorId: 'skill-warden-chain-lightning', runtimeReady: true, family: 'projectile', targeting: 'target', castStyle: 'cast-time', element: 'lightning', cooldown: 8, castTime: 0.35, range: 15, radius: 6, power: 21, damage: 21, abilityTags: ['projectile', 'lightning', 'damage', 'lightning'] },
+  'ability.skill.warden.arcane-cataclysm': { executorId: 'skill-warden-arcane-cataclysm', runtimeReady: true, family: 'area', targeting: 'ground', castStyle: 'charged', element: 'arcane', cooldown: 24, castTime: 0.8, range: 12, radius: 6.5, power: 42, damage: 42, abilityTags: ['area', 'status', 'damage', 'ultimate', 'status'] },
+  'ability.skill.warden.frost-nova': { executorId: 'skill-warden-frost-nova', runtimeReady: true, family: 'area', targeting: 'self', castStyle: 'instant', element: 'frost', cooldown: 7, castTime: 0, radius: 4.2, duration: 4, power: 16, damage: 16, abilityTags: ['area', 'ice', 'damage', 'crowd-control'] },
+  'ability.skill.warden.gravity-well': { executorId: 'skill-warden-gravity-well', runtimeReady: true, family: 'control', targeting: 'ground', castStyle: 'cast-time', element: 'arcane', cooldown: 11, castTime: 0.4, range: 11, radius: 5, duration: 4, power: 12, damage: 12, abilityTags: ['area', 'status', 'damage', 'crowd-control'] },
+  'ability.skill.warden.absolute-control': { executorId: 'skill-warden-absolute-control', runtimeReady: true, family: 'control', targeting: 'ground', castStyle: 'instant', element: 'frost', cooldown: 24, castTime: 0, range: 12, radius: 7, duration: 6, power: 26, damage: 26, abilityTags: ['area', 'ice', 'damage', 'ultimate', 'crowd-control'] },
+  'ability.skill.warden.magic-barrier': { executorId: 'skill-warden-magic-barrier', runtimeReady: true, family: 'defense', targeting: 'self', castStyle: 'instant', element: 'arcane', cooldown: 8, castTime: 0, duration: 5, power: 24, abilityTags: ['defensive', 'defensive', 'buff'] },
+  'ability.skill.warden.protective-field': { executorId: 'skill-warden-protective-field', runtimeReady: true, family: 'defense', targeting: 'ground', castStyle: 'instant', element: 'arcane', cooldown: 13, castTime: 0, radius: 5.5, duration: 7, power: 16, abilityTags: ['defensive', 'area', 'buff'] },
+  'ability.skill.warden.archmages-refuge': { executorId: 'skill-warden-archmages-refuge', runtimeReady: true, family: 'defense', targeting: 'self', castStyle: 'instant', element: 'arcane', cooldown: 26, castTime: 0, radius: 7, duration: 10, power: 40, abilityTags: ['defensive', 'heal', 'defensive', 'ultimate', 'area'] },
 };
 
 const baseAbilityById = new Map(baseAbilityDefinitions.map(definition => [definition.id, definition]));
@@ -322,7 +340,7 @@ const skillAbilityDefinitions: readonly AbilityDefinition[] = skillAbilityAliasS
     name: spec.name,
     description: spec.description,
     ...(skillAbilityOverrides[spec.id] ?? {}),
-    metadata: { ...prototype.metadata, contentVersion: '0.6.8.6b', tags: [...(prototype.metadata.tags ?? []), 'skill-catalog'] },
+    metadata: { ...prototype.metadata, contentVersion: '0.6.8.6c', tags: [...(prototype.metadata.tags ?? []), 'skill-catalog'] },
   };
 });
 

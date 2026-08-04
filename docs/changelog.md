@@ -5946,6 +5946,12 @@ This build establishes the shared numerical pipeline that the 36 constellation s
 - Latest combat breakdown is exposed as `globalThis.__astralCombatBreakdown` for developer inspection.
 - No save-schema change.
 
+## 0.6.8.6
+
+- added dedicated skills to all characters
+- baseline for skill values 
+- baseline for equipment values
+
 ### Validate
 ```bash
 npm run build
