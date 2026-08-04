@@ -5933,6 +5933,19 @@ The lower-right Unlocked Skills library now fills only an empty selected slot.
 - Skills already equipped in another slot cannot be reassigned from the lower library.
 - Replacing or clearing an occupied slot remains an explicit top-row action.
 
+# Astral Shift 0.6.8.6a — Unified Combat and Equipment Foundation
+
+This build establishes the shared numerical pipeline that the 36 constellation skills will use in 0.6.8.6b–d.
+
+## Included
+- Central `CombatResolver` for basic, skill, ultimate, reaction, and status damage.
+- Explicit breakdown of base damage, weapon contribution, coefficients, multipliers, criticals, armor mitigation, stagger, and statuses.
+- Normalized equipment combat stats for weapon power, armor, health, attack, critical chance/damage, cooldown rate, movement speed, status potency, and status resistance.
+- Player damage against enemies now routes through the resolver while preserving the existing elemental reaction layer.
+- Basic enemy armor baseline: crabs, leaders, and bosses receive progressively higher mitigation.
+- Latest combat breakdown is exposed as `globalThis.__astralCombatBreakdown` for developer inspection.
+- No save-schema change.
+
 ### Validate
 ```bash
 npm run build

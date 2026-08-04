@@ -8,3 +8,4 @@ export * from './GroundLootRuntime';
 export * from './LootInteractionRuntime';
 export * from './EquipmentEffectResolver';
 export * from './GroundLootVisualProfiles';
+export * from './EquipmentCombatStats';

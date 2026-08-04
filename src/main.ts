@@ -146,6 +146,7 @@ import {
   describeEquipmentEffect,
   groundLootVisualProfile,
   resolveEquipmentEffects,
+  resolveEquipmentCombatStats,
   LootRegistry,
 } from './game/loot';
 import type {
@@ -171,6 +172,7 @@ import type { AstralSaveData, SaveSlotId } from './game/save';
 import { BUILD_VERSION, CURRENT_SAVE_SCHEMA } from './game/version';
 import type { GameplayHudSnapshot } from './ui/gameplay';
 import { CombatSystem } from './game/combat/CombatSystem';
+import { CombatResolver } from './game/combat/CombatResolver';
 import { DamageNumberManager } from './game/combat/DamageNumberManager';
 import { EnemyTelegraphController } from './game/combat/EnemyTelegraphController';
 import { HitFeedbackController } from './game/combat/HitFeedbackController';
@@ -3043,6 +3045,10 @@ const damageNumbers = new DamageNumberManager(scene, camera, engine);
 const hitFeedback = new HitFeedbackController(scene);
 const enemyTelegraphs = new EnemyTelegraphController(scene);
 const combat = new CombatSystem(damageNumbers, hitFeedback, playerCamera);
+const combatResolver = new CombatResolver();
+combatResolver.subscribe(breakdown => {
+  (globalThis as typeof globalThis & { __astralCombatBreakdown?: unknown }).__astralCombatBreakdown = breakdown;
+});
 
 const skillTreeHost = document.createElement('div');
 ui.getLayer('menus').appendChild(skillTreeHost);
@@ -3153,6 +3159,17 @@ function equipmentStatsFor(c: CharacterState) {
 
 function equipmentEffectsFor(c: CharacterState) {
   return resolveEquipmentEffects(equippedItems(c));
+}
+
+function equipmentCombatStatsFor(c: CharacterState) {
+  return resolveEquipmentCombatStats(equippedItems(c));
+}
+
+function enemyArmorFor(enemy: Enemy): number {
+  if (enemy.definition.familyId === 'crab') return 1;
+  if (enemy.definition.spawnClass === 'boss') return 3;
+  if (enemy.definition.spawnClass === 'leader') return 1.5;
+  return 0;
 }
 
 function elementalDamageMultiplierFor(
@@ -4468,9 +4485,23 @@ function damageEnemy(
   sourcePosition = playerRoot.position,
   weight: HitWeight = 'light',
 ): void {
-  const powerScale = powerFor() / 100;
-  let final =
-    amount * powerScale * elementalDamageMultiplierFor(active, element);
+  const equipmentCombat = equipmentCombatStatsFor(active);
+  const initialBreakdown = combatResolver.resolve({
+    sourceId: active.id,
+    targetId: enemy.entityId,
+    kind: weight === 'reaction' ? 'reaction' : 'skill',
+    element,
+    baseDamage: amount,
+    attackPowerMultiplier: powerFor() / 100,
+    weaponPower: equipmentCombat.weaponPower,
+    weaponCoefficient: 0.01,
+    elementalMultiplier: elementalDamageMultiplierFor(active, element),
+    criticalChance: equipmentCombat.criticalChance,
+    criticalMultiplier: 1.5 + equipmentCombat.criticalDamage,
+    targetArmor: enemyArmorFor(enemy),
+    weight,
+  });
+  let final = initialBreakdown.finalDamage;
   let resolvedWeight = weight;
 
   const hasFrostStatus =
