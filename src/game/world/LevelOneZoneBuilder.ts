@@ -206,11 +206,7 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   tent.rotation.y = Math.PI / 4;
   tent.material = material('camp-tent', new Color3(0.55, 0.24, 0.08));
   addCircleCollider('camp-tent', -12, 12, 2.8);
-  for (const [name, x, z] of [['quest-npc', -14, 7], ['merchant-npc', -4, 11], ['camp-recruit-npc', -8, 16]] as const) {
-    const marker = MeshBuilder.CreateCylinder(name, { diameter: 1.2, height: 1.9, tessellation: 16 }, scene);
-    marker.position.set(x, 0.95, z);
-    marker.material = material(name, new Color3(0.9, 0.76, 0.12), 0.2);
-  }
+  // Camp NPC visuals are supplied by ActorRuntime; no duplicate blockout markers.
   addLandmark('npc-camp', 'Small Camp', -8, 10);
 
   // Boat crossings and toll markers. Actual copper transaction is handled by
@@ -313,6 +309,48 @@ export function buildLevelOneZone(options: OutdoorZoneBuildOptions): OutdoorZone
   addLandmark('wolf-grounds', 'Wolf Grounds', 34, 14);
   addLandmark('boss-arena', 'Wolf Keeper Quarry', 0, bossCenterZ);
   addLandmark('exit', 'Boss Portal', 55, 28);
+
+
+  // ---------------------------------------------------------------------
+  // Developer-only testing grounds.
+  // Kept far outside the authored Level 1 play spaces so legacy validation
+  // objects can remain available without appearing in normal gameplay.
+  // This area is reachable only through developer teleport controls.
+  // ---------------------------------------------------------------------
+  const developerCenterX = 220;
+  const developerCenterZ = 0;
+  addGroundPatch(
+    'developer-testing-ground',
+    developerCenterX,
+    developerCenterZ,
+    54,
+    46,
+    new Color3(0.12, 0.14, 0.18),
+  );
+  addWall('developer-testing-west-wall', developerCenterX - 29, developerCenterZ, 4, 50, 5);
+  addWall('developer-testing-east-wall', developerCenterX + 29, developerCenterZ, 4, 50, 5);
+  addWall('developer-testing-north-wall', developerCenterX, developerCenterZ + 25, 62, 4, 5);
+  addWall('developer-testing-south-wall', developerCenterX, developerCenterZ - 25, 62, 4, 5);
+
+  const testingBlock = MeshBuilder.CreateBox(
+    'developer-testing-block',
+    { width: 8, depth: 8, height: 1.2 },
+    scene,
+  );
+  testingBlock.position.set(developerCenterX - 10, 0.6, developerCenterZ + 4);
+  testingBlock.material = material('developer-testing-block', new Color3(0.24, 0.28, 0.34));
+  shadows.addShadowCaster(testingBlock);
+  addBoxCollider('developer-testing-block', developerCenterX - 10, developerCenterZ + 4, 8, 8, 'traversable', 1.2);
+  traversalSurfaces.push({
+    mode: 'free', shape: 'box', id: 'developer-testing-block-surface', label: 'Developer Testing Block',
+    colliderLabel: 'developer-testing-block', center: new Vector3(developerCenterX - 10, 1.2, developerCenterZ + 4),
+    halfWidth: 4, halfDepth: 4, surfaceHeight: 1.2, entryPadding: 0.6, exitDistance: 0.8,
+  });
+  traversalHighlights.push(testingBlock);
+
+  addLandmark('developer-testing-grounds', 'Developer Testing Grounds', developerCenterX, developerCenterZ - 16);
+  // Compatibility alias for older actor travel and developer commands.
+  addLandmark('movement-course', 'Developer Testing Grounds', developerCenterX, developerCenterZ - 16);
 
   // A static compatibility machine keeps existing developer diagnostics valid.
   const elevatorStateMachine = new StateMachine<Record<string, never>, ElevatorStateId>(
