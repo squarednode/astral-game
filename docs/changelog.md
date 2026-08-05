@@ -6037,6 +6037,37 @@ This release replaces the old outdoor test-ground route with the authored Level 
 
 This is a navigation and spatial blockout. Enemy placement, exact NPC interactions, boat payment and authored quest progression are scheduled for the next 0.6.9 content passes.
 
+# Astral Shift 0.6.9.2 - Level Instance and Loading System
+
+This build replaces the shared-coordinate hide/show blockout with one loaded level space at a time.
+
+## Spaces
+
+- `main`: Verdant Path beach, river, camp, forest, ferry route, and wolf den.
+- `boss`: Wolf Keeper Quarry around its own local origin. No main-map terrain or river is constructed.
+- `testing`: developer-only testing grounds around its own local origin.
+
+## Transfers
+
+Portal and developer landmark travel now:
+
+1. Dispose the currently loaded level root.
+2. Construct the destination level instance.
+3. Replace the live collision, traversal, volume, and landmark arrays in place.
+4. Rebuild enemy traversal links.
+5. Clear enemies, projectiles, effects, and pending respawns from the prior level.
+6. Switch the active level definition and zone runtime.
+7. Place the player at the destination landmark.
+
+Checkpoint markers and NPC visuals are enabled only in their owned space.
+
+## Architecture
+
+`LevelInstanceSystem` keeps stable runtime-array references, allowing existing movement and navigation systems to use newly loaded level data without being reconstructed. Each builder owns a root node and all geometry created for that level. Disposing the root removes the complete prior environment.
+
+The next terrain phase can replace the main builder's authored plates and approximate water volumes without changing the loading architecture.
+
+
 ### Validate
 ```bash
 npm run build

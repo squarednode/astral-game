@@ -188,8 +188,10 @@ import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildLevelOneZone } from './game/world/LevelOneZoneBuilder';
 import { LEVEL_ONE_LAYOUT } from './game/world/LevelOneLayout';
+import type { LevelSpaceId } from './game/world/LevelInstanceSystem';
 import { LevelRegistry, LevelRuntime } from './game/world/levels';
-import { firstLevelDefinition, firstWorldDefinition } from './game/definitions/worlds';
+import type { LevelDefinition } from './game/world/levels';
+import { bossLevelDefinition, firstLevelDefinition, firstWorldDefinition, testingLevelDefinition } from './game/definitions/worlds';
 import { WorldCollisionSystem } from './game/world/WorldCollisionSystem';
 import { DynamicCollisionSystem } from './game/world/DynamicCollisionSystem';
 import { TraversalSurfaceSystem } from './game/world/TraversalSurfaceSystem';
@@ -544,53 +546,6 @@ const outdoorZone = buildLevelOneZone({
     });
   },
 });
-const ground = scene.getMeshByName(outdoorZone.groundName)!;
-
-const levelSceneDebug = {
-  overviewEnabled: false,
-  previousCamera: null as null | { alpha: number; beta: number; radius: number; target: Vector3 },
-  setSpace(space: 'main' | 'boss' | 'testing'): void {
-    outdoorZone.setActiveSpace?.(space);
-  },
-  setCollisionOverlay(visible: boolean): void {
-    outdoorZone.setCollisionDebugVisible?.(visible);
-  },
-  toggleTopDown(): boolean {
-    if (!this.overviewEnabled) {
-      this.previousCamera = {
-        alpha: camera.alpha,
-        beta: camera.beta,
-        radius: camera.radius,
-        target: camera.getTarget().clone(),
-      };
-      const space = outdoorZone.getActiveSpace?.() ?? 'main';
-      const center = space === 'boss'
-        ? new Vector3(LEVEL_ONE_LAYOUT.points.bossCenter.x, 0, LEVEL_ONE_LAYOUT.points.bossCenter.z)
-        : space === 'testing'
-          ? new Vector3(LEVEL_ONE_LAYOUT.points.developerGrounds.x, 0, LEVEL_ONE_LAYOUT.points.developerGrounds.z)
-          : new Vector3(8, 0, -3);
-      camera.alpha = -Math.PI / 2;
-      camera.beta = 0.08;
-      camera.radius = space === 'main' ? 105 : 72;
-      camera.setTarget(center);
-      this.overviewEnabled = true;
-      return true;
-    }
-    const previous = this.previousCamera;
-    if (previous) {
-      camera.alpha = previous.alpha;
-      camera.beta = previous.beta;
-      camera.radius = previous.radius;
-      camera.setTarget(previous.target);
-    }
-    this.previousCamera = null;
-    this.overviewEnabled = false;
-    return false;
-  },
-  snapshot: () => outdoorZone.getSceneAuditSnapshot?.(),
-};
-(globalThis as typeof globalThis & { __astralLevelScene?: typeof levelSceneDebug }).__astralLevelScene = levelSceneDebug;
-
 const worldCollision = new WorldCollisionSystem(outdoorZone.colliders);
 const dynamicCollision = new DynamicCollisionSystem(outdoorZone.dynamicColliders);
 const traversalSurfaces = new TraversalSurfaceSystem(
@@ -604,21 +559,26 @@ const worldVolumes = new WorldVolumeSystem(
 const levelRegistry = new LevelRegistry();
 levelRegistry.registerWorld(firstWorldDefinition);
 levelRegistry.registerLevel(firstLevelDefinition);
+levelRegistry.registerLevel(bossLevelDefinition);
+levelRegistry.registerLevel(testingLevelDefinition);
 const levelDefinitionIssues = levelRegistry.validate();
 if (levelDefinitionIssues.length > 0) {
-  throw new Error(`World definition validation failed:\n${levelDefinitionIssues.join('\n')}`);
+  throw new Error(`World definition validation failed:
+${levelDefinitionIssues.join('\n')}`);
 }
-const levelRuntime = new LevelRuntime(
+
+let activeLevelDefinition: LevelDefinition = firstLevelDefinition;
+const createLevelRuntime = (level: LevelDefinition): LevelRuntime => new LevelRuntime(
   firstWorldDefinition,
-  firstLevelDefinition,
+  level,
   {
     onZoneEntered: zone => {
       worldStateRuntime?.setValue?.('current-world', firstWorldDefinition.id);
-      worldStateRuntime?.setValue?.('current-level', firstLevelDefinition.id);
+      worldStateRuntime?.setValue?.('current-level', level.id);
       worldStateRuntime?.setValue?.('current-zone', zone.id);
       events.emit('world.zoneEntered' as any, {
         worldId: firstWorldDefinition.id,
-        levelId: firstLevelDefinition.id,
+        levelId: level.id,
         zoneId: zone.id,
         role: zone.role,
       } as any);
@@ -627,15 +587,17 @@ const levelRuntime = new LevelRuntime(
     onZoneExited: zone => {
       events.emit('world.zoneExited' as any, {
         worldId: firstWorldDefinition.id,
-        levelId: firstLevelDefinition.id,
+        levelId: level.id,
         zoneId: zone.id,
         role: zone.role,
       } as any);
     },
   },
 );
+let levelRuntime = createLevelRuntime(activeLevelDefinition);
 (globalThis as any).__astralLevel = {
   snapshot: () => levelRuntime.snapshot(),
+  instance: () => outdoorZone.snapshot(),
   registry: levelRegistry,
 };
 
@@ -679,9 +641,9 @@ function refreshCheckpointMarkers(): void {
 }
 checkpointRuntime.subscribe(refreshCheckpointMarkers);
 refreshCheckpointMarkers();
-const enemyTraversalLinks = buildEnemyTraversalLinks(
+const enemyTraversalLinks = [...buildEnemyTraversalLinks(
   outdoorZone.traversalSurfaces,
-);
+)];
 const enemyNavigationSurfaces = new NavigationSurfaceManager(
   outdoorZone.colliders,
   outdoorZone.traversalSurfaces,
@@ -1814,30 +1776,71 @@ const actorConditionEvaluator = new ConditionEvaluator({
 const destinationRegistry = new DestinationRegistry(destinationDefinitions);
 const worldMarkerRegistry = new WorldMarkerRegistry(worldMarkerProfiles);
 
+const levelDefinitionForSpace = (spaceId: LevelSpaceId): LevelDefinition => {
+  if (spaceId === 'boss') return bossLevelDefinition;
+  if (spaceId === 'testing') return testingLevelDefinition;
+  return firstLevelDefinition;
+};
+
+function loadLevelSpace(spaceId: LevelSpaceId): void {
+  if (outdoorZone.activeSpaceId === spaceId) return;
+  outdoorZone.loadSpace(spaceId);
+  activeLevelDefinition = levelDefinitionForSpace(spaceId);
+  levelRuntime = createLevelRuntime(activeLevelDefinition);
+  traversalSurfaces.reset();
+  worldVolumes.reset();
+  enemyTraversalLinks.splice(
+    0,
+    enemyTraversalLinks.length,
+    ...buildEnemyTraversalLinks(outdoorZone.traversalSurfaces),
+  );
+  checkpointMarkers.forEach(marker => {
+    marker.setEnabled(spaceId === 'main');
+  });
+
+  const mainActorIds = new Set(['actor.hunter-mara', 'actor.camp-merchant', 'actor.ferry-captain']);
+  const testingActorIds = new Set(['actor.village-elder', 'actor.blacksmith']);
+  actorMeshes.forEach((mesh, actorId) => {
+    const enabled = spaceId === 'main'
+      ? mainActorIds.has(actorId)
+      : spaceId === 'testing'
+        ? testingActorIds.has(actorId)
+        : false;
+    mesh.setEnabled(enabled);
+    actorMarkerMeshes.get(actorId)?.setEnabled(enabled);
+  });
+
+  [...enemies].forEach(enemy => removeEncounterEnemy(enemy.entityId));
+  for (const projectile of projectiles) projectile.mesh.dispose();
+  projectiles = [];
+  for (const effect of effects) effect.mesh.dispose();
+  effects = [];
+  enemyRespawns.clear?.();
+
+  worldStateRuntime?.setValue?.('current-level', activeLevelDefinition.id);
+  worldStateRuntime?.setValue?.('current-zone', '');
+}
+
 function teleportPlayerToLandmark(
   landmarkId: string,
   notificationPrefix = 'Travel',
 ): boolean {
-  const landmark = outdoorZone.landmarks.find(
-    candidate => candidate.id === landmarkId,
-  );
-  if (!landmark) {
+  const target = outdoorZone.findLandmark(landmarkId);
+  if (!target) {
     feed(`Unknown destination landmark: ${landmarkId}.`, 'warning');
     return false;
   }
 
-  const targetSpace: 'main' | 'boss' | 'testing' = landmark.id === 'boss-arena'
-    ? 'boss'
-    : landmark.id === 'developer-testing-grounds' || landmark.id === 'movement-course'
-      ? 'testing'
-      : 'main';
-  outdoorZone.setActiveSpace?.(targetSpace);
+  loadLevelSpace(target.spaceId);
+  const landmark = outdoorZone.landmarks.find(candidate => candidate.id === landmarkId)
+    ?? target.landmark;
   traversalSurfaces.reset();
   worldVolumes.reset();
   playerRoot.position.copyFrom(landmark.position);
   movement.resetVerticalState(landmark.position.y);
   movement.setPointerWorld(landmark.position);
   pointerWorld.copyFrom(landmark.position);
+  levelRuntime.reset({ x: landmark.position.x, y: landmark.position.y, z: landmark.position.z });
   feed(`${notificationPrefix}: ${landmark.label}.`, 'success');
   return true;
 }
@@ -1982,7 +1985,7 @@ merchantRuntime = new MerchantRuntime(
   actorActionExecutor,
 );
 
-const testAreaLandmark = outdoorZone.landmarks.find(landmark => landmark.id === 'movement-course');
+const testAreaLandmark = outdoorZone.findLandmark('movement-course')?.landmark;
 const worldTriggerRuntime = new WorldTriggerRuntime(
   testAreaLandmark
     ? [{
@@ -6040,7 +6043,7 @@ function updatePointerWorldFromCursor(): boolean {
   const pick = scene.pick(
     scene.pointerX,
     scene.pointerY,
-    (mesh: any) => mesh === ground,
+    (mesh: any) => Boolean(mesh.metadata?.astralGround && mesh.isEnabled()),
   );
 
   if (!pick?.hit || !pick.pickedPoint) return false;
@@ -6232,7 +6235,9 @@ scene.onBeforeRenderObservable.add(() => {
     gameOver,
   );
   encounterTracker.render();
-  worldTriggerRuntime.update(playerRoot.position, dt);
+  if (outdoorZone.activeSpaceId === 'testing') {
+    worldTriggerRuntime.update(playerRoot.position, dt);
+  }
   renderInteractionPrompt();
   enemyTelegraphs.update(realDt);
   validationStateMachine.update(realDt);
