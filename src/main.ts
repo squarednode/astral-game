@@ -188,6 +188,8 @@ import type { DeveloperActions } from './devtools/DeveloperActions';
 import { PartyManagementScreen } from './ui/party/PartyManagementScreen';
 import { buildLevelOneZone } from './game/world/LevelOneZoneBuilder';
 import { LEVEL_ONE_LAYOUT } from './game/world/LevelOneLayout';
+import { deterministicMapSnapshot } from './game/world/DeterministicMap';
+import { LEVEL_ONE_BOSS_MAP, LEVEL_ONE_MAIN_MAP } from './game/world/LevelOneDeterministicMaps';
 import type { LevelSpaceId } from './game/world/LevelInstanceSystem';
 import { LevelRegistry, LevelRuntime } from './game/world/levels';
 import type { LevelDefinition } from './game/world/levels';
@@ -964,6 +966,10 @@ function logAbilityEvent(message: string): void {
 }
 
 const playerRoot = new TransformNode('playerRoot', scene);
+(globalThis as any).__astralLevel.map = () => deterministicMapSnapshot(
+  outdoorZone.activeSpaceId === 'boss' ? LEVEL_ONE_BOSS_MAP : LEVEL_ONE_MAIN_MAP,
+  playerRoot.position,
+);
 playerRoot.position.set(
   LEVEL_ONE_LAYOUT.points.playerSpawn.x,
   LEVEL_ONE_LAYOUT.points.playerSpawn.y,

@@ -6067,6 +6067,29 @@ Checkpoint markers and NPC visuals are enabled only in their owned space.
 
 The next terrain phase can replace the main builder's authored plates and approximate water volumes without changing the loading architecture.
 
+# Astral Shift 0.6.9.3 - Deterministic Map Foundation
+
+This patch retires the freeform overlapping shelf/ribbon approach for the first playable world.
+
+## Main changes
+
+- Added a reusable deterministic cell map format.
+- Visual terrain, water, collision, traversal support, and movement volumes now derive from the same cell data.
+- Rebuilt the Verdant Path main level from explicit grass, sand, slow sand, shallow water, deep water, bridge, and rock cells.
+- Rebuilt the Wolf Keeper Quarry from a separate deterministic map.
+- Added startup route validation from the beach spawn to the boss portal and from the quarry entrance to the boss center.
+- Added `__astralLevel.map()` diagnostics for the current map cell and surface.
+- Updated the boss portal, wolf den, spawn, zone, and landmark coordinates to remain aligned.
+
+## Developer diagnostic
+
+Run:
+
+```js
+__astralLevel.map()
+```
+
+The result reports the loaded map, player position, deterministic cell, and surface type.
 
 ### Validate
 ```bash

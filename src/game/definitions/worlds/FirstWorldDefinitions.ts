@@ -17,7 +17,7 @@ export const firstLevelDefinition: LevelDefinition = {
   spawns: [
     { id: 'spawn.beach', displayName: 'Beach Arrival', position: { x: 38, y: 0.25, z: -25 }, facing: Math.PI },
     { id: 'spawn.camp', displayName: 'Small Camp', position: { x: -8, y: 0.25, z: 13 }, facing: 0 },
-    { id: 'spawn.wolf-den', displayName: 'Wolf Den', position: { x: 50, y: 0.25, z: 31 }, facing: Math.PI / 2 },
+    { id: 'spawn.wolf-den', displayName: 'Wolf Den', position: { x: 53, y: 0.25, z: 36 }, facing: Math.PI / 2 },
   ],
   zones: [
     { id: 'zone.beach-arrival', displayName: 'Beach Arrival', role: 'arrival', shape: { type: 'box', center: { x: 38, y: 0, z: -25 }, halfWidth: 22, halfDepth: 11 }, checkpointId: 'checkpoint.entrance', tags: ['intro', 'starter'] },
@@ -27,8 +27,8 @@ export const firstLevelDefinition: LevelDefinition = {
     { id: 'zone.small-camp', displayName: 'Small Camp', role: 'safe', shape: { type: 'circle', center: { x: -8, y: 0, z: 13 }, radius: 11 }, checkpointId: 'checkpoint.npc-camp', tags: ['quest', 'merchant', 'recruitment'] },
     { id: 'zone.forest-west', displayName: 'Western Forest', role: 'encounter', shape: { type: 'box', center: { x: -28, y: 0, z: 20 }, halfWidth: 22, halfDepth: 20 }, tags: ['wolf', 'nonaggressive'] },
     { id: 'zone.forest-east', displayName: 'Eastern Wolf Grounds', role: 'encounter', shape: { type: 'box', center: { x: 43, y: 0, z: 17 }, halfWidth: 20, halfDepth: 18 }, tags: ['wolf', 'aggressive'] },
-    { id: 'zone.wolf-den', displayName: 'Wolf Den', role: 'quest', shape: { type: 'circle', center: { x: 53, y: 0, z: 34 }, radius: 10 }, tags: ['mother-wolf', 'portal-gate'] },
-    { id: 'zone.boss-portal', displayName: 'Boss Portal', role: 'transition', shape: { type: 'circle', center: { x: 53, y: 0, z: 25 }, radius: 3 }, tags: ['requires-wolf-quest'] },
+    { id: 'zone.wolf-den', displayName: 'Wolf Den', role: 'quest', shape: { type: 'circle', center: { x: 53, y: 0, z: 36 }, radius: 10 }, tags: ['mother-wolf', 'portal-gate'] },
+    { id: 'zone.boss-portal', displayName: 'Boss Portal', role: 'transition', shape: { type: 'circle', center: { x: 53, y: 0, z: 27 }, radius: 4 }, tags: ['requires-wolf-quest'] },
   ],
   transitions: [
     { id: 'transition.to-boss-quarry', displayName: 'Enter the Wolf Keeper Quarry', zoneId: 'zone.boss-portal', destinationLevelId: 'level.wolf-keeper-quarry', destinationSpawnId: 'spawn.quarry-entry', requiredWorldFlags: ['quest.wolf-problem.completed'] },
