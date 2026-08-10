@@ -56,8 +56,9 @@ const chunkTemplate: ChunkDefinition = {
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#renderCanvas');
-const hud = document.querySelector<HTMLDivElement>('#prototypeHud');
-if (!canvas || !hud) throw new Error('2.5D prototype shell is missing required DOM elements.');
+const hudQuery = document.querySelector<HTMLDivElement>('#prototypeHud');
+if (!canvas || !hudQuery) throw new Error('2.5D prototype shell is missing required DOM elements.');
+const hud: HTMLDivElement = hudQuery;
 
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
 const scene = new Scene(engine);
