@@ -26,6 +26,14 @@ const SECRET_TRIGGER_START = 196;
 const SECRET_TRIGGER_END = 201;
 
 type CameraMode = 'start' | 'travel' | 'battle' | 'turn' | 'reverse' | 'end' | 'secret';
+type RouteKind = 'main' | 'secret';
+
+type RouteCoordinate = {
+  route: RouteKind;
+  progress: number;
+  depth: number;
+  world: Vector3;
+};
 
 type RouteVertex = {
   point: Vector3;
@@ -212,7 +220,14 @@ function makeMarker(name: string, position: Vector3, height: number, mat: Standa
   return mesh;
 }
 
-function buildFloorSegment(name: string, start: Vector3, end: Vector3, depth: number, mat: StandardMaterial): Mesh {
+function buildFloorSegment(
+  name: string,
+  start: Vector3,
+  end: Vector3,
+  depth: number,
+  mat: StandardMaterial,
+  routeKind: RouteKind,
+): Mesh {
   const delta = end.subtract(start);
   const length = delta.length();
   const floor = MeshBuilder.CreateBox(name, { width: length + 0.15, height: 0.35, depth }, scene);
@@ -221,7 +236,7 @@ function buildFloorSegment(name: string, start: Vector3, end: Vector3, depth: nu
   floor.rotation.y = -Math.atan2(delta.z, delta.x);
   floor.material = mat;
   floor.isPickable = true;
-  floor.metadata = { sideviewWalkable: true };
+  floor.metadata = { sideviewWalkable: true, sideviewRoute: routeKind };
   return floor;
 }
 
@@ -230,10 +245,10 @@ function buildRouteGeometry(): void {
   routeSegments.forEach((segment, index) => {
     const midDistance = (segment.startDistance + segment.endDistance) / 2;
     const zoneIndex = Math.min(ZONE_COUNT - 1, Math.floor(midDistance / ZONE_LENGTH));
-    const floor = buildFloorSegment(`ROUTE_FLOOR_${index + 1}`, segment.start, segment.end, PLAYABLE_DEPTH, floorMaterials[zoneIndex]);
+    const floor = buildFloorSegment(`ROUTE_FLOOR_${index + 1}`, segment.start, segment.end, PLAYABLE_DEPTH, floorMaterials[zoneIndex], 'main');
     floor.parent = root;
 
-    const center = buildFloorSegment(`ROUTE_CENTER_${index + 1}`, segment.start, segment.end, 0.09, centerLineMaterial);
+    const center = buildFloorSegment(`ROUTE_CENTER_${index + 1}`, segment.start, segment.end, 0.09, centerLineMaterial, 'main');
     center.scaling.y = 0.06;
     center.position.y = 0.015;
     center.isPickable = false;
@@ -283,8 +298,8 @@ function buildRouteGeometry(): void {
 
 function buildSecretGeometry(): void {
   const end = secretStart.add(secretForward.scale(SECRET_LENGTH));
-  const floor = buildFloorSegment('SECRET_ROUTE_FLOOR', secretStart, end, 7, secretMaterial);
-  const center = buildFloorSegment('SECRET_ROUTE_CENTER', secretStart, end, 0.09, secretSocketMaterial);
+  const floor = buildFloorSegment('SECRET_ROUTE_FLOOR', secretStart, end, 7, secretMaterial, 'secret');
+  const center = buildFloorSegment('SECRET_ROUTE_CENTER', secretStart, end, 0.09, secretSocketMaterial, 'secret');
   center.scaling.y = 0.06;
   center.position.y = 0.015;
   center.isPickable = false;
@@ -336,6 +351,8 @@ let laneDepth = 0;
 let routeMode: 'main' | 'secret' = 'main';
 let currentCameraMode: CameraMode = 'start';
 let aimPoint = new Vector3(8, 0, 0);
+let aimCoordinate: RouteCoordinate | null = null;
+let clickMoveTarget: RouteCoordinate | null = null;
 let attackFlashSeconds = 0;
 
 const pressed = new Set<string>();
@@ -355,10 +372,53 @@ function applyPlayerPosition(): void {
 
 applyPlayerPosition();
 
+function projectPointToMainRoute(point: Vector3): RouteCoordinate {
+  let bestProgress = 0;
+  let bestDepth = 0;
+  let bestWorld = routeSegments[0].start.clone();
+  let bestDistanceSquared = Number.POSITIVE_INFINITY;
+
+  for (const segment of routeSegments) {
+    const relative = point.subtract(segment.start);
+    const along = Math.min(segment.length, Math.max(0, Vector3.Dot(relative, segment.forward)));
+    const center = segment.start.add(segment.forward.scale(along));
+    const depth = Math.min(HALF_DEPTH - PLAYER_RADIUS, Math.max(-HALF_DEPTH + PLAYER_RADIUS, Vector3.Dot(point.subtract(center), segment.right)));
+    const projected = center.add(segment.right.scale(depth));
+    const dx = projected.x - point.x;
+    const dz = projected.z - point.z;
+    const distanceSquared = dx * dx + dz * dz;
+    if (distanceSquared >= bestDistanceSquared) continue;
+    bestDistanceSquared = distanceSquared;
+    bestProgress = segment.startDistance + along;
+    bestDepth = depth;
+    bestWorld = projected;
+  }
+
+  return { route: 'main', progress: bestProgress, depth: bestDepth, world: bestWorld };
+}
+
+function projectPointToSecretRoute(point: Vector3): RouteCoordinate {
+  const relative = point.subtract(secretStart);
+  const progress = Math.min(SECRET_LENGTH - PLAYER_RADIUS, Math.max(0, Vector3.Dot(relative, secretForward)));
+  const depthLimit = 3.5 - PLAYER_RADIUS;
+  const depth = Math.min(depthLimit, Math.max(-depthLimit, Vector3.Dot(relative, secretRight)));
+  const world = secretStart.add(secretForward.scale(progress)).add(secretRight.scale(depth));
+  return { route: 'secret', progress, depth, world };
+}
+
+function routeCoordinateFromPick(point: Vector3, pickedMesh: Mesh | null): RouteCoordinate {
+  const pickedRoute = pickedMesh?.metadata?.sideviewRoute as RouteKind | undefined;
+  if (pickedRoute === 'secret') return projectPointToSecretRoute(point);
+  if (pickedRoute === 'main') return projectPointToMainRoute(point);
+  return routeMode === 'secret' ? projectPointToSecretRoute(point) : projectPointToMainRoute(point);
+}
+
 function pointerAim(event: PointerEvent): void {
   const pick = scene.pick(event.clientX, event.clientY, mesh => Boolean(mesh.metadata?.sideviewWalkable));
   if (!pick?.hit || !pick.pickedPoint) return;
-  aimPoint.copyFrom(pick.pickedPoint);
+  const pickedMesh = pick.pickedMesh instanceof Mesh ? pick.pickedMesh : null;
+  aimCoordinate = routeCoordinateFromPick(pick.pickedPoint, pickedMesh);
+  aimPoint.copyFrom(aimCoordinate.world);
   aimPoint.y = 0.05;
   aimMarker.position.copyFrom(aimPoint);
 
@@ -370,9 +430,16 @@ function pointerAim(event: PointerEvent): void {
 canvas.addEventListener('pointermove', pointerAim);
 canvas.addEventListener('pointerdown', event => {
   pointerAim(event);
-  if (event.button !== 0) return;
-  attackFlashSeconds = 0.12;
-  aimMarker.scaling.setAll(1.45);
+  if (event.button === 0) {
+    if (aimCoordinate?.route === routeMode) {
+      clickMoveTarget = { ...aimCoordinate, world: aimCoordinate.world.clone() };
+    }
+    return;
+  }
+  if (event.button === 2) {
+    attackFlashSeconds = 0.12;
+    aimMarker.scaling.setAll(1.45);
+  }
 });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 
@@ -382,7 +449,7 @@ function updateRouteTransitions(): void {
       mainProgress >= SECRET_TRIGGER_START &&
       mainProgress <= SECRET_TRIGGER_END &&
       laneDepth > HALF_DEPTH - 1.8 &&
-      (pressed.has('KeyD') || pressed.has('ArrowRight'));
+      (pressed.has('KeyA') || pressed.has('ArrowLeft'));
     if (enteringSecret) {
       routeMode = 'secret';
       secretProgress = 0;
@@ -399,23 +466,66 @@ function updateRouteTransitions(): void {
 }
 
 function updatePlayer(dt: number): void {
-  let forwardInput = 0;
-  let depthInput = 0;
-  if (pressed.has('KeyW') || pressed.has('ArrowUp')) forwardInput += 1;
-  if (pressed.has('KeyS') || pressed.has('ArrowDown')) forwardInput -= 1;
-  if (pressed.has('KeyA') || pressed.has('ArrowLeft')) depthInput -= 1;
-  if (pressed.has('KeyD') || pressed.has('ArrowRight')) depthInput += 1;
+  const keyboardActive =
+    pressed.has('KeyW') || pressed.has('ArrowUp') ||
+    pressed.has('KeyS') || pressed.has('ArrowDown') ||
+    pressed.has('KeyA') || pressed.has('ArrowLeft') ||
+    pressed.has('KeyD') || pressed.has('ArrowRight');
 
-  if (forwardInput !== 0 && depthInput !== 0) {
-    const diagonalScale = Math.SQRT1_2;
-    forwardInput *= diagonalScale;
-    depthInput *= diagonalScale;
+  if (keyboardActive) clickMoveTarget = null;
+
+  const currentProgress = routeMode === 'main' ? mainProgress : secretProgress;
+  let progressInput = 0;
+  let depthInput = 0;
+
+  const driveTarget = aimCoordinate?.route === routeMode ? aimCoordinate : null;
+  let driveProgress = 1;
+  let driveDepth = 0;
+  if (driveTarget) {
+    const deltaProgress = driveTarget.progress - currentProgress;
+    const deltaDepth = driveTarget.depth - laneDepth;
+    const driveLength = Math.hypot(deltaProgress, deltaDepth);
+    if (driveLength > 0.05) {
+      driveProgress = deltaProgress / driveLength;
+      driveDepth = deltaDepth / driveLength;
+    }
+  }
+
+  if (pressed.has('KeyW') || pressed.has('ArrowUp')) {
+    progressInput += driveProgress;
+    depthInput += driveDepth;
+  }
+  if (pressed.has('KeyS') || pressed.has('ArrowDown')) {
+    progressInput -= driveProgress;
+    depthInput -= driveDepth;
+  }
+
+  // A/D are route-relative lane movement. A moves toward positive lane depth; D toward negative.
+  if (pressed.has('KeyA') || pressed.has('ArrowLeft')) depthInput += 1;
+  if (pressed.has('KeyD') || pressed.has('ArrowRight')) depthInput -= 1;
+
+  if (!keyboardActive && clickMoveTarget?.route === routeMode) {
+    const deltaProgress = clickMoveTarget.progress - currentProgress;
+    const deltaDepth = clickMoveTarget.depth - laneDepth;
+    const distance = Math.hypot(deltaProgress, deltaDepth);
+    if (distance <= 0.18) {
+      clickMoveTarget = null;
+    } else {
+      progressInput = deltaProgress / distance;
+      depthInput = deltaDepth / distance;
+    }
+  }
+
+  const inputLength = Math.hypot(progressInput, depthInput);
+  if (inputLength > 1) {
+    progressInput /= inputLength;
+    depthInput /= inputLength;
   }
 
   if (routeMode === 'main') {
-    mainProgress = Math.min(TOTAL_LENGTH - PLAYER_RADIUS, Math.max(PLAYER_RADIUS, mainProgress + forwardInput * PLAYER_SPEED * dt));
+    mainProgress = Math.min(TOTAL_LENGTH - PLAYER_RADIUS, Math.max(PLAYER_RADIUS, mainProgress + progressInput * PLAYER_SPEED * dt));
   } else {
-    secretProgress = Math.min(SECRET_LENGTH - PLAYER_RADIUS, Math.max(0, secretProgress + forwardInput * PLAYER_SPEED * dt));
+    secretProgress = Math.min(SECRET_LENGTH - PLAYER_RADIUS, Math.max(0, secretProgress + progressInput * PLAYER_SPEED * dt));
   }
   laneDepth = Math.min(HALF_DEPTH - PLAYER_RADIUS, Math.max(-HALF_DEPTH + PLAYER_RADIUS, laneDepth + depthInput * PLAYER_SPEED * dt));
 
@@ -505,17 +615,17 @@ function updateHud(): void {
   const routeDistance = routeMode === 'main' ? mainProgress : secretProgress;
   const routeLabel = routeMode === 'main' ? `${mainProgress.toFixed(1)} / ${TOTAL_LENGTH} m` : `secret ${secretProgress.toFixed(1)} / ${SECRET_LENGTH} m`;
   const secretHint = routeMode === 'main' && mainProgress >= 188 && mainProgress <= 202
-    ? '<div class="prototype-secret">Secret hint: move to the outer edge with D near the purple connector.</div>'
+    ? '<div class="prototype-secret">Secret hint: move to the outer edge with A near the purple connector.</div>'
     : '';
 
   hud.innerHTML = `
-    <div class="prototype-title">Astral Shift 0.6.9-2.5d.2</div>
+    <div class="prototype-title">Astral Shift 0.6.9-2.5d.2a</div>
     <div>300 m route · 6 × 50 m logical zones · 30 m secret branch</div>
     <div>Current zone: <strong>${zoneIndex + 1}</strong> / ${ZONE_COUNT} · ${zone.label}</div>
     <div>Route: ${routeLabel} · Lane depth: ${laneDepth.toFixed(1)} m</div>
     <div>Camera: <strong>${currentCameraMode}</strong> · Speed: ${PLAYER_SPEED.toFixed(1)} m/s</div>
     ${secretHint}
-    <div class="prototype-muted">W/S = route forward/back · A/D = lane depth · mouse = aim · LMB = attack pulse</div>
+    <div class="prototype-muted">W = drive toward mouse · S = reverse away · A/D = lane strafe · LMB = click-to-move · RMB = attack pulse</div>
     <div class="prototype-muted">Blue seams = zone sockets · purple = secret connector · red markers = battle zone</div>
     <div class="prototype-muted">Debug distance: ${routeDistance.toFixed(1)} m</div>
   `;
