@@ -4,8 +4,9 @@ import { defineConfig } from 'vite';
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
-  base: '/astral-game/',
+export default defineConfig(({ command }) => ({
+  // Local dev should serve from localhost root. Production/GitHub Pages keeps the repo subpath.
+  base: command === 'serve' ? '/' : '/astral-game/',
   build: {
     rollupOptions: {
       input: {
@@ -14,4 +15,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
