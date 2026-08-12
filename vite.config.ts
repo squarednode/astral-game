@@ -8,6 +8,8 @@ export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : '/astral-game/',
   server: {
     host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
   },
   plugins: command === 'serve'
     ? [{
