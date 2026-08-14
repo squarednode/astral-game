@@ -5,6 +5,9 @@ import { buildLevelOneTesting } from './LevelOneTestingBuilder';
 import { buildLevelOneTown } from './LevelOneTownBuilder';
 import { buildLevelTwo } from './LevelTwoBuilder';
 import { LevelInstanceSystem, type LevelInstanceZone } from './LevelInstanceSystem';
+import { installWorldPortalRuntime } from './WorldPortalRuntime';
+
+installWorldPortalRuntime();
 
 /**
  * World-space facade. Only one gameplay space is constructed at a time;

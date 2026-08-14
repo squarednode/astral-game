@@ -34,7 +34,7 @@ export function buildLevelOneBossArena(options: OutdoorZoneBuildOptions): LevelI
   worldVolumes.push({
     id:'boss-return-portal', label:'Return to Level 1', kind:'trigger',
     footprint:{ shape:'box', centerX:0, centerZ:-20, halfWidth:3, halfDepth:3 },
-    eventId:'level-one.portal-to-main', once:false,
+    eventId:'level-one.boss-to-main', once:false,
   });
 
   const level2Portal = MeshBuilder.CreateTorus('boss-level2-portal', { diameter:5, thickness:0.35, tessellation:40 }, options.scene);

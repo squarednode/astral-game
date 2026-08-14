@@ -66,6 +66,8 @@ export class LevelInstanceSystem implements LevelInstanceZone {
     this.active = this.factories[initialSpace](this.options);
     this.indexLandmarks(initialSpace, this.active.landmarks);
     this.publish(this.active);
+    (globalThis as typeof globalThis & { __astralLevelInstanceSystem?: LevelInstanceSystem })
+      .__astralLevelInstanceSystem = this;
   }
 
   get activeSpaceId(): LevelSpaceId { return this.active.id; }
