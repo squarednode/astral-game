@@ -16,10 +16,13 @@ export const GameBalance = {
     maximumJumpOntoHeight: 1.15,
     maximumWalkableSlopeDegrees: 42,
     groundSnapDistance: 0.18,
-    minX: -37.0,
-    maxX: 37.0,
-    minZ: -25.0,
-    maxZ: 145.0,
+    // Legacy Level One bounds used to clamp the player to the old fixed map.
+    // LevelInstance spaces now provide their own collision/boundary geometry,
+    // so keep only a broad engine safety envelope here.
+    minX: -10000,
+    maxX: 10000,
+    minZ: -10000,
+    maxZ: 10000,
   },
   worldVolumes: {
     shallowWaterSpeedMultiplier: 0.65,
