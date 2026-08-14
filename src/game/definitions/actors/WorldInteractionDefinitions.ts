@@ -10,9 +10,9 @@ export const questDefinitions: readonly QuestDefinition[] = [
   {
     id: 'quest.wolf-problem',
     displayName: 'The Wolf Problem',
-    description: 'Defeat the Mother Wolf, then enter the keeper’s lair and finish the hunt.',
+    description: 'Defeat the Mother Wolf, collect four wolf pelts, then enter the keeper’s lair and finish the hunt.',
     questGiver: 'Hunter Mara',
-    turnInHint: 'Return to Hunter Mara in town after the Wolf Keeper is defeated.',
+    turnInHint: 'Return to Hunter Mara in town after the Wolf Keeper is defeated and you have four wolf pelts.',
     rewardSummary: ['75 copper', 'Secure the forest route', 'Recruit Hunter Mara'],
     canAbandon: true,
     abandonPolicy: {
@@ -27,6 +27,14 @@ export const questDefinitions: readonly QuestDefinition[] = [
         targetId: 'encounter.level1.mother-wolf',
         requiredAmount: 1,
         retroactive: false,
+      },
+      {
+        id: 'pelts',
+        type: 'collect-material',
+        targetId: 'wolf-pelt',
+        requiredAmount: 4,
+        retroactive: true,
+        consumeOnTurnIn: true,
       },
       {
         id: 'defeat-wolf-keeper',

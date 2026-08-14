@@ -71,7 +71,9 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     maxHp: 10,
     speed: 7.0,
     attackDamage: 1.0,
-    attackRange: 1.45,
+    // Runtime melee checks are center-based today. Include the 0.55 m player
+    // capsule radius so the authored 1.45 m reach begins at the body exterior.
+    attackRange: 2.0,
     attackCooldown: 0.68,
     basicAttackName: 'Warrior Strike',
     basicAttackStyle: 'melee-arc',
@@ -134,7 +136,8 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     maxHp: 8,
     speed: 8.2,
     attackDamage: 1.2,
-    attackRange: 1.35,
+    // Preserve the intended 1.35 m jab beyond the player capsule exterior.
+    attackRange: 1.9,
     attackCooldown: 0.38,
     basicAttackName: 'Rogue Jab',
     basicAttackStyle: 'rapid-melee',

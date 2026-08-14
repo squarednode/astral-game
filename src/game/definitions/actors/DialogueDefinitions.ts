@@ -29,13 +29,13 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'details',
         speakerId: 'actor.hunter-mara',
-        text: 'Find and defeat the Mother Wolf. That should expose the path to the keeper controlling the pack.',
+        text: 'Find and defeat the Mother Wolf, and bring me four good pelts from the pack. Her fall should expose the path to the keeper controlling them.',
         nextNodeId: 'start',
       },
       {
         id: 'accepted',
         speakerId: 'actor.hunter-mara',
-        text: 'Start with the Mother Wolf. Once she falls, the keeper’s route should open. Defeat him and return to me.',
+        text: 'Start with the Mother Wolf and gather four pelts from the pack. Once she falls, the keeper’s route should open. Defeat him and return to me.',
         end: true,
       },
     ],
@@ -47,7 +47,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'start',
         speakerId: 'actor.hunter-mara',
-        text: 'The hunt is still active. Defeat the Mother Wolf, then follow the opened route to the Wolf Keeper.',
+        text: 'The hunt is still active. Bring me four wolf pelts, defeat the Mother Wolf, then follow the opened route to the Wolf Keeper.',
         choices: [
           { id: 'leave', text: 'I will return when it is done.' },
         ],
@@ -61,7 +61,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'start',
         speakerId: 'actor.hunter-mara',
-        text: 'The Mother Wolf and her keeper are both gone. You finished what I could not do alone.',
+        text: 'The Mother Wolf and her keeper are both gone, and you brought the four pelts I asked for. You finished what I could not do alone.',
         choices: [
           {
             id: 'complete',

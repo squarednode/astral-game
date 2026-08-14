@@ -53,7 +53,7 @@ export class SharedGroundMovementRuntime {
     private readonly actor: TransformNode,
     colliders: ReadonlyArray<WorldCollider>,
     traversalSurfaces: ReadonlyArray<TraversalSurface>,
-    actorRadius: number,
+    private readonly actorRadius: number,
     private readonly actorGroundOffset = 0,
     private readonly config: Readonly<MovementConfig> = DEFAULT_MOVEMENT_CONFIG,
   ) {
@@ -138,6 +138,29 @@ export class SharedGroundMovementRuntime {
       desiredFoot = previousFoot.add(this.airborneHorizontalVelocity.scale(dt));
     }
 
+    // Enemy movement uses this shared resolver. Keep non-player actors outside
+    // the player's physical capsule so an enemy cannot hide inside the player
+    // while still allowing the player controller to remain authoritative.
+    const player = this.actor.getScene().getTransformNodeByName('playerRoot');
+    const isPlayer = this.actor.name === 'playerRoot' || this.actor === player;
+    const playerRadius = 0.55;
+    const minimumPlayerDistance = this.actorRadius + playerRadius;
+    if (player && !isPlayer && minimumPlayerDistance > 0) {
+      const fromPlayer = desiredFoot.subtract(player.position);
+      fromPlayer.y = 0;
+      if (fromPlayer.lengthSquared() < minimumPlayerDistance * minimumPlayerDistance) {
+        let outward = fromPlayer;
+        if (outward.lengthSquared() < 0.000001) {
+          outward = previousFoot.subtract(player.position);
+          outward.y = 0;
+        }
+        if (outward.lengthSquared() < 0.000001) outward = new Vector3(1, 0, 0);
+        outward.normalize();
+        desiredFoot.x = player.position.x + outward.x * minimumPlayerDistance;
+        desiredFoot.z = player.position.z + outward.z * minimumPlayerDistance;
+      }
+    }
+
     const step = this.supports.queryStepUp(
       previousFoot,
       desiredFoot,
@@ -178,6 +201,25 @@ export class SharedGroundMovementRuntime {
 
     this.actor.position.x = resolvedFoot.x;
     this.actor.position.z = resolvedFoot.z;
+
+    // Correct pre-existing overlap as well as new movement. Do this after world
+    // collision so the body separation rule remains true even when the enemy
+    // was already inside the player at the start of the frame.
+    if (player && !isPlayer && minimumPlayerDistance > 0) {
+      const fromPlayer = this.actor.position.subtract(player.position);
+      fromPlayer.y = 0;
+      if (fromPlayer.lengthSquared() < minimumPlayerDistance * minimumPlayerDistance) {
+        let outward = fromPlayer;
+        if (outward.lengthSquared() < 0.000001) {
+          outward = previousFoot.subtract(player.position);
+          outward.y = 0;
+        }
+        if (outward.lengthSquared() < 0.000001) outward = new Vector3(1, 0, 0);
+        outward.normalize();
+        this.actor.position.x = player.position.x + outward.x * minimumPlayerDistance;
+        this.actor.position.z = player.position.z + outward.z * minimumPlayerDistance;
+      }
+    }
 
     const finalSupport = this.supports.querySupport(
       previousFoot,
