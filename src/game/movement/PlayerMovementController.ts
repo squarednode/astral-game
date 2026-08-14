@@ -29,6 +29,7 @@ export class PlayerMovementController {
   private readonly velocity = Vector3.Zero();
   private readonly desiredDirection = Vector3.Zero();
   private readonly dodgeDirection = Vector3.Zero();
+  private readonly lastPointerDirection = new Vector3(0, 0, 1);
 
   private pointerWorld = new Vector3(0, 0, 4);
   private clickTarget: Vector3 | null = null;
@@ -104,13 +105,6 @@ export class PlayerMovementController {
     };
   }
 
-  /**
-   * Updates the surface currently supporting the actor.
-   *
-   * Raising the support while grounded places the actor onto that surface.
-   * Lowering the support starts a natural fall instead of snapping downward.
-   * Airborne actors only receive the new landing height.
-   */
   setSupportHeight(
     height: number,
     followMovingSupport = false,
@@ -124,9 +118,6 @@ export class PlayerMovementController {
     if (!this.grounded) return;
 
     if (followMovingSupport) {
-      // Follow dynamic vertical supports with a short critically damped blend.
-      // The logical support remains exact while the visible actor motion is
-      // softened to avoid elevator snapping.
       const safeDt = Math.max(0, Math.min(dt, 1 / 20));
       const blend = 1 - Math.exp(-28 * safeDt);
       this.actor.position.y +=
@@ -144,10 +135,6 @@ export class PlayerMovementController {
     this.actor.position.y = nextHeight;
   }
 
-  /**
-   * Reconciles movement after the support provider changes during the frame.
-   * This allows a descending jump to land on a raised log, rock, or platform.
-   */
   reconcileSupportHeight(): void {
     if (
       !this.grounded &&
@@ -162,31 +149,21 @@ export class PlayerMovementController {
       if (impactSpeed >= Math.abs(this.config.landingVelocityThreshold)) {
         this.callbacks.onLanded?.(impactSpeed);
       }
-
       return;
     }
 
     if (this.grounded) {
       if (this.smoothingMovingSupport) {
-        if (
-          Math.abs(
-            this.actor.position.y - this.supportHeight,
-          ) <= 0.01
-        ) {
+        if (Math.abs(this.actor.position.y - this.supportHeight) <= 0.01) {
           this.actor.position.y = this.supportHeight;
           this.smoothingMovingSupport = false;
         }
         return;
       }
-
       this.actor.position.y = this.supportHeight;
     }
   }
 
-  /**
-   * Used by teleports and Blink to reset vertical state without carrying an
-   * old jump or support surface into the new position.
-   */
   resetVerticalState(height = 0): void {
     this.supportHeight = Math.max(0, height);
     this.actor.position.y = this.supportHeight;
@@ -198,6 +175,13 @@ export class PlayerMovementController {
   setPointerWorld(worldPosition: Vector3): void {
     this.pointerWorld.copyFrom(worldPosition);
     this.pointerWorld.y = 0;
+
+    const aimDirection = this.pointerWorld.subtract(this.actor.position);
+    aimDirection.y = 0;
+    if (aimDirection.lengthSquared() > 0.0001) {
+      aimDirection.normalize();
+      this.lastPointerDirection.copyFrom(aimDirection);
+    }
 
     if (
       this.pointerSteering &&
@@ -326,8 +310,12 @@ export class PlayerMovementController {
         ) &&
         this.input.getActiveDevice() === 'keyboard-mouse'
       ) {
-        const forward = this.pointerWorld.subtract(this.actor.position);
-        forward.y = 0;
+        // Treat the mouse as a directional heading for WASD rather than a
+        // destination point. The ray-picked world point can become stale while
+        // the runner camera pans with a stationary cursor; recomputing from that
+        // stale point can flip forward after the actor crosses it and produce a
+        // circular path. A real pointer update refreshes lastPointerDirection.
+        const forward = this.lastPointerDirection.clone();
         if (forward.lengthSquared() > 0.0001) {
           forward.normalize();
           const right = new Vector3(forward.z, 0, -forward.x);
@@ -407,13 +395,8 @@ export class PlayerMovementController {
       }
     }
 
-    const cursorDirection = this.pointerWorld.subtract(
-      this.actor.position,
-    );
-    cursorDirection.y = 0;
-
-    if (cursorDirection.lengthSquared() > 0) {
-      return cursorDirection;
+    if (this.lastPointerDirection.lengthSquared() > 0.0001) {
+      return this.lastPointerDirection.clone();
     }
 
     return new Vector3(
