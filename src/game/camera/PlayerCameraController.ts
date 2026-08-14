@@ -1,5 +1,6 @@
 import { ArcRotateCamera, TransformNode, Vector3 } from '@babylonjs/core';
 import { GameBalance } from '../config/GameBalance';
+import { updateProceduralRunnerCamera } from './ProceduralRunnerCamera';
 
 export class PlayerCameraController {
   private readonly lookAhead = Vector3.Zero();
@@ -22,6 +23,15 @@ export class PlayerCameraController {
 
   update(dt: number): void {
     const velocity = this.getVelocity();
+
+    // Procedural runner spaces own only camera framing. Player input and
+    // movement remain in PlayerMovementController. Authored spaces fall
+    // through to the standard main-game camera below.
+    if (updateProceduralRunnerCamera(this.camera, this.actor, velocity, dt)) {
+      this.applyShake(dt);
+      return;
+    }
+
     const planarVelocity = new Vector3(velocity.x, 0, velocity.z);
     const speed = planarVelocity.length();
 
@@ -37,17 +47,7 @@ export class PlayerCameraController {
     Vector3.LerpToRef(this.target, desiredTarget, followBlend, this.target);
     this.camera.target.copyFrom(this.target);
 
-    if (this.shakeTime > 0) {
-      this.shakeTime = Math.max(0, this.shakeTime - dt);
-      const fade = Math.min(1, this.shakeTime / 0.14);
-      this.camera.target.addInPlace(new Vector3(
-        (Math.random() - 0.5) * this.shakeMagnitude * fade,
-        0,
-        (Math.random() - 0.5) * this.shakeMagnitude * fade,
-      ));
-    } else {
-      this.shakeMagnitude = 0;
-    }
+    this.applyShake(dt);
 
     const movementRatio = Math.min(
       1,
@@ -59,5 +59,19 @@ export class PlayerCameraController {
         movementRatio;
     const zoomBlend = 1 - Math.exp(-GameBalance.camera.zoomSharpness * dt);
     this.camera.radius += (desiredRadius - this.camera.radius) * zoomBlend;
+  }
+
+  private applyShake(dt: number): void {
+    if (this.shakeTime > 0) {
+      this.shakeTime = Math.max(0, this.shakeTime - dt);
+      const fade = Math.min(1, this.shakeTime / 0.14);
+      this.camera.target.addInPlace(new Vector3(
+        (Math.random() - 0.5) * this.shakeMagnitude * fade,
+        0,
+        (Math.random() - 0.5) * this.shakeMagnitude * fade,
+      ));
+    } else {
+      this.shakeMagnitude = 0;
+    }
   }
 }
