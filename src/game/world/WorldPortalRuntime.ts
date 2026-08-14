@@ -1,4 +1,4 @@
-import { Engine } from '@babylonjs/core';
+import { Engine, Vector3 } from '@babylonjs/core';
 import type { LevelInstanceSystem, LevelSpaceId } from './LevelInstanceSystem';
 
 type EncounterSnapshotLike = { state?: string } | null;
@@ -13,13 +13,34 @@ type PortalGlobals = typeof globalThis & {
   __astralWorldPortalTrigger?: (triggerId: string) => boolean;
 };
 
-const destinationFor = (triggerId: string): { space: LevelSpaceId; landmark: string } | null => {
+interface PortalDestination {
+  space: LevelSpaceId;
+  landmark: string;
+  offset?: Vector3;
+}
+
+const destinationFor = (triggerId: string): PortalDestination | null => {
   switch (triggerId) {
-    case 'level-one.portal-to-town': return { space: 'town', landmark: 'town-entry' };
-    case 'level-one.town-to-main': return { space: 'main', landmark: 'level1-town-portal' };
-    case 'level-one.boss-to-main': return { space: 'main', landmark: 'level1-boss-portal' };
-    case 'level-one.boss-to-level2': return { space: 'level2', landmark: 'level2-entry' };
-    default: return null;
+    case 'level-one.portal-to-town':
+      return { space: 'town', landmark: 'town-entry' };
+    case 'level-one.town-to-main':
+      return {
+        space: 'main',
+        landmark: 'level1-town-portal',
+        offset: new Vector3(-6, 0, 0),
+      };
+    case 'level-one.portal-to-boss':
+      return { space: 'boss', landmark: 'boss-entry' };
+    case 'level-one.boss-to-main':
+      return {
+        space: 'main',
+        landmark: 'level1-boss-portal',
+        offset: new Vector3(-6, 0, 0),
+      };
+    case 'level-one.boss-to-level2':
+      return { space: 'level2', landmark: 'level2-entry' };
+    default:
+      return null;
   }
 };
 
@@ -46,11 +67,19 @@ function repositionSpaceActors(space: LevelSpaceId): void {
     const mesh = scene.getMeshByName(actorId);
     if (!landmark || !mesh) return;
     const height = mesh.getBoundingInfo().boundingBox.extendSizeWorld.y * 2;
-    mesh.position.set(landmark.position.x, landmark.position.y + height / 2, landmark.position.z);
+    mesh.position.set(
+      landmark.position.x,
+      landmark.position.y + height / 2,
+      landmark.position.z,
+    );
     mesh.setEnabled(true);
     const marker = scene.getMeshByName(`actor-marker-${actorId}`);
     if (marker) {
-      marker.position.set(landmark.position.x, landmark.position.y + height + 0.45, landmark.position.z);
+      marker.position.set(
+        landmark.position.x,
+        landmark.position.y + height + 0.45,
+        landmark.position.z,
+      );
       marker.setEnabled(true);
     }
   };
@@ -62,27 +91,32 @@ function repositionSpaceActors(space: LevelSpaceId): void {
   }
 }
 
-function transfer(space: LevelSpaceId, landmarkId: string): boolean {
+function transfer(destination: PortalDestination): boolean {
   const globals = globalThis as PortalGlobals;
   const system = globals.__astralLevelInstanceSystem;
   const scene = Engine.Instances[0]?.scenes[0];
   const player = scene?.getTransformNodeByName('playerRoot');
   if (!system || !player) return false;
 
-  if (space === 'level2') {
-    const bossState = globals.__astralEncounterManager?.snapshot('encounter.level1.boss')?.state;
+  if (destination.space === 'level2') {
+    const bossState = globals.__astralEncounterManager
+      ?.snapshot('encounter.level1.boss')
+      ?.state;
     if (bossState !== 'completed') return true;
   }
 
-  system.loadSpace(space);
-  const landmark = system.landmarks.find(candidate => candidate.id === landmarkId);
+  system.loadSpace(destination.space);
+  const landmark = system.landmarks.find(
+    candidate => candidate.id === destination.landmark,
+  );
   if (!landmark) return false;
 
   player.position.copyFrom(landmark.position);
+  if (destination.offset) player.position.addInPlace(destination.offset);
   player.position.y = landmark.position.y;
-  repositionSpaceActors(space);
+  repositionSpaceActors(destination.space);
 
-  if (space === 'boss') {
+  if (destination.space === 'boss') {
     globals.__astralEncounterManager?.start('encounter.level1.boss');
   }
   return true;
@@ -93,7 +127,7 @@ export function installWorldPortalRuntime(): void {
   globals.__astralWorldPortalTrigger = triggerId => {
     const destination = destinationFor(triggerId);
     if (!destination) return false;
-    return transfer(destination.space, destination.landmark);
+    return transfer(destination);
   };
 
   queueMicrotask(() => repositionSpaceActors('main'));
