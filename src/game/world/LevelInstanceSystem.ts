@@ -1,4 +1,4 @@
-import { TransformNode, type Mesh, type Vector3 } from '@babylonjs/core';
+import { TransformNode, type Mesh } from '@babylonjs/core';
 import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type {
   DynamicBoxCollider,
@@ -11,7 +11,7 @@ import type {
 import type { WorldVolume } from './WorldVolumeTypes';
 import type { StateMachineSnapshot } from '../../engine/state';
 
-export type LevelSpaceId = 'main' | 'boss' | 'testing';
+export type LevelSpaceId = 'main' | 'town' | 'boss' | 'level2' | 'testing';
 
 export interface LevelInstance {
   readonly id: LevelSpaceId;
@@ -47,10 +47,6 @@ const replaceContents = <T>(target: T[], source: readonly T[]): void => {
   target.splice(0, target.length, ...source);
 };
 
-/**
- * Owns exactly one loaded gameplay space at a time. Runtime systems retain the
- * stable array references below while their contents are replaced on transfer.
- */
 export class LevelInstanceSystem implements LevelInstanceZone {
   readonly colliders: WorldCollider[] = [];
   readonly traversalSurfaces: TraversalSurface[] = [];
@@ -93,7 +89,6 @@ export class LevelInstanceSystem implements LevelInstanceZone {
     const indexed = this.landmarkCatalog.get(id);
     if (indexed) return indexed;
 
-    // Lazily inspect unloaded spaces once, then dispose their temporary roots.
     for (const spaceId of Object.keys(this.factories) as LevelSpaceId[]) {
       if (spaceId === this.active.id) continue;
       const temporary = this.factories[spaceId](this.options);
