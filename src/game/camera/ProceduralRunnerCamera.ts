@@ -4,6 +4,7 @@ import type { RunnerChunk } from '../world/ProceduralRunnerMap';
 
 let viewForward = new Vector3(1, 0, 0);
 let lastChunkId = '';
+let preserveHandoffHeading = false;
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 const smooth = (value: number): number => {
@@ -16,6 +17,25 @@ const normalizeAngle = (angle: number): number => {
   while (value < -Math.PI) value += Math.PI * 2;
   return value;
 };
+
+export function prepareProceduralRunnerCameraHandoff(
+  camera: ArcRotateCamera,
+  actor: TransformNode,
+  routeDirection: Vector3,
+): void {
+  const forward = routeDirection.clone();
+  forward.y = 0;
+  if (forward.lengthSquared() > 0.0001) {
+    forward.normalize();
+    viewForward.copyFrom(forward);
+  }
+  lastChunkId = '';
+  preserveHandoffHeading = true;
+
+  const target = actor.position.add(viewForward.scale(0.2));
+  target.y = actor.position.y + 0.6;
+  camera.target.copyFrom(target);
+}
 
 function centerOf(chunk: RunnerChunk, originX: number, originZ: number, cellSize: number): Vector3 {
   return new Vector3(originX + chunk.cell.x * cellSize, 0, originZ + chunk.cell.z * cellSize);
@@ -103,7 +123,11 @@ export function updateProceduralRunnerCamera(
 
   if (current.id !== lastChunkId) {
     lastChunkId = current.id;
-    viewForward = routeForward(current, byId, viewForward);
+    if (preserveHandoffHeading) {
+      preserveHandoffHeading = false;
+    } else {
+      viewForward = routeForward(current, byId, viewForward);
+    }
   }
 
   const planarVelocity = new Vector3(velocity.x, 0, velocity.z);
@@ -145,10 +169,6 @@ export function updateProceduralRunnerCamera(
       desiredBeta = 0.42 + (0.96 - 0.42) * (1 - godMix);
       desiredRadius = 21 - godMix * 1.5;
 
-      // Keep useful look-ahead during the approach, then collapse the camera
-      // target back toward the actor as the endpoint transitions to god view.
-      // This prevents the player from being pushed into the lower third of the
-      // screen while still showing the destination before the final approach.
       const approachAhead = current.type === 'start' ? 0.5 : 4.2;
       const godAhead = current.type === 'start' ? 0.15 : 0.65;
       targetAhead = approachAhead + (godAhead - approachAhead) * godMix;

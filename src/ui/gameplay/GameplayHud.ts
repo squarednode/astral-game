@@ -8,7 +8,6 @@ import type {
 } from './GameplayHudTypes';
 import { NotificationFeed } from './NotificationFeed';
 import { PartyHud } from './PartyHud';
-import { WaveHud } from './WaveHud';
 
 export interface GameplayHudOptions {
   onRestart?: () => void;
@@ -28,7 +27,6 @@ export class GameplayHud {
   private readonly partyHud: PartyHud;
   private readonly abilityBar: AbilityBar;
   private readonly castBar: CastBar;
-  private readonly waveHud: WaveHud;
   private readonly bossBar: BossBar;
   private readonly notifications: NotificationFeed;
   private readonly gameOver: HTMLDivElement;
@@ -63,7 +61,6 @@ export class GameplayHud {
     }
 
     this.partyHud = new PartyHud(this.getRegion('top-right'));
-    this.waveHud = new WaveHud(this.element);
     this.bossBar = new BossBar(this.element);
     this.castBar = new CastBar(this.element);
     this.abilityBar = new AbilityBar(this.element);
@@ -78,7 +75,7 @@ export class GameplayHud {
     this.finalScore = document.createElement('p');
     this.restart = document.createElement('button');
     this.restart.type = 'button';
-    this.restart.textContent = 'Restart Run';
+    this.restart.textContent = 'Restart';
     this.restart.addEventListener('click', () => {
       if (this.options.onRestart) this.options.onRestart();
       else location.reload();
@@ -101,8 +98,6 @@ export class GameplayHud {
     this.partyHud.render(snapshot.party);
     this.abilityBar.render(snapshot.abilities);
     this.castBar.render(snapshot.activeCast);
-    this.waveHud.element.hidden = !snapshot.showWaveHud;
-    if (snapshot.showWaveHud) this.waveHud.render(snapshot.wave, snapshot.kills, snapshot.power);
     this.bossBar.render(snapshot.boss);
   }
 
@@ -153,6 +148,7 @@ export class GameplayHud {
       '#mission',
       '#waveHud',
       '#testHud',
+      '.gameplay-wave-hud',
       '.legacy-hud',
       '.legacy-wave-hud',
       '.sandbox-objective',
@@ -165,7 +161,6 @@ export class GameplayHud {
       });
     }
 
-    // Older builds group Wave/Kills/Power inside an unlabelled parent panel.
     const metricElements = ['#wave', '#kills', '#power']
       .map(selector => document.querySelector<HTMLElement>(selector))
       .filter((element): element is HTMLElement => Boolean(element));
@@ -181,7 +176,6 @@ export class GameplayHud {
       }
     }
 
-    // Remove the original sandbox instruction panel even when its IDs differ.
     const legacyPhrases = [
       'defeat enemies and test the party rotation',
       'astral swap',

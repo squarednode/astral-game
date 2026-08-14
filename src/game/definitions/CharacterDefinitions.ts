@@ -134,7 +134,7 @@ export const characterDefinitions: readonly CharacterDefinition[] = [
     maxHp: 8,
     speed: 8.2,
     attackDamage: 1.2,
-    attackRange: 1.05,
+    attackRange: 1.35,
     attackCooldown: 0.38,
     basicAttackName: 'Rogue Jab',
     basicAttackStyle: 'rapid-melee',

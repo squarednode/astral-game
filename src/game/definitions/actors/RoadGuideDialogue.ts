@@ -7,7 +7,7 @@ export const roadGuideDialogueDefinition: DialogueDefinition = {
     {
       id: 'start',
       speakerId: 'actor.road-guide',
-      text: 'Take the road on the left to town. Danger awaits ahead.',
+      text: 'Take the road on the right to town. Danger awaits ahead.',
       end: true,
     },
   ],

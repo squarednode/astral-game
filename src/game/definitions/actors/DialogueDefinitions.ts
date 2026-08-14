@@ -8,7 +8,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'start',
         speakerId: 'actor.hunter-mara',
-        text: 'The wolves are pushing closer to camp. I could use another capable hunter.',
+        text: 'The wolves are pushing closer to town. Their mother is driving the pack deeper into the forest.',
         choices: [
           {
             id: 'ask',
@@ -29,13 +29,13 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'details',
         speakerId: 'actor.hunter-mara',
-        text: 'Cull the pack, recover four pelts, and defeat the creature driving them from the forest.',
+        text: 'Find and defeat the Mother Wolf. That should expose the path to the keeper controlling the pack.',
         nextNodeId: 'start',
       },
       {
         id: 'accepted',
         speakerId: 'actor.hunter-mara',
-        text: 'Good. Your hunt begins now. Bring me four pelts when the keeper is dealt with.',
+        text: 'Start with the Mother Wolf. Once she falls, the keeper’s route should open. Defeat him and return to me.',
         end: true,
       },
     ],
@@ -47,7 +47,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'start',
         speakerId: 'actor.hunter-mara',
-        text: 'The hunt is still active. Keep pressure on the pack and watch for their keeper.',
+        text: 'The hunt is still active. Defeat the Mother Wolf, then follow the opened route to the Wolf Keeper.',
         choices: [
           { id: 'leave', text: 'I will return when it is done.' },
         ],
@@ -61,7 +61,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'start',
         speakerId: 'actor.hunter-mara',
-        text: 'You made it back. Hand over the four pelts and I will mark the forest route as secure.',
+        text: 'The Mother Wolf and her keeper are both gone. You finished what I could not do alone.',
         choices: [
           {
             id: 'complete',
@@ -77,7 +77,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'completed',
         speakerId: 'actor.hunter-mara',
-        text: 'Well done. The ferry route is open, and the captain can take you onward.',
+        text: 'Then I am coming with you. The forest route is secure, and you have earned another hunter at your side.',
         end: true,
       },
     ],
@@ -89,7 +89,7 @@ export const actorDialogueDefinitions: readonly DialogueDefinition[] = [
       {
         id: 'start',
         speakerId: 'actor.hunter-mara',
-        text: 'The forest route remains secure. The captain is ready when you are.',
+        text: 'The forest route is secure. I am ready for whatever comes next.',
         end: true,
       },
     ],

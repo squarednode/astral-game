@@ -33,6 +33,11 @@ export class EnemyRespawnRuntime {
   private readonly pending = new Map<string, EnemyRespawnRecord>();
 
   schedule(record: Omit<EnemyRespawnRecord, 'remainingSeconds' | 'zoneEmptySeconds'>): void {
+    // Authored encounters own their own reset/retry lifecycle. Sending those
+    // enemies through the old generic respawn queue duplicates encounter mobs
+    // and can leave stale targets alive after the encounter is complete.
+    if (record.encounterOwnership) return;
+
     this.pending.set(record.id, {
       ...record,
       remainingSeconds: ENEMY_RESPAWN_SECONDS[record.respawnClass],
