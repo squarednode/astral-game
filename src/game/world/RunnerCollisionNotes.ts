@@ -1,1 +1,0 @@
-export const RUNNER_COLLISION_TRANSITION_EASE = 4;

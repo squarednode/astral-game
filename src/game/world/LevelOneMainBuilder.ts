@@ -53,11 +53,24 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
     mesh.isPickable = true;
   }
 
+  // ProceduralRunnerBuilder originally supplied hard chunk-edge boundaries.
+  // The runner lane system below is now the single authoritative collision
+  // layer. Keeping both produces overlapping invisible walls at sockets,
+  // especially where Start narrows into its first straight.
+  for (let index = instance.colliders.length - 1; index >= 0; index -= 1) {
+    if (instance.colliders[index].label.includes('-boundary-')) {
+      instance.colliders.splice(index, 1);
+    }
+  }
+
+  // Keep collision clearance slightly wider than the visible 12 m path.
+  // This creates a forgiving transition throat from the 18 m Start/junction
+  // pad into a straight while still constraining the player to runner space.
   appendProceduralRunnerLaneColliders(instance.colliders, instance.runnerMap, {
     originX,
     originZ,
     cellSize,
-    corridorWidth,
+    corridorWidth: corridorWidth + 4,
     junctionSize,
     actorRadius: 0.55,
   });
