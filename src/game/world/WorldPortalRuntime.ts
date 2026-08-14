@@ -1,9 +1,15 @@
-import { Engine, Vector3 } from '@babylonjs/core';
+import { Engine } from '@babylonjs/core';
 import type { LevelInstanceSystem, LevelSpaceId } from './LevelInstanceSystem';
+
+type EncounterSnapshotLike = { state?: string } | null;
+type EncounterManagerLike = {
+  start(encounterId: string): boolean;
+  snapshot(encounterId: string): EncounterSnapshotLike;
+};
 
 type PortalGlobals = typeof globalThis & {
   __astralLevelInstanceSystem?: LevelInstanceSystem;
-  __astralBossDefeated?: boolean;
+  __astralEncounterManager?: EncounterManagerLike;
   __astralWorldPortalTrigger?: (triggerId: string) => boolean;
 };
 
@@ -63,7 +69,10 @@ function transfer(space: LevelSpaceId, landmarkId: string): boolean {
   const player = scene?.getTransformNodeByName('playerRoot');
   if (!system || !player) return false;
 
-  if (space === 'level2' && !globals.__astralBossDefeated) return true;
+  if (space === 'level2') {
+    const bossState = globals.__astralEncounterManager?.snapshot('encounter.level1.boss')?.state;
+    if (bossState !== 'completed') return true;
+  }
 
   system.loadSpace(space);
   const landmark = system.landmarks.find(candidate => candidate.id === landmarkId);
@@ -72,6 +81,10 @@ function transfer(space: LevelSpaceId, landmarkId: string): boolean {
   player.position.copyFrom(landmark.position);
   player.position.y = landmark.position.y;
   repositionSpaceActors(space);
+
+  if (space === 'boss') {
+    globals.__astralEncounterManager?.start('encounter.level1.boss');
+  }
   return true;
 }
 
