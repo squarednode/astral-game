@@ -2,6 +2,7 @@ import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import { LEVEL_ONE_LAYOUT } from './LevelOneLayout';
 import { buildProceduralRunnerMain } from './ProceduralRunnerBuilder';
+import { appendProceduralRunnerLaneColliders } from './ProceduralRunnerCollision';
 import {
   clearProceduralRunnerWorld,
   publishProceduralRunnerWorld,
@@ -26,12 +27,26 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
   const originX = LEVEL_ONE_LAYOUT.points.playerSpawn.x;
   const originZ = LEVEL_ONE_LAYOUT.points.playerSpawn.z;
   const cellSize = 50;
+  const corridorWidth = 12;
+  const junctionSize = 18;
   const instance = buildProceduralRunnerMain(options, {
     seed: getSessionRunnerSeed(),
     originX,
     originZ,
     cellSize,
+    corridorWidth,
+    junctionSize,
   });
+
+  appendProceduralRunnerLaneColliders(instance.colliders, instance.runnerMap, {
+    originX,
+    originZ,
+    cellSize,
+    corridorWidth,
+    junctionSize,
+    actorRadius: 0.55,
+  });
+
   const runnerRuntime = publishProceduralRunnerWorld(
     instance.runnerMap,
     originX,
