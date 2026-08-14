@@ -19,6 +19,7 @@ export interface ProceduralRunnerBuildOptions {
   cellSize?: number;
   corridorWidth?: number;
   junctionSize?: number;
+  map?: ProceduralRunnerMap;
 }
 
 const PLAYER_RADIUS = 0.55;
@@ -35,7 +36,7 @@ export function buildProceduralRunnerMain(
   const cellSize = config.cellSize ?? 50;
   const corridorWidth = config.corridorWidth ?? 12;
   const junctionSize = config.junctionSize ?? 18;
-  const map = createProceduralRunnerMap(config.seed);
+  const map = config.map ?? createProceduralRunnerMap(config.seed);
   const root = new TransformNode('level-main-procedural-runner', options.scene);
   const colliders: WorldCollider[] = [];
   const traversalSurfaces: TraversalSurface[] = [];
