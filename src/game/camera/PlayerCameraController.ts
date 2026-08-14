@@ -2,6 +2,16 @@ import { ArcRotateCamera, TransformNode, Vector3 } from '@babylonjs/core';
 import { GameBalance } from '../config/GameBalance';
 import { updateProceduralRunnerCamera } from './ProceduralRunnerCamera';
 
+const STANDARD_ALPHA = -Math.PI / 2;
+const STANDARD_BETA = 0.92;
+
+function normalizeAngle(angle: number): number {
+  let value = angle;
+  while (value > Math.PI) value -= Math.PI * 2;
+  while (value < -Math.PI) value += Math.PI * 2;
+  return value;
+}
+
 export class PlayerCameraController {
   private readonly lookAhead = Vector3.Zero();
   private readonly target = Vector3.Zero();
@@ -31,6 +41,14 @@ export class PlayerCameraController {
       this.applyShake(dt);
       return;
     }
+
+    // Runner cameras may leave alpha/beta on either side of the player.
+    // Authored spaces always settle back through the shortest angular path;
+    // this prevents a 180-degree wrap followed by a second 90-degree correction
+    // when entering boss/town-style portal spaces.
+    const alphaDelta = normalizeAngle(STANDARD_ALPHA - this.camera.alpha);
+    this.camera.alpha += alphaDelta * (1 - Math.exp(-1.8 * dt));
+    this.camera.beta += (STANDARD_BETA - this.camera.beta) * (1 - Math.exp(-1.8 * dt));
 
     const planarVelocity = new Vector3(velocity.x, 0, velocity.z);
     const speed = planarVelocity.length();

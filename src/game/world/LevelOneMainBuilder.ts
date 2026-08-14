@@ -1,3 +1,4 @@
+import { MeshBuilder } from '@babylonjs/core';
 import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import { LEVEL_ONE_LAYOUT } from './LevelOneLayout';
@@ -39,9 +40,7 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
   });
 
   // Main mouse projection intentionally ray-picks only astralGround meshes.
-  // Tag only the procedural runner path surfaces so mouse-facing, hybrid
-  // movement and click-to-move work on the lane without allowing clicks onto
-  // decorative forest floor/scenery.
+  // Tag the visible runner path first so it remains the preferred hit target.
   for (const mesh of instance.root.getChildMeshes()) {
     const isRunnerPath = mesh.name.includes('-center') || mesh.name.includes('-arm-');
     if (!isRunnerPath) continue;
@@ -53,10 +52,37 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
     mesh.isPickable = true;
   }
 
+  // Keep an almost-invisible aim plane underneath the generated footprint.
+  // When the cursor moves far off the narrow runner lane, main input still gets
+  // a fresh world-space direction instead of keeping the last valid lane hit.
+  const cells = instance.runnerMap.chunks.map(chunk => chunk.cell);
+  const minCellX = Math.min(...cells.map(cell => cell.x));
+  const maxCellX = Math.max(...cells.map(cell => cell.x));
+  const minCellZ = Math.min(...cells.map(cell => cell.z));
+  const maxCellZ = Math.max(...cells.map(cell => cell.z));
+  const aimMargin = 150;
+  const aimWidth = (maxCellX - minCellX + 1) * cellSize + aimMargin * 2;
+  const aimDepth = (maxCellZ - minCellZ + 1) * cellSize + aimMargin * 2;
+  const aimFloor = MeshBuilder.CreateGround('procedural-runner-aim-floor', {
+    width: aimWidth,
+    height: aimDepth,
+  }, options.scene);
+  aimFloor.position.set(
+    originX + ((minCellX + maxCellX) * cellSize) / 2,
+    0.005,
+    originZ + ((minCellZ + maxCellZ) * cellSize) / 2,
+  );
+  aimFloor.parent = instance.root;
+  aimFloor.visibility = 0.0001;
+  aimFloor.isPickable = true;
+  aimFloor.metadata = {
+    astralGround: true,
+    proceduralRunnerAimFloor: true,
+  };
+
   // ProceduralRunnerBuilder originally supplied hard chunk-edge boundaries.
   // The runner lane system below is now the single authoritative collision
-  // layer. Keeping both produces overlapping invisible walls at sockets,
-  // especially where Start narrows into its first straight.
+  // layer. Keeping both produces overlapping invisible walls at sockets.
   for (let index = instance.colliders.length - 1; index >= 0; index -= 1) {
     if (instance.colliders[index].label.includes('-boundary-')) {
       instance.colliders.splice(index, 1);
@@ -64,8 +90,6 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
   }
 
   // Keep collision clearance slightly wider than the visible 12 m path.
-  // This creates a forgiving transition throat from the 18 m Start/junction
-  // pad into a straight while still constraining the player to runner space.
   appendProceduralRunnerLaneColliders(instance.colliders, instance.runnerMap, {
     originX,
     originZ,
