@@ -123,6 +123,20 @@ export const actorDefinitions: readonly ActorDefinition[] = [
     ],
   },
   {
+    id: 'actor.road-guide',
+    displayName: 'Road Guide',
+    roleTags: ['story', 'guide'],
+    position: { x: 188, y: 0, z: 12 },
+    visualProfileId: 'actor.human.captain',
+    interactionProfileId: 'interaction.talk',
+    persistentId: 'npc.road-guide',
+    components: [
+      { type: 'interaction', definitionId: 'interaction.talk' },
+      { type: 'dialogue', definitionId: 'dialogue.road-guide' },
+      { type: 'save', definitionId: 'save.actor-default' },
+    ],
+  },
+  {
     id: 'actor.village-elder',
     displayName: 'Village Elder',
     roleTags: ['story', 'quest-giver'],
