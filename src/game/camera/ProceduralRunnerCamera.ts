@@ -125,6 +125,7 @@ export function updateProceduralRunnerCamera(
   let desiredBeta = 1.02;
   let desiredRadius = current.type === 't' || current.type === 'plus' ? 23 : 20;
   let targetAhead = moving && Vector3.Dot(planarVelocity, viewForward) < 0 ? -0.8 : 1.8;
+  let endpointTargetBlend = 0;
 
   if (isEndpoint) {
     const endpointForward = routeForward(current, byId, viewForward);
@@ -143,7 +144,15 @@ export function updateProceduralRunnerCamera(
       desiredAlpha = behindAlpha + delta * sideMix;
       desiredBeta = 0.42 + (0.96 - 0.42) * (1 - godMix);
       desiredRadius = 21 - godMix * 1.5;
-      targetAhead = current.type === 'start' ? 0.5 : 4.2;
+
+      // Keep useful look-ahead during the approach, then collapse the camera
+      // target back toward the actor as the endpoint transitions to god view.
+      // This prevents the player from being pushed into the lower third of the
+      // screen while still showing the destination before the final approach.
+      const approachAhead = current.type === 'start' ? 0.5 : 4.2;
+      const godAhead = current.type === 'start' ? 0.15 : 0.65;
+      targetAhead = approachAhead + (godAhead - approachAhead) * godMix;
+      endpointTargetBlend = godMix;
     } else {
       const side = new Vector3(-viewForward.z, 0, viewForward.x);
       desiredAlpha = Math.atan2(side.z, side.x);
@@ -161,6 +170,9 @@ export function updateProceduralRunnerCamera(
 
   const desiredTarget = actor.position.add(viewForward.scale(targetAhead));
   desiredTarget.y = actor.position.y + 0.6;
-  camera.target.copyFrom(Vector3.Lerp(camera.target, desiredTarget, 1 - Math.exp(-2.0 * dt)));
+  const targetSharpness = 2.0 + endpointTargetBlend * 1.8;
+  camera.target.copyFrom(
+    Vector3.Lerp(camera.target, desiredTarget, 1 - Math.exp(-targetSharpness * dt)),
+  );
   return true;
 }
