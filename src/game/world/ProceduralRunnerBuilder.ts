@@ -1,7 +1,8 @@
 import { Color3, MeshBuilder, TransformNode, Vector3 } from '@babylonjs/core';
+import type { Mesh } from '@babylonjs/core';
 import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
-import type { TraversalSurface, WorldCollider, WorldLandmark } from './WorldTypes';
+import type { DynamicBoxCollider, TraversalSurface, WorldCollider, WorldLandmark } from './WorldTypes';
 import type { WorldVolume } from './WorldVolumeTypes';
 import {
   createProceduralRunnerMap,
@@ -39,9 +40,9 @@ export function buildProceduralRunnerMain(
   const colliders: WorldCollider[] = [];
   const traversalSurfaces: TraversalSurface[] = [];
   const worldVolumes: WorldVolume[] = [];
-  const dynamicColliders = [];
+  const dynamicColliders: DynamicBoxCollider[] = [];
   const landmarks: WorldLandmark[] = [];
-  const traversalHighlights = [];
+  const traversalHighlights: Mesh[] = [];
 
   const forestMaterial = options.material('runner-forest-floor', new Color3(0.12, 0.25, 0.10));
   const mainPathMaterial = options.material('runner-main-path', new Color3(0.30, 0.23, 0.14));
