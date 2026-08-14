@@ -38,6 +38,21 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
     junctionSize,
   });
 
+  // Main mouse projection intentionally ray-picks only astralGround meshes.
+  // Tag only the procedural runner path surfaces so mouse-facing, hybrid
+  // movement and click-to-move work on the lane without allowing clicks onto
+  // decorative forest floor/scenery.
+  for (const mesh of instance.root.getChildMeshes()) {
+    const isRunnerPath = mesh.name.includes('-center') || mesh.name.includes('-arm-');
+    if (!isRunnerPath) continue;
+    mesh.metadata = {
+      ...(mesh.metadata ?? {}),
+      astralGround: true,
+      proceduralRunnerGround: true,
+    };
+    mesh.isPickable = true;
+  }
+
   appendProceduralRunnerLaneColliders(instance.colliders, instance.runnerMap, {
     originX,
     originZ,
