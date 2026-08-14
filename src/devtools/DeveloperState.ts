@@ -43,3 +43,13 @@ export const developerState: DeveloperState = {
   enemyNavigationRoutesVisible: false,
   enemyInvalidLandingsVisible: false,
 };
+
+// The wave sandbox predates the authored world/encounter system. Keep the
+// compatibility field for old developer UI code, but make it impossible to
+// enable so legacy wave spawns cannot bleed into Level 1 or Level 2 testing.
+Object.defineProperty(developerState, 'wavesEnabled', {
+  configurable: false,
+  enumerable: true,
+  get: () => false,
+  set: () => undefined,
+});
