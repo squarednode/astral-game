@@ -19,38 +19,10 @@ interface GroundSurfaceProfile {
 }
 
 const profiles: Readonly<Record<GroundSurfaceKind, GroundSurfaceProfile>> = {
-  grass: {
-    base: [56, 101, 45],
-    accent: [91, 132, 61],
-    tile: 9,
-    heightScale: 0.045,
-    roughness: 0.96,
-    normalStrength: 2.6,
-  },
-  dirt: {
-    base: [111, 81, 49],
-    accent: [150, 113, 72],
-    tile: 8,
-    heightScale: 0.055,
-    roughness: 0.94,
-    normalStrength: 2.3,
-  },
-  stone: {
-    base: [104, 108, 101],
-    accent: [139, 139, 128],
-    tile: 6,
-    heightScale: 0.065,
-    roughness: 0.88,
-    normalStrength: 3.1,
-  },
-  sand: {
-    base: [177, 148, 101],
-    accent: [213, 185, 129],
-    tile: 10,
-    heightScale: 0.038,
-    roughness: 0.98,
-    normalStrength: 1.9,
-  },
+  grass: { base: [56, 101, 45], accent: [91, 132, 61], tile: 9, heightScale: 0.045, roughness: 0.96, normalStrength: 2.6 },
+  dirt: { base: [111, 81, 49], accent: [150, 113, 72], tile: 8, heightScale: 0.055, roughness: 0.94, normalStrength: 2.3 },
+  stone: { base: [104, 108, 101], accent: [139, 139, 128], tile: 6, heightScale: 0.065, roughness: 0.88, normalStrength: 3.1 },
+  sand: { base: [177, 148, 101], accent: [213, 185, 129], tile: 10, heightScale: 0.038, roughness: 0.98, normalStrength: 1.9 },
 };
 
 const sceneCaches = new WeakMap<Scene, Map<GroundSurfaceKind, PBRMaterial>>();
@@ -65,7 +37,6 @@ function heightAt(kind: GroundSurfaceKind, x: number, y: number, size: number): 
   const ny = y / size;
   const noise = hash(x, y, kind.length);
   const broad = hash(Math.floor(x / 8), Math.floor(y / 8), kind.length + 7);
-
   switch (kind) {
     case 'grass': {
       const blades = Math.pow(hash(x * 3, y * 5, 13), 5) * 0.42;
@@ -90,38 +61,18 @@ function heightAt(kind: GroundSurfaceKind, x: number, y: number, size: number): 
 function makeTextures(scene: Scene, kind: GroundSurfaceKind, profile: GroundSurfaceProfile) {
   const size = 256;
   const heights = new Float32Array(size * size);
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      heights[y * size + x] = heightAt(kind, x, y, size);
-    }
-  }
+  for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) heights[y * size + x] = heightAt(kind, x, y, size);
 
-  const albedo = new DynamicTexture(
-    `ground-${kind}-albedo`,
-    { width: size, height: size },
-    scene,
-    false,
-    Texture.BILINEAR_SAMPLINGMODE,
-  );
-  const normalHeight = new DynamicTexture(
-    `ground-${kind}-normal-height`,
-    { width: size, height: size },
-    scene,
-    false,
-    Texture.BILINEAR_SAMPLINGMODE,
-  );
+  const albedo = new DynamicTexture(`ground-${kind}-albedo`, { width: size, height: size }, scene, false, Texture.BILINEAR_SAMPLINGMODE);
+  const normalHeight = new DynamicTexture(`ground-${kind}-normal-height`, { width: size, height: size }, scene, false, Texture.BILINEAR_SAMPLINGMODE);
   normalHeight.hasAlpha = true;
 
   const albedoContext = albedo.getContext();
   const bumpContext = normalHeight.getContext();
-  const albedoImage = albedoContext.createImageData(size, size);
-  const bumpImage = bumpContext.createImageData(size, size);
+  const albedoImage = albedoContext.getImageData(0, 0, size, size);
+  const bumpImage = bumpContext.getImageData(0, 0, size, size);
 
-  const readHeight = (x: number, y: number): number => {
-    const wrappedX = (x + size) % size;
-    const wrappedY = (y + size) % size;
-    return heights[wrappedY * size + wrappedX];
-  };
+  const readHeight = (x: number, y: number): number => heights[((y + size) % size) * size + ((x + size) % size)];
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
@@ -130,9 +81,7 @@ function makeTextures(scene: Scene, kind: GroundSurfaceKind, profile: GroundSurf
       const height = heights[index];
       const variation = 0.72 + height * 0.38;
       for (let channel = 0; channel < 3; channel += 1) {
-        const base = profile.base[channel];
-        const accent = profile.accent[channel];
-        const mixed = base + (accent - base) * height;
+        const mixed = profile.base[channel] + (profile.accent[channel] - profile.base[channel]) * height;
         albedoImage.data[pixel + channel] = Math.max(0, Math.min(255, Math.round(mixed * variation)));
       }
       albedoImage.data[pixel + 3] = 255;
@@ -140,12 +89,9 @@ function makeTextures(scene: Scene, kind: GroundSurfaceKind, profile: GroundSurf
       const dx = (readHeight(x + 1, y) - readHeight(x - 1, y)) * profile.normalStrength;
       const dy = (readHeight(x, y + 1) - readHeight(x, y - 1)) * profile.normalStrength;
       const inverseLength = 1 / Math.hypot(dx, dy, 1);
-      const normalX = -dx * inverseLength;
-      const normalY = -dy * inverseLength;
-      const normalZ = inverseLength;
-      bumpImage.data[pixel] = Math.round((normalX * 0.5 + 0.5) * 255);
-      bumpImage.data[pixel + 1] = Math.round((normalY * 0.5 + 0.5) * 255);
-      bumpImage.data[pixel + 2] = Math.round((normalZ * 0.5 + 0.5) * 255);
+      bumpImage.data[pixel] = Math.round((-dx * inverseLength * 0.5 + 0.5) * 255);
+      bumpImage.data[pixel + 1] = Math.round((-dy * inverseLength * 0.5 + 0.5) * 255);
+      bumpImage.data[pixel + 2] = Math.round((inverseLength * 0.5 + 0.5) * 255);
       bumpImage.data[pixel + 3] = Math.round(height * 255);
     }
   }
@@ -154,16 +100,10 @@ function makeTextures(scene: Scene, kind: GroundSurfaceKind, profile: GroundSurf
   bumpContext.putImageData(bumpImage, 0, 0);
   albedo.update(false);
   normalHeight.update(false);
-
-  albedo.wrapU = Texture.WRAP_ADDRESSMODE;
-  albedo.wrapV = Texture.WRAP_ADDRESSMODE;
-  normalHeight.wrapU = Texture.WRAP_ADDRESSMODE;
-  normalHeight.wrapV = Texture.WRAP_ADDRESSMODE;
-  albedo.uScale = profile.tile;
-  albedo.vScale = profile.tile;
-  normalHeight.uScale = profile.tile;
-  normalHeight.vScale = profile.tile;
-
+  albedo.wrapU = albedo.wrapV = Texture.WRAP_ADDRESSMODE;
+  normalHeight.wrapU = normalHeight.wrapV = Texture.WRAP_ADDRESSMODE;
+  albedo.uScale = albedo.vScale = profile.tile;
+  normalHeight.uScale = normalHeight.vScale = profile.tile;
   return { albedo, normalHeight };
 }
 
@@ -174,7 +114,7 @@ export function groundSurfaceMaterial(scene: Scene, kind: GroundSurfaceKind): PB
     sceneCaches.set(scene, cache);
   }
   const existing = cache.get(kind);
-  if (existing && !existing.isDisposed()) return existing;
+  if (existing) return existing;
 
   const profile = profiles[kind];
   const textures = makeTextures(scene, kind, profile);
@@ -192,10 +132,7 @@ export function groundSurfaceMaterial(scene: Scene, kind: GroundSurfaceKind): PB
   return material;
 }
 
-export function applyRunnerGroundMaterialTest(
-  scene: Scene,
-  meshes: readonly { name: string; material: Material | null }[],
-): void {
+export function applyRunnerGroundMaterialTest(scene: Scene, meshes: readonly { name: string; material: Material | null }[]): void {
   const grass = groundSurfaceMaterial(scene, 'grass');
   const dirt = groundSurfaceMaterial(scene, 'dirt');
   for (const mesh of meshes) {
