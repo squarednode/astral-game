@@ -3,6 +3,7 @@ import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import type { DynamicBoxCollider, TraversalSurface, WorldCollider, WorldLandmark } from './WorldTypes';
 import type { WorldVolume } from './WorldVolumeTypes';
+import { groundSurfaceMaterial } from './GroundSurfaceMaterials';
 
 export function buildLevelOneTown(options: OutdoorZoneBuildOptions): LevelInstance {
   const root = new TransformNode('level-one-town', options.scene);
@@ -13,8 +14,8 @@ export function buildLevelOneTown(options: OutdoorZoneBuildOptions): LevelInstan
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
 
-  const groundMaterial = options.material('town-ground', new Color3(0.24, 0.29, 0.16));
-  const pathMaterial = options.material('town-path', new Color3(0.34, 0.27, 0.17));
+  const groundMaterial = groundSurfaceMaterial(options.scene, 'stone');
+  const pathMaterial = groundSurfaceMaterial(options.scene, 'dirt');
   const tentMaterial = options.material('town-tent', new Color3(0.38, 0.20, 0.12));
   const woodMaterial = options.material('town-wood', new Color3(0.25, 0.14, 0.07));
   const fireMaterial = options.material('town-fire', new Color3(1, 0.35, 0.06), 0.4);
@@ -64,6 +65,7 @@ export function buildLevelOneTown(options: OutdoorZoneBuildOptions): LevelInstan
 
   return {
     id:'town', root, groundName:'town-ground', colliders, traversalSurfaces, worldVolumes,
-    dynamicColliders, landmarks, traversalHighlights, update:()=>undefined, dispose:()=>root.dispose(false,true),
+    dynamicColliders, landmarks, traversalHighlights, update:()=>undefined,
+    dispose:()=>root.dispose(false,false),
   };
 }

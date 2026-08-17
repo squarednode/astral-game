@@ -5,6 +5,7 @@ import { LEVEL_ONE_LAYOUT } from './LevelOneLayout';
 import { LEVEL_ONE_AUTHORED_RUNNER_MAP } from './LevelOneAuthoredRunnerMap';
 import { buildProceduralRunnerMain } from './ProceduralRunnerBuilder';
 import { appendProceduralRunnerLaneColliders } from './ProceduralRunnerCollision';
+import { applyRunnerGroundMaterialTest } from './GroundSurfaceMaterials';
 import {
   clearProceduralRunnerWorld,
   publishProceduralRunnerWorld,
@@ -30,6 +31,11 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
     corridorWidth,
     junctionSize,
   });
+
+  // First production graphics test: grass POM on the forest floor and dirt POM
+  // on the runner itself. These are procedural placeholder textures so we can
+  // tune depth/performance before committing final art assets.
+  applyRunnerGroundMaterialTest(options.scene, instance.root.getChildMeshes());
 
   for (const mesh of instance.root.getChildMeshes()) {
     const isRunnerPath = mesh.name.includes('-center') || mesh.name.includes('-arm-');
@@ -113,10 +119,11 @@ export function buildLevelOneMain(options: OutdoorZoneBuildOptions): LevelInstan
   });
 
   const runnerRuntime = publishProceduralRunnerWorld(instance.runnerMap, originX, originZ, cellSize);
-  const disposeRunner = instance.dispose.bind(instance);
   instance.dispose = (): void => {
     clearProceduralRunnerWorld(runnerRuntime);
-    disposeRunner();
+    // Materials/textures are scene-shared. Dispose meshes only; allowing a
+    // temporary space to dispose shared materials caused first-load white worlds.
+    instance.root.dispose(false, false);
   };
   return instance;
 }

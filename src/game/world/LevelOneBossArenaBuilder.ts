@@ -3,6 +3,7 @@ import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import type { DynamicBoxCollider, TraversalSurface, WorldCollider, WorldLandmark } from './WorldTypes';
 import type { WorldVolume } from './WorldVolumeTypes';
+import { groundSurfaceMaterial } from './GroundSurfaceMaterials';
 
 export function buildLevelOneBossArena(options: OutdoorZoneBuildOptions): LevelInstance {
   const root = new TransformNode('level-one-boss-pad', options.scene);
@@ -13,8 +14,8 @@ export function buildLevelOneBossArena(options: OutdoorZoneBuildOptions): LevelI
   const landmarks: WorldLandmark[] = [];
   const traversalHighlights: Mesh[] = [];
 
-  const groundMaterial = options.material('boss-pad-ground', new Color3(0.22, 0.24, 0.18));
-  const arenaMaterial = options.material('boss-pad-arena', new Color3(0.30, 0.25, 0.19));
+  const groundMaterial = groundSurfaceMaterial(options.scene, 'sand');
+  const arenaMaterial = groundSurfaceMaterial(options.scene, 'stone');
   const returnMaterial = options.material('boss-return-portal', new Color3(0.20, 0.75, 1), 0.35);
   const nextMaterial = options.material('boss-level2-portal', new Color3(0.50, 0.30, 1), 0.40);
 
@@ -57,6 +58,7 @@ export function buildLevelOneBossArena(options: OutdoorZoneBuildOptions): LevelI
 
   return {
     id:'boss', root, groundName:'boss-pad-ground', colliders, traversalSurfaces, worldVolumes,
-    dynamicColliders, landmarks, traversalHighlights, update:()=>undefined, dispose:()=>root.dispose(false,true),
+    dynamicColliders, landmarks, traversalHighlights, update:()=>undefined,
+    dispose:()=>root.dispose(false,false),
   };
 }

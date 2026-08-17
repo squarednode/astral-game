@@ -3,6 +3,7 @@ import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import { buildProceduralRunnerMain } from './ProceduralRunnerBuilder';
 import { appendProceduralRunnerLaneColliders } from './ProceduralRunnerCollision';
+import { applyRunnerGroundMaterialTest } from './GroundSurfaceMaterials';
 import {
   clearProceduralRunnerWorld,
   publishProceduralRunnerWorld,
@@ -32,6 +33,8 @@ export function buildLevelTwo(options: OutdoorZoneBuildOptions): LevelInstance {
     corridorWidth,
     junctionSize,
   });
+
+  applyRunnerGroundMaterialTest(options.scene, instance.root.getChildMeshes());
 
   for (const mesh of instance.root.getChildMeshes()) {
     const isRunnerPath = mesh.name.includes('-center') || mesh.name.includes('-arm-');
@@ -82,13 +85,12 @@ export function buildLevelTwo(options: OutdoorZoneBuildOptions): LevelInstance {
   }
 
   const runnerRuntime = publishProceduralRunnerWorld(instance.runnerMap, originX, originZ, cellSize);
-  const disposeRunner = instance.dispose.bind(instance);
   return {
     ...instance,
     id: 'level2',
     dispose: () => {
       clearProceduralRunnerWorld(runnerRuntime);
-      disposeRunner();
+      instance.root.dispose(false, false);
     },
   };
 }
