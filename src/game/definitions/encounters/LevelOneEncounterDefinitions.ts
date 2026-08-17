@@ -28,6 +28,26 @@ const routeArena = (
   ],
 });
 
+const replenisher = (
+  id: string,
+  spawnGroupId: string,
+  targetAlive: number,
+  spawnBudget: number,
+) => ({
+  id,
+  enabled: true,
+  stopWhenAnchorDies: false,
+  spawnGroupIds: [spawnGroupId],
+  targetAlive,
+  lowPopulationThreshold: targetAlive - 1,
+  emptyWaveDelaySeconds: 10,
+  replenishDelaySeconds: 10,
+  checkIntervalSeconds: 0.5,
+  maximumAlive: targetAlive,
+  maximumTotalSpawned: 99,
+  spawnBudget,
+} as const);
+
 export const levelOneEncounterArenaDefinitions: readonly EncounterArenaDefinition[] = [
   routeArena('arena.level1.crab', 'Crab Training', 138, -25),
   routeArena('arena.level1.wolf-one', 'Wolf Pack I', 188, 75),
@@ -45,9 +65,15 @@ export const levelOneEncounterDefinitions: readonly EncounterDefinition[] = [
     activation: 'trigger',
     spawnGroups: [{
       id: 'level1.crab',
-      entries: [{ enemyDefinitionId: 'enemy.crab', quantity: 1, spawnPointTags: ['ground'], tags: ['level-1'] }],
+      maximumAlive: 3,
+      entries: [{ enemyDefinitionId: 'enemy.crab', quantity: 3, spawnPointTags: ['ground'], tags: ['level-1'] }],
     }],
-    phases: [{ id: 'phase.crab', displayName: 'Crab', spawnGroupIds: ['level1.crab'] }],
+    phases: [{
+      id: 'phase.crab',
+      displayName: 'Crabs',
+      spawnGroupIds: ['level1.crab'],
+      reinforcementControllers: [replenisher('level1.crab.replenish', 'level1.crab', 3, 3)],
+    }],
     rewards: { copper: 5, worldFlags: { 'encounter.level1.crab.completed': true } },
     resetPolicy: { repeatable: false, preserveCollectedLoot: true },
   },
@@ -58,9 +84,15 @@ export const levelOneEncounterDefinitions: readonly EncounterDefinition[] = [
     activation: 'trigger',
     spawnGroups: [{
       id: 'level1.wolf-one',
-      entries: [{ enemyDefinitionId: 'enemy.wolf', quantity: 2, spawnPointTags: ['ground'], tags: ['level-1'] }],
+      maximumAlive: 3,
+      entries: [{ enemyDefinitionId: 'enemy.wolf', quantity: 3, spawnPointTags: ['ground'], tags: ['level-1'] }],
     }],
-    phases: [{ id: 'phase.wolf-one', displayName: 'Wolf Pack', spawnGroupIds: ['level1.wolf-one'] }],
+    phases: [{
+      id: 'phase.wolf-one',
+      displayName: 'Wolf Pack',
+      spawnGroupIds: ['level1.wolf-one'],
+      reinforcementControllers: [replenisher('level1.wolf-one.replenish', 'level1.wolf-one', 3, 1)],
+    }],
     rewards: { copper: 8, worldFlags: { 'encounter.level1.wolf-one.completed': true } },
     resetPolicy: { repeatable: false, preserveCollectedLoot: true },
   },
@@ -71,9 +103,15 @@ export const levelOneEncounterDefinitions: readonly EncounterDefinition[] = [
     activation: 'trigger',
     spawnGroups: [{
       id: 'level1.wolf-two',
-      entries: [{ enemyDefinitionId: 'enemy.wolf', quantity: 2, spawnPointTags: ['ground'], tags: ['level-1'] }],
+      maximumAlive: 3,
+      entries: [{ enemyDefinitionId: 'enemy.wolf', quantity: 3, spawnPointTags: ['ground'], tags: ['level-1'] }],
     }],
-    phases: [{ id: 'phase.wolf-two', displayName: 'Corner Pack', spawnGroupIds: ['level1.wolf-two'] }],
+    phases: [{
+      id: 'phase.wolf-two',
+      displayName: 'Corner Pack',
+      spawnGroupIds: ['level1.wolf-two'],
+      reinforcementControllers: [replenisher('level1.wolf-two.replenish', 'level1.wolf-two', 3, 1)],
+    }],
     rewards: { copper: 8, worldFlags: { 'encounter.level1.wolf-two.completed': true } },
     resetPolicy: { repeatable: false, preserveCollectedLoot: true },
   },
@@ -84,9 +122,15 @@ export const levelOneEncounterDefinitions: readonly EncounterDefinition[] = [
     activation: 'trigger',
     spawnGroups: [{
       id: 'level1.wolf-three',
+      maximumAlive: 3,
       entries: [{ enemyDefinitionId: 'enemy.wolf', quantity: 3, spawnPointTags: ['ground'], tags: ['level-2'] }],
     }],
-    phases: [{ id: 'phase.wolf-three', displayName: 'Veteran Pack', spawnGroupIds: ['level1.wolf-three'] }],
+    phases: [{
+      id: 'phase.wolf-three',
+      displayName: 'Veteran Pack',
+      spawnGroupIds: ['level1.wolf-three'],
+      reinforcementControllers: [replenisher('level1.wolf-three.replenish', 'level1.wolf-three', 3, 1)],
+    }],
     rewards: { copper: 12, worldFlags: { 'encounter.level1.wolf-three.completed': true } },
     resetPolicy: { repeatable: false, preserveCollectedLoot: true },
   },

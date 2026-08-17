@@ -9,7 +9,6 @@ export type {
 } from './CharacterDefinitions';
 export {
   ABILITY_DEFINITION_SCHEMA_VERSION,
-  abilityDefinitions,
   validateAbilityDefinition,
 } from './abilities';
 export type {
@@ -23,7 +22,6 @@ export type {
 } from './abilities';
 export {
   COMBAT_LIBRARY_SCHEMA_VERSION,
-  aiAbilityUsageDefinitions,
   combatTagDefinitions,
   damageProfileDefinitions,
   projectileDefinitions,
@@ -52,8 +50,12 @@ export type {
   TelegraphShape,
 } from './combat';
 export {
-  ENEMY_DEFINITION_SCHEMA_VERSION,
+  abilityDefinitions,
+  aiAbilityUsageDefinitions,
   enemyDefinitions,
+} from './LevelOneEnemyContent';
+export {
+  ENEMY_DEFINITION_SCHEMA_VERSION,
   enemyFamilyDefinitions,
   enemyVariantDefinitions,
   eliteModifierDefinitions,
