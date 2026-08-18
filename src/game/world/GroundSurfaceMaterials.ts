@@ -19,10 +19,10 @@ interface GroundSurfaceProfile {
 }
 
 const profiles: Readonly<Record<GroundSurfaceKind, GroundSurfaceProfile>> = {
-  grass: { base: [56, 101, 45], accent: [91, 132, 61], tile: 9, heightScale: 0.045, roughness: 0.96, normalStrength: 2.6 },
-  dirt: { base: [111, 81, 49], accent: [150, 113, 72], tile: 8, heightScale: 0.055, roughness: 0.94, normalStrength: 2.3 },
-  stone: { base: [104, 108, 101], accent: [139, 139, 128], tile: 6, heightScale: 0.065, roughness: 0.88, normalStrength: 3.1 },
-  sand: { base: [177, 148, 101], accent: [213, 185, 129], tile: 10, heightScale: 0.038, roughness: 0.98, normalStrength: 1.9 },
+  grass: { base: [56, 101, 45], accent: [91, 132, 61], tile: 6, heightScale: 0.040, roughness: 0.96, normalStrength: 3.0 },
+  dirt: { base: [111, 81, 49], accent: [150, 113, 72], tile: 5, heightScale: 0.050, roughness: 0.94, normalStrength: 2.7 },
+  stone: { base: [104, 108, 101], accent: [139, 139, 128], tile: 5, heightScale: 0.060, roughness: 0.88, normalStrength: 3.4 },
+  sand: { base: [177, 148, 101], accent: [213, 185, 129], tile: 6, heightScale: 0.034, roughness: 0.98, normalStrength: 2.2 },
 };
 
 const sceneCaches = new WeakMap<Scene, Map<GroundSurfaceKind, PBRMaterial>>();
@@ -36,35 +36,39 @@ function heightAt(kind: GroundSurfaceKind, x: number, y: number, size: number): 
   const nx = x / size;
   const ny = y / size;
   const noise = hash(x, y, kind.length);
-  const broad = hash(Math.floor(x / 8), Math.floor(y / 8), kind.length + 7);
+  const broad = hash(Math.floor(x / 12), Math.floor(y / 12), kind.length + 7);
+  const medium = hash(Math.floor(x / 4), Math.floor(y / 4), kind.length + 19);
   switch (kind) {
     case 'grass': {
       const blades = Math.pow(hash(x * 3, y * 5, 13), 5) * 0.42;
-      return Math.max(0, Math.min(1, 0.30 + broad * 0.28 + noise * 0.18 + blades));
+      return Math.max(0, Math.min(1, 0.25 + broad * 0.28 + medium * 0.12 + noise * 0.13 + blades));
     }
     case 'dirt': {
       const pebbles = Math.pow(hash(x * 2, y * 2, 23), 8) * 0.5;
-      return Math.max(0, Math.min(1, 0.26 + broad * 0.32 + noise * 0.18 + pebbles));
+      return Math.max(0, Math.min(1, 0.22 + broad * 0.31 + medium * 0.13 + noise * 0.14 + pebbles));
     }
     case 'stone': {
       const cells = Math.abs(Math.sin(nx * Math.PI * 9) * Math.sin(ny * Math.PI * 7));
       const cracks = cells < 0.12 ? -0.30 : 0.10;
-      return Math.max(0, Math.min(1, 0.48 + broad * 0.22 + noise * 0.08 + cracks));
+      return Math.max(0, Math.min(1, 0.44 + broad * 0.20 + medium * 0.08 + noise * 0.08 + cracks));
     }
     case 'sand': {
       const ripples = Math.sin((nx * 13 + ny * 4) * Math.PI * 2) * 0.12;
-      return Math.max(0, Math.min(1, 0.48 + ripples + broad * 0.13 + noise * 0.05));
+      return Math.max(0, Math.min(1, 0.44 + ripples + broad * 0.13 + medium * 0.05 + noise * 0.04));
     }
   }
 }
 
 function makeTextures(scene: Scene, kind: GroundSurfaceKind, profile: GroundSurfaceProfile) {
-  const size = 256;
+  const size = 512;
   const heights = new Float32Array(size * size);
   for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) heights[y * size + x] = heightAt(kind, x, y, size);
 
-  const albedo = new DynamicTexture(`ground-${kind}-albedo`, { width: size, height: size }, scene, false, Texture.BILINEAR_SAMPLINGMODE);
-  const normalHeight = new DynamicTexture(`ground-${kind}-normal-height`, { width: size, height: size }, scene, false, Texture.BILINEAR_SAMPLINGMODE);
+  // Mipmaps + trilinear filtering stabilize the procedural detail while the
+  // camera/player moves. The previous 256px bilinear/no-mipmap setup softened
+  // and shimmered noticeably in motion.
+  const albedo = new DynamicTexture(`ground-${kind}-albedo`, { width: size, height: size }, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
+  const normalHeight = new DynamicTexture(`ground-${kind}-normal-height`, { width: size, height: size }, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
   normalHeight.hasAlpha = true;
 
   const albedoContext = albedo.getContext();
@@ -98,12 +102,14 @@ function makeTextures(scene: Scene, kind: GroundSurfaceKind, profile: GroundSurf
 
   albedoContext.putImageData(albedoImage, 0, 0);
   bumpContext.putImageData(bumpImage, 0, 0);
-  albedo.update(false);
-  normalHeight.update(false);
+  albedo.update(true);
+  normalHeight.update(true);
   albedo.wrapU = albedo.wrapV = Texture.WRAP_ADDRESSMODE;
   normalHeight.wrapU = normalHeight.wrapV = Texture.WRAP_ADDRESSMODE;
   albedo.uScale = albedo.vScale = profile.tile;
   normalHeight.uScale = normalHeight.vScale = profile.tile;
+  albedo.anisotropicFilteringLevel = 8;
+  normalHeight.anisotropicFilteringLevel = 8;
   return { albedo, normalHeight };
 }
 

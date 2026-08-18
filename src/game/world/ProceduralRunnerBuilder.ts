@@ -1,5 +1,4 @@
-import { Color3, MeshBuilder, TransformNode, Vector3 } from '@babylonjs/core';
-import type { Mesh } from '@babylonjs/core';
+import { Color3, Mesh, MeshBuilder, TransformNode, Vector3, VertexBuffer } from '@babylonjs/core';
 import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import type { DynamicBoxCollider, TraversalSurface, WorldCollider, WorldLandmark } from './WorldTypes';
@@ -24,9 +23,72 @@ export interface ProceduralRunnerBuildOptions {
 
 const PLAYER_RADIUS = 0.55;
 const TRANSITION_OVERLAP = PLAYER_RADIUS * 2 + 1.2;
+const FOREST_GROUND_SUBDIVISIONS = 20;
+const FOREST_GROUND_AMPLITUDE = 0.12;
 
 export interface ProceduralRunnerInstance extends LevelInstance {
   readonly runnerMap: ProceduralRunnerMap;
+}
+
+function terrainHash(x: number, z: number, seed: number): number {
+  const value = Math.sin(x * 12.9898 + z * 78.233 + seed * 37.719) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function smoothNoise(worldX: number, worldZ: number, scale: number, seed: number): number {
+  const x = worldX / scale;
+  const z = worldZ / scale;
+  const x0 = Math.floor(x);
+  const z0 = Math.floor(z);
+  const tx = x - x0;
+  const tz = z - z0;
+  const sx = tx * tx * (3 - 2 * tx);
+  const sz = tz * tz * (3 - 2 * tz);
+  const a = terrainHash(x0, z0, seed);
+  const b = terrainHash(x0 + 1, z0, seed);
+  const c = terrainHash(x0, z0 + 1, seed);
+  const d = terrainHash(x0 + 1, z0 + 1, seed);
+  const north = a + (b - a) * sx;
+  const south = c + (d - c) * sx;
+  return north + (south - north) * sz;
+}
+
+function forestGroundHeight(worldX: number, worldZ: number, seed: number): number {
+  const broad = smoothNoise(worldX, worldZ, 18, seed + 11) * 2 - 1;
+  const medium = smoothNoise(worldX, worldZ, 7, seed + 29) * 2 - 1;
+  const fine = smoothNoise(worldX, worldZ, 2.5, seed + 53) * 2 - 1;
+  return (broad * 0.58 + medium * 0.30 + fine * 0.12) * FOREST_GROUND_AMPLITUDE;
+}
+
+function createIrregularForestFloor(
+  scene: OutdoorZoneBuildOptions['scene'],
+  id: string,
+  center: Vector3,
+  cellSize: number,
+  seed: number,
+): Mesh {
+  const mesh = MeshBuilder.CreateGround(id, {
+    width: cellSize,
+    height: cellSize,
+    subdivisions: FOREST_GROUND_SUBDIVISIONS,
+    updatable: true,
+  }, scene);
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+  const indices = mesh.getIndices();
+  if (positions && indices) {
+    for (let index = 0; index < positions.length; index += 3) {
+      const worldX = center.x + positions[index];
+      const worldZ = center.z + positions[index + 2];
+      positions[index + 1] = forestGroundHeight(worldX, worldZ, seed);
+    }
+    const normals = new Array<number>(positions.length).fill(0);
+    VertexBuffer.ComputeNormals(positions, indices, normals);
+    mesh.updateVerticesData(VertexBuffer.PositionKind, positions);
+    mesh.updateVerticesData(VertexBuffer.NormalKind, normals);
+  }
+  mesh.position.set(center.x, 0.055, center.z);
+  mesh.receiveShadows = true;
+  return mesh;
 }
 
 export function buildProceduralRunnerMain(
@@ -125,12 +187,7 @@ export function buildProceduralRunnerMain(
 
   for (const chunk of map.chunks) {
     const center = centerOf(chunk);
-    const green = MeshBuilder.CreateBox(`${chunk.id}-forest-floor`, {
-      width: cellSize,
-      height: 0.08,
-      depth: cellSize,
-    }, options.scene);
-    green.position.set(center.x, 0.04, center.z);
+    const green = createIrregularForestFloor(options.scene, `${chunk.id}-forest-floor`, center, cellSize, config.seed);
     green.parent = root;
     green.material = forestMaterial;
 
