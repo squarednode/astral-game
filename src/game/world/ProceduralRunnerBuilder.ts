@@ -1,4 +1,4 @@
-import { Color3, Mesh, MeshBuilder, TransformNode, Vector3, VertexBuffer } from '@babylonjs/core';
+import { Color3, Mesh, MeshBuilder, TransformNode, Vector3, VertexBuffer, VertexData } from '@babylonjs/core';
 import type { OutdoorZoneBuildOptions } from './OutdoorZoneBuilder';
 import type { LevelInstance } from './LevelInstanceSystem';
 import type { DynamicBoxCollider, TraversalSurface, WorldCollider, WorldLandmark } from './WorldTypes';
@@ -82,7 +82,7 @@ function createIrregularForestFloor(
       positions[index + 1] = forestGroundHeight(worldX, worldZ, seed);
     }
     const normals = new Array<number>(positions.length).fill(0);
-    VertexBuffer.ComputeNormals(positions, indices, normals);
+    VertexData.ComputeNormals(positions, indices, normals);
     mesh.updateVerticesData(VertexBuffer.PositionKind, positions);
     mesh.updateVerticesData(VertexBuffer.NormalKind, normals);
   }
